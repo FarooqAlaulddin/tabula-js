@@ -280,7 +280,7 @@ describe('Presence', () => {
 			presence.stop()
 		})
 
-		it('hidden tabs get 4x grace period', () => {
+		it('hidden tabs get extended grace period (survives browser throttling)', () => {
 			const presence = createPresence()
 			presence.start()
 
@@ -293,15 +293,16 @@ describe('Presence', () => {
 			})
 			presence.handleMessage(announce)
 
-			// Advance past normal timeout but within 4x grace
+			// Advance past normal timeout — hidden tab should survive
 			vi.advanceTimersByTime(TIMEOUT_MS + HEARTBEAT_MS)
-
-			// Should still be alive (hidden gets 4x = 20000ms)
 			expect(presence.getTab('tab-hidden')).toBeDefined()
 
-			// Advance past 4x timeout
-			vi.advanceTimersByTime(TIMEOUT_MS * 3 + HEARTBEAT_MS)
+			// Advance to 80s — still within 90s hidden grace
+			vi.advanceTimersByTime(75_000)
+			expect(presence.getTab('tab-hidden')).toBeDefined()
 
+			// Advance past 90s hidden grace
+			vi.advanceTimersByTime(15_000)
 			expect(presence.getTab('tab-hidden')).toBeUndefined()
 			expect(onLeave).toHaveBeenCalledWith(expect.objectContaining({ id: 'tab-hidden' }))
 

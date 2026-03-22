@@ -483,8 +483,11 @@ interface AnnouncePayload {
 		const now = Date.now()
 		for (const [id, tab] of this.tabMap) {
 			if (id === this.tabId) continue
-			// visibility-aware timeout: hidden tabs get 4x grace
-			const effectiveTimeout = tab.visible ? this.timeoutMs : this.timeoutMs * 4
+			// Browsers aggressively throttle background tab timers (Chrome: up to 1/minute
+			// after 5 min). Hidden tabs need a much longer grace period to avoid false pruning.
+			// Visible: standard timeout. Hidden: 90s minimum (survives 1/minute throttling).
+			const hiddenGrace = Math.max(this.timeoutMs * 4, 90_000)
+			const effectiveTimeout = tab.visible ? this.timeoutMs : hiddenGrace
 			if (now - tab.lastSeenAt > effectiveTimeout) {
 				this.tabMap.delete(id)
 				this.onLeave(tab)
