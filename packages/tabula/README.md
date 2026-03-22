@@ -4,10 +4,6 @@
 
 Tabula lets you build web apps that treat multiple tabs as one surface. Shared state, presence tracking, leader election, and named views — all through the BroadcastChannel API with zero dependencies.
 
-[![npm version](https://img.shields.io/npm/v/tabula)](https://www.npmjs.com/package/tabula)
-[![bundle size](https://img.shields.io/bundlephobia/minzip/tabula)](https://bundlephobia.com/package/tabula)
-[![license](https://img.shields.io/npm/l/tabula)](./LICENSE)
-
 ---
 
 ## Why

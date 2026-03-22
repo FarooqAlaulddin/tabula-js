@@ -2,8 +2,6 @@
 
 React bindings for [Tabula](https://github.com/user/tabula-js) — coordinate browser tabs as views of a single workspace.
 
-[![npm version](https://img.shields.io/npm/v/tabula-react)](https://www.npmjs.com/package/tabula-react)
-
 ## Install
 
 ```bash
