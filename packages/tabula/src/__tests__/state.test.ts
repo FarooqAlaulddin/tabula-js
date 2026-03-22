@@ -1,11 +1,11 @@
 import { State } from '@tabula/tabula'
-import type { Message, StateEntry } from '@tabula/tabula'
+import type { StateEntry } from '@tabula/tabula'
 import { describe, expect, it, vi } from 'vitest'
 import { createStubChannel, makeMessage } from './helpers'
 
 function createState(tabId = 'tab-1') {
 	const channel = createStubChannel(tabId)
-	const state = new State(channel as any, tabId)
+	const state = new State<Record<string, unknown>>(channel as any, tabId)
 	return { state, channel }
 }
 

@@ -17,7 +17,7 @@ describe('Leader', () => {
 
 	it('oldest tab (smallest firstSeenAt) wins', () => {
 		const oldTab = makeTab({ id: 'tab-old', firstSeenAt: 1000, visible: true })
-		const newTab = makeTab({ id: 'tab-new', firstSeenAt: 2000, visible: true })
+		makeTab({ id: 'tab-new', firstSeenAt: 2000, visible: true })
 		const presence = createStubPresence('tab-new', [oldTab])
 		// Override self's firstSeenAt to be newer
 		;(presence.getSelf() as any).firstSeenAt = 2000
@@ -32,7 +32,7 @@ describe('Leader', () => {
 
 	it('tiebreaker: lexicographic tabId when timestamps equal', () => {
 		const tabA = makeTab({ id: 'aaa', firstSeenAt: 1000, visible: true })
-		const tabB = makeTab({ id: 'zzz', firstSeenAt: 1000, visible: true })
+		makeTab({ id: 'zzz', firstSeenAt: 1000, visible: true })
 		const presence = createStubPresence('zzz', [tabA])
 		;(presence.getSelf() as any).firstSeenAt = 1000
 		;(presence.getSelf() as any).id = 'zzz'
@@ -46,7 +46,7 @@ describe('Leader', () => {
 
 	it('oldest tab wins regardless of visibility', () => {
 		const hiddenOld = makeTab({ id: 'tab-hidden', firstSeenAt: 1000, visible: false })
-		const visibleNew = makeTab({ id: 'tab-visible', firstSeenAt: 2000, visible: true })
+		makeTab({ id: 'tab-visible', firstSeenAt: 2000, visible: true })
 		const presence = createStubPresence('tab-visible', [hiddenOld])
 		;(presence.getSelf() as any).firstSeenAt = 2000
 
@@ -60,7 +60,7 @@ describe('Leader', () => {
 
 	it('all hidden: oldest hidden wins', () => {
 		const hiddenOld = makeTab({ id: 'tab-a', firstSeenAt: 1000, visible: false })
-		const hiddenNew = makeTab({ id: 'tab-b', firstSeenAt: 2000, visible: false })
+		makeTab({ id: 'tab-b', firstSeenAt: 2000, visible: false })
 		const presence = createStubPresence('tab-b', [hiddenOld])
 		;(presence.getSelf() as any).firstSeenAt = 2000
 		;(presence.getSelf() as any).visible = false
@@ -74,7 +74,7 @@ describe('Leader', () => {
 
 	it('all visible: oldest visible wins', () => {
 		const visibleOld = makeTab({ id: 'tab-a', firstSeenAt: 1000, visible: true })
-		const visibleNew = makeTab({ id: 'tab-b', firstSeenAt: 2000, visible: true })
+		makeTab({ id: 'tab-b', firstSeenAt: 2000, visible: true })
 		const presence = createStubPresence('tab-b', [visibleOld])
 		;(presence.getSelf() as any).firstSeenAt = 2000
 

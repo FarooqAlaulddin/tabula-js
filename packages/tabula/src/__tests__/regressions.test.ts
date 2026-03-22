@@ -2,7 +2,6 @@ import { Channel, State, Views, createWorkspace } from '@tabula/tabula'
 import type { Message, StateEntry } from '@tabula/tabula'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-	type MockBroadcastChannel,
 	createStubChannel,
 	createStubPresence,
 	createStubRegistry,
@@ -22,7 +21,7 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 
 		const tabId = 'writer-tab'
 		const writerChannel = createStubChannel(tabId)
-		const writer = new State(writerChannel as any, tabId)
+		const writer = new State<Record<string, unknown>>(writerChannel as any, tabId)
 
 		// Perform three rapid writes to the same key — all get the same Date.now()
 		writer.set('counter', 1)
@@ -31,8 +30,8 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 
 		// Extract the entries that were broadcast
 		const sentEntries: Array<{ key: string; entry: StateEntry }> = writerChannel.send.mock.calls
-			.filter(([type]: [string]) => type === 'state:set')
-			.map(([, payload]: [string, { key: string; entry: StateEntry }]) => payload)
+			.filter((call: unknown[]) => call[0] === 'state:set')
+			.map((call: unknown[]) => call[1] as { key: string; entry: StateEntry })
 
 		expect(sentEntries).toHaveLength(3)
 		// All share the same timestamp and tabId, but versions must be 1, 2, 3
@@ -46,7 +45,7 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 		// Now simulate a SECOND tab receiving these messages in order
 		const receiverId = 'receiver-tab'
 		const receiverChannel = createStubChannel(receiverId)
-		const receiver = new State(receiverChannel as any, receiverId)
+		const receiver = new State<Record<string, unknown>>(receiverChannel as any, receiverId)
 
 		for (const { key, entry } of sentEntries) {
 			receiver.handleMessage(
@@ -75,7 +74,7 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 		vi.spyOn(Date, 'now').mockReturnValue(fixedTime)
 
 		const receiverChannel = createStubChannel('receiver')
-		const receiver = new State(receiverChannel as any, 'receiver')
+		const receiver = new State<Record<string, unknown>>(receiverChannel as any, 'receiver')
 
 		const sameTabId = 'writer-tab'
 
@@ -253,7 +252,9 @@ describe('Bug 3: syncState always broadcasts state:sync-request even when alone'
 		expect(bc).toBeDefined()
 
 		// Collect all messages posted to the BroadcastChannel
-		const postedMessages: Message[] = bc?.postMessage.mock.calls.map(([msg]: [Message]) => msg)
+		const postedMessages: Message[] = (bc as NonNullable<typeof bc>).postMessage.mock.calls.map(
+			(call: unknown[]) => call[0] as Message,
+		)
 
 		// There MUST be a state:sync-request among the posted messages
 		const syncRequests = postedMessages.filter((m) => m.type === 'state:sync-request')

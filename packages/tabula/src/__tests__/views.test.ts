@@ -107,7 +107,7 @@ describe('Views', () => {
 		})
 
 		it('claiming view held by dead tab succeeds', () => {
-			const { views, registry, presence, onClaimed } = setup()
+			const { views, registry, onClaimed } = setup()
 
 			// Pre-populate registry with a tab that is NOT in presence (dead)
 			registry._store.set('editor', {
@@ -377,7 +377,7 @@ describe('Views', () => {
 		})
 
 		it('after visibility change to visible, reconcile runs', () => {
-			const { views, registry } = setup()
+			const { views } = setup()
 
 			views.start()
 

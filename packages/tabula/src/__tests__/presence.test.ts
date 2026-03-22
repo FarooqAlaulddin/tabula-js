@@ -1,5 +1,5 @@
 import { Presence } from '@tabula/tabula'
-import type { Message } from '@tabula/tabula'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createStubChannel, installMockDocument, installMockStorage, makeMessage } from './helpers'
 
@@ -104,7 +104,8 @@ describe('Presence', () => {
 			expect(onJoin).toHaveBeenCalledTimes(1)
 
 			const firstTab = presence.getTab('tab-remote')
-			const firstLastSeen = firstTab.lastSeenAt
+			expect(firstTab).toBeDefined()
+			const firstLastSeen = firstTab?.lastSeenAt
 
 			// Advance time so lastSeenAt differs
 			vi.advanceTimersByTime(100)
@@ -122,7 +123,7 @@ describe('Presence', () => {
 
 			// lastSeenAt should be updated
 			const updatedTab = presence.getTab('tab-remote')
-			expect(updatedTab.lastSeenAt).toBeGreaterThanOrEqual(firstLastSeen)
+			expect(updatedTab?.lastSeenAt).toBeGreaterThanOrEqual(firstLastSeen as number)
 		})
 
 		it('preserves firstSeenAt from first observation', () => {
@@ -174,7 +175,7 @@ describe('Presence', () => {
 			})
 			presence.handleMessage(heartbeat)
 
-			expect(presence.getTab('tab-remote')?.lastSeenAt).toBeGreaterThan(initialLastSeen)
+			expect(presence.getTab('tab-remote')?.lastSeenAt).toBeGreaterThan(initialLastSeen as number)
 		})
 
 		it('unknown tab heartbeat is ignored (prune uses localStorage instead)', () => {
