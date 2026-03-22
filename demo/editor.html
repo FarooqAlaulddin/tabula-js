@@ -21,7 +21,7 @@
 	<div class="overlay-card">
 		<h2>Logged Out</h2>
 		<p>Another tab triggered a logout across all sessions.</p>
-		<button class="btn btn-accent" onclick="location.reload()">Log Back In</button>
+		<button class="btn btn-accent" id="btn-login">Log Back In</button>
 	</div>
 </div>
 
@@ -52,8 +52,14 @@ app.state.on('theme', val => {
 app.state.on('auth', val => {
 	if (val === 'logged-out') {
 		document.getElementById('overlay-auth').classList.add('active')
+	} else {
+		document.getElementById('overlay-auth').classList.remove('active')
 	}
 })
+
+document.getElementById('btn-login').onclick = () => {
+	app.state.set('auth', 'logged-in')
+}
 
 // Editor content: debounced local → state
 let debounceTimer
