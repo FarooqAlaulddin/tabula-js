@@ -1026,15 +1026,14 @@ class Coordinator<S extends object> {
 
 	private async syncState(): Promise<void> {
 		// Always request sync — other tabs may exist even if not yet discovered via presence.
-		// The request goes via BroadcastChannel; any existing tab will respond.
+		// BroadcastChannel delivery is sub-millisecond, so a short timeout suffices.
+		// If another tab exists, it responds almost instantly and done() fires.
+		// If no tab exists, we wait the timeout and move on.
 		return new Promise<void>((resolve) => {
-			// Listen for sync responses — resolve on first response or timeout
 			const unsub = this.channel.onMessage((msg) => {
-				if (msg.type === 'state:sync') {
-					done()
-				}
+				if (msg.type === 'state:sync') done()
 			})
-			const timeout = setTimeout(done, 500)
+			const timeout = setTimeout(done, 150)
 			this.state.requestSync()
 
 			function done() {

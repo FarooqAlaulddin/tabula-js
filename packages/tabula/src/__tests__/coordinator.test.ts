@@ -44,7 +44,7 @@ describe('Coordinator (via createWorkspace)', () => {
 	): Promise<Workspace<S>> {
 		const ws = createWorkspace<S>(namespace)
 		// init() has: waitForTabs(100ms timeout) + syncState(500ms timeout)
-		await vi.advanceTimersByTimeAsync(700)
+		await vi.advanceTimersByTimeAsync(350)
 		return ws
 	}
 
@@ -365,7 +365,7 @@ describe('Coordinator (via createWorkspace)', () => {
 			// finished and set is enqueued.
 
 			// Now advance timers to complete init
-			await vi.advanceTimersByTimeAsync(700)
+			await vi.advanceTimersByTimeAsync(350)
 
 			// After init, the queued set should have run
 			expect(ws.state.get('theme')).toBe('dark')
@@ -379,7 +379,7 @@ describe('Coordinator (via createWorkspace)', () => {
 			ws.claim('editor')
 
 			// Advance timers to complete init
-			await vi.advanceTimersByTimeAsync(700)
+			await vi.advanceTimersByTimeAsync(350)
 
 			expect(ws.views.has('editor')).toBe(true)
 			ws.destroy()
