@@ -105,6 +105,31 @@ const app = createWorkspace(NS, { heartbeat: 1000, timeout: 4000 })
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+// ── Persistence (app-level, not library-level) ──────────────────────────
+// Tabula keeps state in memory only. The app persists to localStorage
+// so state survives when all tabs close.
+const PERSIST_KEY = 'tabula-demo:state'
+
+function saveState() {
+	const snapshot = {}
+	for (const key of ['counter', 'theme', 'editorContent', 'auth']) {
+		const val = app.state.get(key)
+		if (val !== undefined) snapshot[key] = val
+	}
+	try { localStorage.setItem(PERSIST_KEY, JSON.stringify(snapshot)) } catch {}
+}
+
+function loadPersistedState() {
+	try {
+		const raw = localStorage.getItem(PERSIST_KEY)
+		if (!raw) return null
+		return JSON.parse(raw)
+	} catch { return null }
+}
+
+// Save on every state change
+app.state.on('*', saveState)
+
 function shortId(id) {
 	return id.slice(0, 8)
 }
@@ -357,14 +382,21 @@ setInterval(renderTabs, 1000)
 
 // ── Init ────────────────────────────────────────────────────────────────
 
-// Wait for workspace to be fully initialized (presence + state sync + leader election)
-// then set defaults only for keys that are still undefined (no synced value).
+// Wait for workspace init, then apply state from: sync > persisted > defaults.
 app.ready.then(() => {
-	if (app.state.get('counter') === undefined) app.state.set('counter', 0)
-	if (app.state.get('theme') === undefined) app.state.set('theme', 'light')
-	if (app.state.get('editorContent') === undefined) app.state.set('editorContent', '')
-	if (app.state.get('notificationCount') === undefined) app.state.set('notificationCount', 0)
-	if (app.state.get('auth') === undefined) app.state.set('auth', 'logged-in')
+	const persisted = loadPersistedState() || {}
+
+	// For each key: if sync provided it, keep it. Otherwise try persisted. Otherwise default.
+	if (app.state.get('counter') === undefined)
+		app.state.set('counter', persisted.counter ?? 0)
+	if (app.state.get('theme') === undefined)
+		app.state.set('theme', persisted.theme ?? 'light')
+	if (app.state.get('editorContent') === undefined)
+		app.state.set('editorContent', persisted.editorContent ?? '')
+	if (app.state.get('notificationCount') === undefined)
+		app.state.set('notificationCount', persisted.notificationCount ?? 0)
+	if (app.state.get('auth') === undefined)
+		app.state.set('auth', persisted.auth ?? 'logged-in')
 
 	applyTheme()
 	renderCounter()
