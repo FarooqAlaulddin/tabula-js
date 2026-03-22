@@ -103,15 +103,15 @@ describe('Integration: multi-tab scenarios', () => {
 	}> {
 		// Tab A: first tab
 		const tabA = createWorkspace<TestState>(namespace)
-		// Advance to let tabA's init complete
-		await vi.advanceTimersByTimeAsync(500)
+		// Advance to let tabA's init complete (waitForTabs 100ms + syncState 500ms)
+		await vi.advanceTimersByTimeAsync(700)
 
 		// Tab B: clear sessionStorage tab-id to get a new UUID for the second tab
 		sessionStorage.removeItem('tabula:tab-id')
 
 		const tabB = createWorkspace<TestState>(namespace)
 		// Advance to let tabB's init complete (includes announce exchange)
-		await vi.advanceTimersByTimeAsync(500)
+		await vi.advanceTimersByTimeAsync(700)
 
 		return { tabA, tabB }
 	}
@@ -160,7 +160,7 @@ describe('Integration: multi-tab scenarios', () => {
 		it('tab:join event fires when second tab connects', async () => {
 			// Create tab A first
 			const tabA = createWorkspace<TestState>('shared-ns')
-			await vi.advanceTimersByTimeAsync(500)
+			await vi.advanceTimersByTimeAsync(700)
 
 			const joinCb = vi.fn()
 			tabA.on('tab:join', joinCb)
@@ -168,7 +168,7 @@ describe('Integration: multi-tab scenarios', () => {
 			// Create tab B
 			sessionStorage.removeItem('tabula:tab-id')
 			const tabB = createWorkspace<TestState>('shared-ns')
-			await vi.advanceTimersByTimeAsync(500)
+			await vi.advanceTimersByTimeAsync(700)
 
 			expect(joinCb).toHaveBeenCalled()
 			const joinedTab = joinCb.mock.calls[0][0]

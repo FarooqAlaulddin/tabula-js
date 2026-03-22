@@ -861,7 +861,6 @@ class Coordinator<S extends object> {
 	private options: Required<WorkspaceOptions>
 	private ready = false
 	private queue: QueuedCall[] = []
-	private destroyed = false
 	private readyResolve!: () => void
 	readonly readyPromise: Promise<void>
 
@@ -955,13 +954,11 @@ class Coordinator<S extends object> {
 		this.presence.start()
 
 		// Step 6: wait for announce responses
+		// If we know tabs from the view registry, wait for them specifically.
+		// Otherwise, wait briefly for any announce (resolves on first join or timeout).
 		const knownFromRegistry = Object.values(this.registry.list())
 		const expectedTabs = new Set(knownFromRegistry.map((e) => e.tabId))
-		if (expectedTabs.size > 0) {
-			await this.waitForTabs(expectedTabs, 150)
-		} else {
-			await sleep(100) // wait for announce responses from unknown tabs
-		}
+		await this.waitForTabs(expectedTabs, expectedTabs.size > 0 ? 150 : 100)
 
 		// Step 7: leader calculation
 		this.leader.recalculate()
@@ -979,14 +976,6 @@ class Coordinator<S extends object> {
 		this.flushQueue()
 		this.readyResolve()
 
-		// startup timeout warning
-		setTimeout(() => {
-			if (this.destroyed) return
-			if (this.presence.getAllTabs().length === 1) {
-				// single tab — this is fine, no warning needed
-			}
-		}, 10000)
-
 		// graceful shutdown
 		this.pagehideHandler = () => {
 			this.presence.broadcastLeave()
@@ -1001,43 +990,59 @@ class Coordinator<S extends object> {
 
 	private waitForTabs(expected: Set<string>, maxMs: number): Promise<void> {
 		return new Promise((resolve) => {
-			const check = () => {
-				for (const tabId of expected) {
-					if (!this.presence.isAlive(tabId)) return false
+			if (expected.size > 0) {
+				// Wait for specific known tabs or timeout
+				const check = () => {
+					for (const tabId of expected) {
+						if (!this.presence.isAlive(tabId)) return false
+					}
+					return true
 				}
-				return true
-			}
-			if (check()) {
-				resolve()
-				return
-			}
-			const timeout = setTimeout(resolve, maxMs)
-			const interval = setInterval(() => {
 				if (check()) {
+					resolve()
+					return
+				}
+				const timeout = setTimeout(done, maxMs)
+				const unsub = this.on('tab:join', () => {
+					if (check()) done()
+				})
+				function done() {
 					clearTimeout(timeout)
-					clearInterval(interval)
+					unsub()
 					resolve()
 				}
-			}, 10)
-			setTimeout(() => {
-				clearInterval(interval)
-			}, maxMs)
+			} else {
+				// No known tabs — wait briefly for any announce, resolve on first join or timeout
+				const timeout = setTimeout(done, maxMs)
+				const unsub = this.on('tab:join', () => done())
+				function done() {
+					clearTimeout(timeout)
+					unsub()
+					resolve()
+				}
+			}
 		})
 	}
 
 	private async syncState(): Promise<void> {
 		// Always request sync — other tabs may exist even if not yet discovered via presence.
 		// The request goes via BroadcastChannel; any existing tab will respond.
-		this.state.requestSync()
+		return new Promise<void>((resolve) => {
+			// Listen for sync responses — resolve on first response or timeout
+			const unsub = this.channel.onMessage((msg) => {
+				if (msg.type === 'state:sync') {
+					done()
+				}
+			})
+			const timeout = setTimeout(done, 500)
+			this.state.requestSync()
 
-		// Wait for sync responses. BroadcastChannel delivery is near-instant,
-		// but we need the message to be processed by the handler. A short wait suffices.
-		await sleep(50)
-
-		// If we know other tabs exist, wait a bit longer for slow responders.
-		if (this.presence.getAllTabs().length > 1) {
-			await sleep(100)
-		}
+			function done() {
+				clearTimeout(timeout)
+				unsub()
+				resolve()
+			}
+		})
 	}
 
 	// ── Event system ──
@@ -1137,7 +1142,6 @@ class Coordinator<S extends object> {
 	}
 
 	destroy(): void {
-		this.destroyed = true
 		// run leader cleanups
 		for (const entry of this.leaderSetups) {
 			if (entry.cleanup) entry.cleanup()
@@ -1167,10 +1171,6 @@ class Coordinator<S extends object> {
 }
 
 // ── Layer 4: Public API ───────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 export function createWorkspace<S extends object = Record<string, unknown>>(
 	namespace: string,

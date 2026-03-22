@@ -65,6 +65,11 @@ test.describe('Views', () => {
 
 		await claimView(pageA, 'editor')
 
+		// Wait for claim to be fully processed
+		await pageA.waitForFunction(() => (window as any).__tabula.tabs.current().view === 'editor', {
+			timeout: 3000,
+		})
+
 		// attempting to claim a second view should throw
 		const error = await pageA.evaluate(() => {
 			try {

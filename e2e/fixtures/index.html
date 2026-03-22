@@ -41,10 +41,10 @@ app.state.on('notificationCount', () => {
 	badge.dataset.count = String(count)
 })
 
-// signal ready after a short delay for init
-setTimeout(() => {
+// signal ready when workspace init is complete
+app.ready.then(() => {
 	document.getElementById('status').textContent = 'ready'
-}, 500)
+})
 </script>
 </body>
 </html>
