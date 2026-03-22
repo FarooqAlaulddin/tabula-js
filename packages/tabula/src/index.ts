@@ -1,0 +1,20 @@
+export { createWorkspace } from '@tabula/tabula'
+export type {
+	Message,
+	MessageType,
+	TabMeta,
+	StateEntry,
+	ViewRegistryEntry,
+	WorkspaceOptions,
+	ViewOpenOptions,
+	ViewHandle,
+	Workspace,
+	WorkspaceState,
+	WorkspaceViews,
+	WorkspaceTabs,
+	WorkspaceEventMap,
+	ViewClaimedEvent,
+	ViewVacantEvent,
+	ViewConflictEvent,
+	LeaderChangeEvent,
+} from '@tabula/tabula'

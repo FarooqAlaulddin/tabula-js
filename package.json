@@ -1,0 +1,20 @@
+{
+	"private": true,
+	"scripts": {
+		"build": "pnpm -r build",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"typecheck": "pnpm -r typecheck",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"clean": "pnpm -r clean"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.0",
+		"typescript": "^5.7.0",
+		"vitest": "^3.0.0"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
+	}
+}

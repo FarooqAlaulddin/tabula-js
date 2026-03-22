@@ -1,0 +1,51 @@
+{
+	"name": "tabula",
+	"version": "0.1.0",
+	"description": "Coordinate browser tabs as views of a single workspace",
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			}
+		},
+		"./testing": {
+			"import": {
+				"types": "./dist/testing.d.ts",
+				"default": "./dist/testing.js"
+			},
+			"require": {
+				"types": "./dist/testing.d.cts",
+				"default": "./dist/testing.cjs"
+			}
+		}
+	},
+	"files": ["dist"],
+	"scripts": {
+		"build": "tsup",
+		"typecheck": "tsc --noEmit",
+		"clean": "rm -rf dist"
+	},
+	"devDependencies": {
+		"tsup": "^8.0.0"
+	},
+	"keywords": [
+		"tabs",
+		"broadcast-channel",
+		"multi-tab",
+		"coordination",
+		"shared-state",
+		"leader-election",
+		"browser"
+	],
+	"license": "MIT",
+	"sideEffects": false
+}
