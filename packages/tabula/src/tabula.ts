@@ -143,13 +143,22 @@ export interface WorkspaceTabs {
 // ── Layer 1: Transport ────────────────────────────────────────────────────
 
 /** @internal */ export function getTabId(): string {
-	const existing = sessionStorage.getItem('tabula:tab-id')
-	if (existing) return existing
 	if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
 		throw new Error(
 			'Tabula requires crypto.randomUUID(). Supported in Chrome 92+, Firefox 95+, Safari 15.4+.',
 		)
 	}
+
+	// If this page was opened via window.open(), it inherits the opener's sessionStorage.
+	// We must generate a fresh ID to avoid sharing the same tabId (which breaks
+	// BroadcastChannel self-message filtering). Clear the inherited ID first.
+	if (window.opener) {
+		sessionStorage.removeItem('tabula:tab-id')
+	}
+
+	const existing = sessionStorage.getItem('tabula:tab-id')
+	if (existing) return existing
+
 	const id = crypto.randomUUID()
 	sessionStorage.setItem('tabula:tab-id', id)
 	return id
