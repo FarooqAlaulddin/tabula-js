@@ -3,6 +3,7 @@
 <head><title>Tabula E2E</title></head>
 <body>
 <div id="status">loading</div>
+<span id="notif-badge" data-count="0">0</span>
 <script type="module">
 import { createWorkspace } from 'tabula'
 
@@ -22,6 +23,23 @@ app.on('tab:leave', (tab) => window.__tabulaEvents.push({ type: 'tab:leave', tab
 app.on('leader:change', (e) => window.__tabulaEvents.push({ type: 'leader:change', ...e }))
 app.on('view:claimed', (e) => window.__tabulaEvents.push({ type: 'view:claimed', ...e }))
 app.on('view:vacant', (e) => window.__tabulaEvents.push({ type: 'view:vacant', ...e }))
+
+// onLeader: increment notification counter every 1s (mirrors demo behaviour)
+app.onLeader(() => {
+	let count = app.state.get('notificationCount') ?? 0
+	const iv = setInterval(() => {
+		count++
+		app.state.set('notificationCount', count)
+	}, 1000)
+	return () => clearInterval(iv)
+})
+
+app.state.on('notificationCount', () => {
+	const count = app.state.get('notificationCount') ?? 0
+	const badge = document.getElementById('notif-badge')
+	badge.textContent = String(count)
+	badge.dataset.count = String(count)
+})
 
 // signal ready after a short delay for init
 setTimeout(() => {

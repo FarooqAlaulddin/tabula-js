@@ -60,6 +60,7 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 	readonly views: WorkspaceViews
 	readonly tabs: WorkspaceTabs
 
+	readonly ready: Promise<void>
 	private tabId: string
 	private tabMeta: TabMeta
 	private stateMap = new Map<string, MockStateEntry>()
@@ -82,6 +83,7 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 		channel: MemoryChannel | null = null,
 		allTabs: Map<string, MockWorkspaceImpl<S>> | null = null,
 	) {
+		this.ready = Promise.resolve()
 		this.tabId = tabId
 		this.channel = channel
 		this.allTabs = allTabs

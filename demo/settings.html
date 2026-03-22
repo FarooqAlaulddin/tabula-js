@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Tabula Settings</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="companion">
+	<header class="companion-header">
+		<h1>Tabula <span>Settings</span></h1>
+		<span class="companion-status" id="status">Connecting...</span>
+	</header>
+	<div class="companion-body">
+		<div class="settings-group">
+			<h3>Theme</h3>
+			<div class="radio-group">
+				<label>
+					<input type="radio" name="theme" value="light" checked>
+					Light
+				</label>
+				<label>
+					<input type="radio" name="theme" value="dark">
+					Dark
+				</label>
+			</div>
+		</div>
+
+		<div class="settings-group">
+			<h3>Counter</h3>
+			<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+				Current value: <strong id="counter-display">0</strong>
+			</p>
+			<button class="btn btn-sm" id="btn-reset-counter">Reset to 0</button>
+		</div>
+
+		<div class="settings-group">
+			<h3>Notifications</h3>
+			<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+				Current count: <strong id="notif-display">0</strong>
+			</p>
+			<button class="btn btn-sm" id="btn-reset-notif">Reset Notifications</button>
+		</div>
+	</div>
+</div>
+
+<div class="overlay" id="overlay-auth">
+	<div class="overlay-card">
+		<h2>Logged Out</h2>
+		<p>Another tab triggered a logout across all sessions.</p>
+		<button class="btn btn-accent" onclick="location.reload()">Log Back In</button>
+	</div>
+</div>
+
+<script type="module">
+import { createWorkspace } from 'tabula'
+
+const params = new URLSearchParams(location.search)
+const ns = params.get('__tabula_ns') || 'tabula-demo'
+const viewName = params.get('__tabula_view') || 'settings'
+
+const app = createWorkspace(ns, { heartbeat: 1000, timeout: 4000 })
+const statusEl = document.getElementById('status')
+
+// Parse synced state from URL (reliable initial values from opener)
+let syncedData = {}
+const syncParam = params.get('__tabula_sync')
+if (syncParam) {
+	try { syncedData = JSON.parse(atob(syncParam)) } catch {}
+}
+
+// Apply URL-synced theme immediately (no flash)
+if (syncedData.theme) document.documentElement.dataset.theme = syncedData.theme
+
+// Claim the view
+setTimeout(() => {
+	try {
+		app.claim(viewName)
+		statusEl.textContent = `Claimed "${viewName}"`
+	} catch (e) {
+		statusEl.textContent = 'Claim failed: ' + e.message
+	}
+}, 300)
+
+// Theme sync — reactive, handles all future changes
+const themeRadios = document.querySelectorAll('input[name="theme"]')
+
+function applyTheme(val) {
+	const theme = val || 'light'
+	document.documentElement.dataset.theme = theme
+	for (const r of themeRadios) r.checked = r.value === theme
+}
+
+app.state.on('theme', applyTheme)
+
+for (const radio of themeRadios) {
+	radio.addEventListener('change', () => app.state.set('theme', radio.value))
+}
+
+// Auth sync
+app.state.on('auth', val => {
+	if (val === 'logged-out') {
+		document.getElementById('overlay-auth').classList.add('active')
+	}
+})
+
+// Counter display — reactive
+function applyCounter(val) {
+	document.getElementById('counter-display').textContent = String(val ?? 0)
+}
+app.state.on('counter', applyCounter)
+
+document.getElementById('btn-reset-counter').onclick = () => app.state.set('counter', 0)
+
+// Notification display — reactive
+function applyNotif(val) {
+	document.getElementById('notif-display').textContent = String(val ?? 0)
+}
+app.state.on('notificationCount', applyNotif)
+
+document.getElementById('btn-reset-notif').onclick = () => app.state.set('notificationCount', 0)
+
+// Init: apply synced/existing state once coordinator is ready.
+// URL sync data is trusted for immediate render. state.get() upgrades if available.
+setTimeout(() => {
+	applyTheme(app.state.get('theme') || syncedData.theme)
+	applyCounter(app.state.get('counter') ?? syncedData.counter)
+	applyNotif(app.state.get('notificationCount') ?? syncedData.notificationCount)
+}, 600)
+</script>
+</body>
+</html>

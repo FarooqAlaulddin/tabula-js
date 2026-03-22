@@ -30,6 +30,6 @@
 		}
 	},
 	"files": {
-		"ignore": ["dist", "node_modules", "*.d.ts", ".claude", "coverage", "e2e/fixtures"]
+		"ignore": ["dist", "node_modules", "*.d.ts", ".claude", "coverage", "e2e/fixtures", "demo"]
 	}
 }

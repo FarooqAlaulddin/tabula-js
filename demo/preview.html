@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Tabula Preview</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="companion">
+	<header class="companion-header">
+		<h1>Tabula <span>Preview</span></h1>
+		<span class="companion-status" id="status">Connecting...</span>
+	</header>
+	<div class="companion-body">
+		<div class="preview-content" id="preview">Waiting for editor content...</div>
+	</div>
+</div>
+
+<div class="overlay" id="overlay-auth">
+	<div class="overlay-card">
+		<h2>Logged Out</h2>
+		<p>Another tab triggered a logout across all sessions.</p>
+		<button class="btn btn-accent" onclick="location.reload()">Log Back In</button>
+	</div>
+</div>
+
+<script type="module">
+import { createWorkspace } from 'tabula'
+
+const params = new URLSearchParams(location.search)
+const ns = params.get('__tabula_ns') || 'tabula-demo'
+const viewName = params.get('__tabula_view') || 'preview'
+
+const app = createWorkspace(ns, { heartbeat: 1000, timeout: 4000 })
+const statusEl = document.getElementById('status')
+const previewEl = document.getElementById('preview')
+
+// Parse URL sync data
+let syncedData = {}
+const syncParam = params.get('__tabula_sync')
+if (syncParam) {
+	try { syncedData = JSON.parse(atob(syncParam)) } catch {}
+}
+
+// Apply immediately — no flash
+if (syncedData.theme) document.documentElement.dataset.theme = syncedData.theme
+if (syncedData.editorContent) previewEl.textContent = syncedData.editorContent
+
+// Claim the view
+setTimeout(() => {
+	try {
+		app.claim(viewName)
+		statusEl.textContent = `Claimed "${viewName}"`
+	} catch (e) {
+		statusEl.textContent = 'Claim failed: ' + e.message
+	}
+}, 300)
+
+// Theme sync — reactive
+app.state.on('theme', val => {
+	document.documentElement.dataset.theme = val || 'light'
+})
+
+// Auth sync
+app.state.on('auth', val => {
+	if (val === 'logged-out') {
+		document.getElementById('overlay-auth').classList.add('active')
+	}
+})
+
+// Editor content: live preview — reactive
+app.state.on('editorContent', val => {
+	previewEl.textContent = val || 'Waiting for editor content...'
+})
+
+// Init: apply state once ready, prefer state.get() over URL fallback
+setTimeout(() => {
+	const theme = app.state.get('theme') || syncedData.theme
+	if (theme) document.documentElement.dataset.theme = theme
+
+	const content = app.state.get('editorContent') || syncedData.editorContent
+	if (content) previewEl.textContent = content
+}, 600)
+</script>
+</body>
+</html>

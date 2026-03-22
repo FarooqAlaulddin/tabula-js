@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Tabula Demo</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="dashboard">
+	<!-- ── Header ─────────────────────────────────────────────────────── -->
+	<header class="header">
+		<div class="header-title">Tabula <span>Demo</span></div>
+		<span class="header-badge" id="notif-badge" data-count="0">0</span>
+		<button class="btn btn-sm" id="btn-theme">Theme</button>
+		<button class="btn btn-sm btn-danger" id="btn-disconnect">Disconnect</button>
+		<button class="btn btn-sm btn-danger" id="btn-logout">Logout All</button>
+	</header>
+
+	<!-- ── Left sidebar: Presence ─────────────────────────────────────── -->
+	<aside class="sidebar">
+		<h3>Connected Tabs</h3>
+		<ul class="tab-list" id="tab-list">
+			<li class="empty-state">Connecting...</li>
+		</ul>
+	</aside>
+
+	<!-- ── Center: Views + State ──────────────────────────────────────── -->
+	<main class="main">
+		<div>
+			<div class="section-label">Views</div>
+			<div class="view-grid">
+				<div class="view-card" id="card-editor" data-state="unclaimed">
+					<div class="view-card-header">
+						<span class="view-card-name">Editor</span>
+						<span class="view-card-status" id="status-editor">unclaimed</span>
+					</div>
+					<div class="view-card-owner" id="owner-editor">&mdash;</div>
+					<button class="btn btn-accent btn-sm" id="btn-open-editor">Open Editor</button>
+				</div>
+				<div class="view-card" id="card-preview" data-state="unclaimed">
+					<div class="view-card-header">
+						<span class="view-card-name">Preview</span>
+						<span class="view-card-status" id="status-preview">unclaimed</span>
+					</div>
+					<div class="view-card-owner" id="owner-preview">&mdash;</div>
+					<button class="btn btn-accent btn-sm" id="btn-open-preview">Open Preview</button>
+				</div>
+				<div class="view-card" id="card-settings" data-state="unclaimed">
+					<div class="view-card-header">
+						<span class="view-card-name">Settings</span>
+						<span class="view-card-status" id="status-settings">unclaimed</span>
+					</div>
+					<div class="view-card-owner" id="owner-settings">&mdash;</div>
+					<button class="btn btn-accent btn-sm" id="btn-open-settings">Open Settings</button>
+				</div>
+			</div>
+		</div>
+
+		<div>
+			<div class="section-label">Shared State</div>
+			<div class="state-panel">
+				<div class="counter-row">
+					<span style="font-size:12px;font-weight:600;color:var(--text-muted)">Counter</span>
+					<div class="counter-btns">
+						<button class="btn" id="btn-dec">&minus;</button>
+					</div>
+					<span class="counter-value" id="counter-val">0</span>
+					<div class="counter-btns">
+						<button class="btn" id="btn-inc">+</button>
+					</div>
+				</div>
+				<div class="editor-preview-label">Editor Content</div>
+				<div class="editor-preview" id="editor-preview">No content yet</div>
+			</div>
+		</div>
+	</main>
+
+	<!-- ── Right sidebar: Event log ───────────────────────────────────── -->
+	<aside class="sidebar sidebar-right">
+		<h3>Event Log</h3>
+		<ul class="event-log" id="event-log">
+			<li class="empty-state">Waiting for events...</li>
+		</ul>
+	</aside>
+</div>
+
+<!-- ── Overlays ──────────────────────────────────────────────────────── -->
+<div class="overlay" id="overlay-auth">
+	<div class="overlay-card">
+		<h2>Logged Out</h2>
+		<p>Another tab triggered a logout across all sessions.</p>
+		<button class="btn btn-accent" onclick="location.reload()">Log Back In</button>
+	</div>
+</div>
+
+<div class="overlay" id="overlay-disconnect">
+	<div class="overlay-card">
+		<h2>Disconnected</h2>
+		<p>This tab has left the workspace.</p>
+		<button class="btn btn-accent" onclick="location.reload()">Reconnect</button>
+	</div>
+</div>
+
+<!-- ── Toasts ────────────────────────────────────────────────────────── -->
+<div class="toast-container" id="toasts"></div>
+
+<script type="module">
+import { createWorkspace } from 'tabula'
+
+const NS = 'tabula-demo'
+const app = createWorkspace(NS, { heartbeat: 1000, timeout: 4000 })
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+function shortId(id) {
+	return id.slice(0, 8)
+}
+
+function ts() {
+	return new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function toast(msg, type = '') {
+	const el = document.createElement('div')
+	el.className = 'toast' + (type ? ` toast-${type}` : '')
+	el.textContent = msg
+	document.getElementById('toasts').appendChild(el)
+	setTimeout(() => el.remove(), 3500)
+}
+
+// ── Event log ───────────────────────────────────────────────────────────
+
+const logEl = document.getElementById('event-log')
+let logStarted = false
+
+function logEvent(badge, cls, text) {
+	if (!logStarted) {
+		logEl.innerHTML = ''
+		logStarted = true
+	}
+	const li = document.createElement('li')
+	li.className = 'event-entry'
+	li.innerHTML = `<span class="event-time">${ts()}</span><span class="event-badge ${cls}">${badge}</span><span class="event-text">${text}</span>`
+	logEl.prepend(li)
+	// keep max 100 entries
+	while (logEl.children.length > 100) logEl.lastChild.remove()
+}
+
+// ── Presence rendering ──────────────────────────────────────────────────
+
+const tabListEl = document.getElementById('tab-list')
+
+function renderTabs() {
+	const tabs = app.tabs.list()
+	const me = app.tabs.current()
+	const leader = app.tabs.leader()
+
+	if (tabs.length === 0) {
+		tabListEl.innerHTML = '<li class="empty-state">No tabs connected</li>'
+		return
+	}
+
+	tabListEl.innerHTML = tabs.map(tab => {
+		const isSelf = tab.id === me.id
+		const isLeader = leader && tab.id === leader.id
+		const viewHtml = tab.view ? `<span class="tab-view-pill">${tab.view}</span>` : ''
+		const crownHtml = isLeader ? '<span class="tab-crown" title="Leader">&#x1f451;</span>' : ''
+		const selfHtml = isSelf ? '<span class="tab-self-badge">You</span>' : ''
+
+		return `<li class="tab-item ${isSelf ? 'is-self' : ''}">
+			<span class="tab-dot ${tab.visible ? 'visible' : ''}"></span>
+			<span class="tab-id">${shortId(tab.id)}</span>
+			${crownHtml}${viewHtml}${selfHtml}
+		</li>`
+	}).join('')
+}
+
+// ── View card rendering ─────────────────────────────────────────────────
+
+const views = ['editor', 'preview', 'settings']
+
+function renderViews() {
+	for (const name of views) {
+		const card = document.getElementById(`card-${name}`)
+		const statusEl = document.getElementById(`status-${name}`)
+		const ownerEl = document.getElementById(`owner-${name}`)
+		const owner = app.views.get(name)
+
+		if (owner) {
+			const isSelf = owner.id === app.tabs.current().id
+			card.dataset.state = isSelf ? 'claimed-self' : 'claimed'
+			statusEl.textContent = isSelf ? 'you' : 'claimed'
+			statusEl.className = 'view-card-status active'
+			ownerEl.textContent = shortId(owner.id)
+		} else {
+			card.dataset.state = 'unclaimed'
+			statusEl.textContent = 'unclaimed'
+			statusEl.className = 'view-card-status'
+			ownerEl.textContent = '\u2014'
+		}
+	}
+}
+
+// ── State rendering ─────────────────────────────────────────────────────
+
+function renderCounter() {
+	const val = app.state.get('counter') ?? 0
+	document.getElementById('counter-val').textContent = String(val)
+}
+
+function renderEditorPreview() {
+	const content = app.state.get('editorContent')
+	const el = document.getElementById('editor-preview')
+	if (content) {
+		el.textContent = content
+		el.style.color = ''
+	} else {
+		el.textContent = 'No content yet'
+		el.style.color = ''
+	}
+}
+
+function applyTheme() {
+	const theme = app.state.get('theme') || 'light'
+	document.documentElement.dataset.theme = theme
+}
+
+// ── Events ──────────────────────────────────────────────────────────────
+
+app.on('tab:join', tab => {
+	logEvent('JOIN', 'join', `Tab ${shortId(tab.id)} joined`)
+	renderTabs()
+	renderViews()
+})
+
+app.on('tab:leave', tab => {
+	logEvent('LEAVE', 'leave', `Tab ${shortId(tab.id)} left`)
+	renderTabs()
+	renderViews()
+})
+
+app.on('leader:change', e => {
+	logEvent('LEADER', 'leader', `${shortId(e.tab.id)}${e.isMe ? ' (you)' : ''} is leader`)
+	renderTabs()
+})
+
+app.on('view:claimed', e => {
+	logEvent('CLAIM', 'claimed', `"${e.name}" claimed by ${shortId(e.tab.id)}`)
+	renderViews()
+	toast(`View "${e.name}" claimed`, 'green')
+})
+
+app.on('view:vacant', e => {
+	logEvent('VACANT', 'vacant', `"${e.name}" is now vacant`)
+	const card = document.getElementById(`card-${e.name}`)
+	if (card) {
+		card.dataset.state = 'vacant'
+		document.getElementById(`status-${e.name}`).textContent = 'vacant'
+		document.getElementById(`owner-${e.name}`).textContent = '\u2014'
+	}
+	toast(`View "${e.name}" is vacant`, 'yellow')
+})
+
+app.on('view:conflict', e => {
+	logEvent('CONFLICT', 'conflict', `"${e.name}" conflict!`)
+	const card = document.getElementById(`card-${e.name}`)
+	if (card) {
+		card.dataset.state = 'conflict'
+		setTimeout(() => renderViews(), 1500)
+	}
+	toast(`Conflict on "${e.name}"!`, 'red')
+})
+
+// State watchers
+app.state.on('counter', () => {
+	renderCounter()
+	logEvent('SET', 'state', `counter = ${app.state.get('counter')}`)
+})
+
+app.state.on('editorContent', () => {
+	renderEditorPreview()
+})
+
+app.state.on('theme', () => {
+	applyTheme()
+	logEvent('SET', 'state', `theme = ${app.state.get('theme')}`)
+})
+
+app.state.on('auth', val => {
+	if (val === 'logged-out') {
+		document.getElementById('overlay-auth').classList.add('active')
+	}
+})
+
+app.state.on('notificationCount', () => {
+	const count = app.state.get('notificationCount') ?? 0
+	const badge = document.getElementById('notif-badge')
+	badge.textContent = String(count)
+	badge.dataset.count = String(count)
+})
+
+// ── onLeader: mock notification counter ─────────────────────────────────
+
+app.onLeader(() => {
+	let count = app.state.get('notificationCount') ?? 0
+	const iv = setInterval(() => {
+		count++
+		app.state.set('notificationCount', count)
+	}, 3000)
+	return () => clearInterval(iv)
+})
+
+// ── Button handlers ─────────────────────────────────────────────────────
+
+document.getElementById('btn-inc').onclick = () => {
+	const cur = app.state.get('counter') ?? 0
+	app.state.set('counter', cur + 1)
+}
+
+document.getElementById('btn-dec').onclick = () => {
+	const cur = app.state.get('counter') ?? 0
+	app.state.set('counter', cur - 1)
+}
+
+document.getElementById('btn-theme').onclick = () => {
+	const cur = app.state.get('theme') || 'light'
+	app.state.set('theme', cur === 'light' ? 'dark' : 'light')
+}
+
+document.getElementById('btn-disconnect').onclick = () => {
+	app.destroy()
+	document.getElementById('overlay-disconnect').classList.add('active')
+}
+
+document.getElementById('btn-logout').onclick = () => {
+	app.state.set('auth', 'logged-out')
+}
+
+document.getElementById('btn-open-editor').onclick = () => {
+	app.open('editor', {
+		url: `editor.html?__tabula_ns=${NS}&__tabula_view=editor`,
+		syncKeys: ['theme', 'editorContent']
+	})
+}
+
+document.getElementById('btn-open-preview').onclick = () => {
+	app.open('preview', {
+		url: `preview.html?__tabula_ns=${NS}&__tabula_view=preview`,
+		syncKeys: ['theme', 'editorContent']
+	})
+}
+
+document.getElementById('btn-open-settings').onclick = () => {
+	app.open('settings', {
+		url: `settings.html?__tabula_ns=${NS}&__tabula_view=settings`,
+		syncKeys: ['theme', 'counter']
+	})
+}
+
+// ── Presence poll (1s) ──────────────────────────────────────────────────
+
+setInterval(renderTabs, 1000)
+
+// ── Init ────────────────────────────────────────────────────────────────
+
+// Wait for workspace to be fully initialized (presence + state sync + leader election)
+// then set defaults only for keys that are still undefined (no synced value).
+app.ready.then(() => {
+	if (app.state.get('counter') === undefined) app.state.set('counter', 0)
+	if (app.state.get('theme') === undefined) app.state.set('theme', 'light')
+	if (app.state.get('editorContent') === undefined) app.state.set('editorContent', '')
+	if (app.state.get('notificationCount') === undefined) app.state.set('notificationCount', 0)
+	if (app.state.get('auth') === undefined) app.state.set('auth', 'logged-in')
+
+	applyTheme()
+	renderCounter()
+	renderEditorPreview()
+	renderTabs()
+	renderViews()
+
+	const count = app.state.get('notificationCount') ?? 0
+	const badge = document.getElementById('notif-badge')
+	badge.textContent = String(count)
+	badge.dataset.count = String(count)
+})
+</script>
+</body>
+</html>

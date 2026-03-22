@@ -49,7 +49,7 @@ describe('Channel', () => {
 				const msg = channel.send('tab:announce', { visible: true })
 				expect(msg.type).toBe('tab:announce')
 				expect(msg.from).toBe('tab-1')
-				expect(msg.id).toMatch(/^tab-1:\d+$/)
+				expect(msg.id).toMatch(/^tab-1:[a-z0-9]+:\d+$/)
 				expect(msg.ts).toBeTypeOf('number')
 				expect(msg.payload).toEqual({ visible: true })
 			} finally {

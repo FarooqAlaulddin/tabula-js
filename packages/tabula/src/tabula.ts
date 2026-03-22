@@ -102,6 +102,8 @@ export interface Workspace<S extends object = Record<string, unknown>> {
 	readonly state: WorkspaceState<S>
 	readonly views: WorkspaceViews
 	readonly tabs: WorkspaceTabs
+	/** Resolves when the workspace has completed init (presence discovery, state sync, leader election). */
+	readonly ready: Promise<void>
 	claim(viewName: string): void
 	open(viewName: string, options: ViewOpenOptions<S>): Promise<ViewHandle>
 	focus(viewName: string): void
@@ -162,6 +164,7 @@ export interface WorkspaceTabs {
 }
 
 let msgCounter = 0
+const msgNonce = Math.random().toString(36).slice(2, 8)
 
 /** @internal — exported for testing only */
 export class Dedup {
@@ -214,7 +217,7 @@ type MsgHandler = (msg: Message) => void
 			from: this.tabId,
 			to,
 			payload,
-			id: `${this.tabId}:${++msgCounter}`,
+			id: `${this.tabId}:${msgNonce}:${++msgCounter}`,
 			ts: Date.now(),
 		}
 		if (!this.closed) this.bc.postMessage(msg)
@@ -617,8 +620,10 @@ interface AnnouncePayload {
 		const existing = this.entries.get(key)
 		if (!existing) return true
 		if (incoming.ts > existing.ts) return true
-		if (incoming.ts === existing.ts) return incoming.tabId > existing.tabId
-		return false
+		if (incoming.ts < existing.ts) return false
+		// same timestamp: use tabId tiebreak, then version for same-tab rapid writes
+		if (incoming.tabId !== existing.tabId) return incoming.tabId > existing.tabId
+		return incoming.version > existing.version
 	}
 
 	private notify(key: string, value: unknown): void {
@@ -751,11 +756,15 @@ interface AnnouncePayload {
 	handleMessage(msg: Message): void {
 		if (msg.type === 'view:claimed') {
 			const { name, tabId } = msg.payload as { name: string; tabId: string }
-			const tab = this.presence.getTab(tabId)
-			if (tab) {
-				this.inMemory.set(name, tab)
-				this.onClaimed(name, tab)
+			const tab = this.presence.getTab(tabId) ?? {
+				id: tabId,
+				view: name,
+				visible: true,
+				firstSeenAt: Date.now(),
+				lastSeenAt: Date.now(),
 			}
+			this.inMemory.set(name, tab)
+			this.onClaimed(name, tab)
 		} else if (msg.type === 'view:release') {
 			const { name } = msg.payload as { name: string }
 			this.inMemory.delete(name)
@@ -853,6 +862,8 @@ class Coordinator<S extends object> {
 	private ready = false
 	private queue: QueuedCall[] = []
 	private destroyed = false
+	private readyResolve!: () => void
+	readonly readyPromise: Promise<void>
 
 	// event system
 	private eventListeners = new Map<string, Set<(payload: unknown) => void>>()
@@ -867,6 +878,9 @@ class Coordinator<S extends object> {
 	private pagehideHandler: (() => void) | null = null
 
 	constructor(namespace: string, opts: WorkspaceOptions) {
+		this.readyPromise = new Promise<void>((resolve) => {
+			this.readyResolve = resolve
+		})
 		this.options = {
 			heartbeat: opts.heartbeat ?? 1500,
 			timeout: opts.timeout ?? 5000,
@@ -944,9 +958,9 @@ class Coordinator<S extends object> {
 		const knownFromRegistry = Object.values(this.registry.list())
 		const expectedTabs = new Set(knownFromRegistry.map((e) => e.tabId))
 		if (expectedTabs.size > 0) {
-			await this.waitForTabs(expectedTabs, 100)
+			await this.waitForTabs(expectedTabs, 150)
 		} else {
-			await sleep(50) // brief pause even with no known tabs
+			await sleep(100) // wait for announce responses from unknown tabs
 		}
 
 		// Step 7: leader calculation
@@ -963,6 +977,7 @@ class Coordinator<S extends object> {
 		// Step 10: ready
 		this.ready = true
 		this.flushQueue()
+		this.readyResolve()
 
 		// startup timeout warning
 		setTimeout(() => {
@@ -1011,30 +1026,18 @@ class Coordinator<S extends object> {
 	}
 
 	private async syncState(): Promise<void> {
-		if (this.presence.getAllTabs().length <= 1) return // nothing to sync from
-
+		// Always request sync — other tabs may exist even if not yet discovered via presence.
+		// The request goes via BroadcastChannel; any existing tab will respond.
 		this.state.requestSync()
 
-		// wait up to 5s for at least one response
-		await new Promise<void>((resolve) => {
-			let resolved = false
-			const timeout = setTimeout(() => {
-				if (!resolved) {
-					resolved = true
-					resolve()
-				}
-			}, 5000)
+		// Wait for sync responses. BroadcastChannel delivery is near-instant,
+		// but we need the message to be processed by the handler. A short wait suffices.
+		await sleep(50)
 
-			// listen for state:sync messages (already handled by state.handleMessage)
-			// we just need to wait a reasonable time for them to arrive
-			setTimeout(() => {
-				if (!resolved) {
-					resolved = true
-					clearTimeout(timeout)
-					resolve()
-				}
-			}, 200) // give 200ms for sync responses to arrive
-		})
+		// If we know other tabs exist, wait a bit longer for slow responders.
+		if (this.presence.getAllTabs().length > 1) {
+			await sleep(100)
+		}
 	}
 
 	// ── Event system ──
@@ -1220,6 +1223,7 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 		state: stateApi,
 		views: viewsApi,
 		tabs: tabsApi,
+		ready: coord.readyPromise,
 
 		claim(viewName: string) {
 			const currentView = coord.getPresence().getSelf().view

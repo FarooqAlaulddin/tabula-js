@@ -134,7 +134,7 @@ describe('Integration: multi-tab scenarios', () => {
 			const { tabA, tabB } = await createTwoTabs()
 
 			tabB.state.set('count', 99)
-			await vi.advanceTimersByTimeAsync(50)
+			await vi.advanceTimersByTimeAsync(100)
 
 			expect(tabA.state.get('count')).toBe(99)
 

@@ -170,7 +170,7 @@ describe('Views', () => {
 			expect(onClaimed).toHaveBeenCalledWith('editor', expect.objectContaining({ id: 'tab-2' }))
 		})
 
-		it('view:claimed from unknown tab is ignored', () => {
+		it('view:claimed from unknown tab still registers with synthetic metadata', () => {
 			const { views, onClaimed } = setup()
 
 			views.handleMessage(
@@ -181,8 +181,13 @@ describe('Views', () => {
 				}),
 			)
 
-			expect(views.get('editor')).toBeNull()
-			expect(onClaimed).not.toHaveBeenCalled()
+			expect(views.get('editor')).toEqual(
+				expect.objectContaining({ id: 'tab-unknown', view: 'editor' }),
+			)
+			expect(onClaimed).toHaveBeenCalledWith(
+				'editor',
+				expect.objectContaining({ id: 'tab-unknown' }),
+			)
 		})
 
 		it('view:release removes and fires onVacant', () => {
