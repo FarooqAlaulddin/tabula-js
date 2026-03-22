@@ -1,0 +1,17 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"jsx": "react-jsx",
+		"strict": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"paths": {
+			"tabula": ["../tabula/src/index.ts"],
+			"tabula-react": ["../tabula-react/src/index.ts"],
+			"@tabula/tabula": ["../tabula/src/tabula.ts"]
+		}
+	},
+	"include": ["src"]
+}

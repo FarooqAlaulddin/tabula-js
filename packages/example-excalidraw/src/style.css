@@ -1,0 +1,275 @@
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+body {
+	font-family: system-ui, -apple-system, sans-serif;
+	background: #f8f8f8;
+	color: #1a1a1a;
+}
+
+[data-theme='dark'] {
+	background: #1e1e1e;
+	color: #e0e0e0;
+}
+
+/* ── Dashboard layout ───────────────────────────────── */
+
+.dashboard {
+	display: grid;
+	grid-template-columns: 240px 1fr;
+	grid-template-rows: 48px 1fr;
+	height: 100vh;
+	overflow: hidden;
+}
+
+.header {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 0 16px;
+	background: #fff;
+	border-bottom: 1px solid #e5e5e5;
+}
+
+[data-theme='dark'] .header {
+	background: #2a2a2a;
+	border-color: #3a3a3a;
+}
+
+.logo {
+	font-size: 14px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+}
+
+.tag {
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: #e8f5e9;
+	color: #2e7d32;
+	font-weight: 500;
+}
+
+[data-theme='dark'] .tag {
+	background: #1b3a1e;
+	color: #66bb6a;
+}
+
+.header-actions {
+	margin-left: auto;
+	display: flex;
+	gap: 8px;
+}
+
+.sidebar {
+	padding: 16px;
+	background: #fff;
+	border-right: 1px solid #e5e5e5;
+	overflow-y: auto;
+}
+
+[data-theme='dark'] .sidebar {
+	background: #2a2a2a;
+	border-color: #3a3a3a;
+}
+
+.sidebar-section {
+	margin-bottom: 24px;
+}
+
+.sidebar-section h3 {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: #888;
+	margin-bottom: 8px;
+}
+
+.sidebar-text {
+	font-size: 12px;
+	line-height: 1.5;
+	color: #666;
+	margin-bottom: 8px;
+}
+
+[data-theme='dark'] .sidebar-text {
+	color: #999;
+}
+
+.tab-list {
+	list-style: none;
+}
+
+.tab-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 0;
+	font-size: 12px;
+}
+
+.tab-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #ccc;
+	flex-shrink: 0;
+}
+
+.tab-dot.visible {
+	background: #4caf50;
+}
+
+.tab-id {
+	font-family: 'SF Mono', 'Fira Code', monospace;
+	font-size: 11px;
+}
+
+.badge {
+	font-size: 10px;
+	padding: 1px 6px;
+	border-radius: 8px;
+	background: #e3f2fd;
+	color: #1565c0;
+	font-weight: 500;
+}
+
+[data-theme='dark'] .badge {
+	background: #1a2f45;
+	color: #64b5f6;
+}
+
+.badge-leader {
+	background: #fff3e0;
+	color: #e65100;
+}
+
+[data-theme='dark'] .badge-leader {
+	background: #3e2a10;
+	color: #ffb74d;
+}
+
+.canvas-area {
+	position: relative;
+	overflow: hidden;
+}
+
+.badge-view {
+	background: #e8f5e9;
+	color: #2e7d32;
+}
+
+[data-theme='dark'] .badge-view {
+	background: #1b3a1e;
+	color: #66bb6a;
+}
+
+.hooks-list {
+	list-style: none;
+	font-size: 12px;
+	line-height: 1.8;
+	color: #666;
+}
+
+[data-theme='dark'] .hooks-list {
+	color: #999;
+}
+
+.hooks-list code {
+	font-family: 'SF Mono', 'Fira Code', monospace;
+	font-size: 11px;
+	padding: 1px 4px;
+	border-radius: 3px;
+	background: #f0f0f0;
+}
+
+[data-theme='dark'] .hooks-list code {
+	background: #333;
+}
+
+/* ── Buttons ────────────────────────────────────────── */
+
+.btn {
+	padding: 5px 12px;
+	border: 1px solid #d0d0d0;
+	border-radius: 6px;
+	background: #fff;
+	color: inherit;
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+
+.btn:hover {
+	background: #f0f0f0;
+}
+
+[data-theme='dark'] .btn {
+	background: #3a3a3a;
+	border-color: #555;
+}
+
+[data-theme='dark'] .btn:hover {
+	background: #444;
+}
+
+.btn-primary {
+	background: #1a73e8;
+	color: #fff;
+	border-color: #1a73e8;
+}
+
+.btn-primary:hover {
+	background: #1565c0;
+}
+
+/* ── Full-screen canvas page ────────────────────────── */
+
+.canvas-fullscreen {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+}
+
+.canvas-topbar {
+	display: flex;
+	align-items: center;
+	padding: 0 16px;
+	height: 36px;
+	background: #fff;
+	border-bottom: 1px solid #e5e5e5;
+	flex-shrink: 0;
+}
+
+[data-theme='dark'] .canvas-topbar {
+	background: #2a2a2a;
+	border-color: #3a3a3a;
+}
+
+.canvas-topbar-text {
+	font-size: 12px;
+	color: #888;
+}
+
+.canvas-topbar-view {
+	margin-left: auto;
+	font-size: 12px;
+	color: #888;
+}
+
+.canvas-topbar-view strong {
+	color: #2e7d32;
+}
+
+.canvas-body {
+	flex: 1;
+	position: relative;
+	overflow: hidden;
+}
