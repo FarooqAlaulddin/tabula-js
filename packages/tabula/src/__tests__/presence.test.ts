@@ -166,7 +166,7 @@ describe('Presence', () => {
 			expect(presence.getTab('tab-remote')?.lastSeenAt).toBeGreaterThan(initialLastSeen)
 		})
 
-		it('unknown tab is silently ignored', () => {
+		it('unknown tab is resurrected (was pruned but still alive)', () => {
 			const presence = createPresence()
 
 			const heartbeat = makeMessage({
@@ -175,9 +175,10 @@ describe('Presence', () => {
 				id: 'hb-2',
 			})
 
-			// Should not throw or create an entry
+			// A heartbeat from an unknown tab means it was pruned but is still alive
 			presence.handleMessage(heartbeat)
-			expect(presence.getTab('tab-unknown')).toBeUndefined()
+			expect(presence.getTab('tab-unknown')).toBeDefined()
+			expect(onJoin).toHaveBeenCalledWith(expect.objectContaining({ id: 'tab-unknown' }))
 		})
 	})
 

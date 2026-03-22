@@ -405,7 +405,30 @@ interface AnnouncePayload {
 		this.channel.send('tab:announce', payload)
 	}
 
+	/** Re-add a tab that was pruned but is still sending messages. */
+	private resurrect(tabId: string): void {
+		const tab: TabMeta = {
+			id: tabId,
+			view: null,
+			visible: false, // assume hidden (that's why it was pruned)
+			firstSeenAt: Date.now(),
+			lastSeenAt: Date.now(),
+		}
+		this.tabMap.set(tabId, tab)
+		this.onJoin(tab)
+		// ask it to announce so we get its real metadata
+		this.announce()
+	}
+
 	handleMessage(msg: Message): void {
+		// Any message from an unknown tab (except tab:leave) means it's alive
+		// but was pruned due to browser throttling. Re-add it.
+		if (msg.type !== 'tab:leave' && msg.type !== 'tab:announce' && msg.type !== 'tab:heartbeat') {
+			if (!this.tabMap.has(msg.from)) {
+				this.resurrect(msg.from)
+			}
+		}
+
 		if (msg.type === 'tab:announce') {
 			const payload = msg.payload as AnnouncePayload
 			const existing = this.tabMap.get(msg.from)
@@ -424,6 +447,10 @@ interface AnnouncePayload {
 			const existing = this.tabMap.get(msg.from)
 			if (existing) {
 				existing.lastSeenAt = Date.now()
+			} else {
+				// Tab was pruned but is still alive (browser throttled its heartbeats).
+				// Re-add it — a dead tab can't send heartbeats.
+				this.resurrect(msg.from)
 			}
 		} else if (msg.type === 'tab:leave') {
 			const tab = this.tabMap.get(msg.from)
