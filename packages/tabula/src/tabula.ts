@@ -331,6 +331,7 @@ type MsgHandler = (msg: Message) => void
 interface AnnouncePayload {
 	visible: boolean
 	view: string | null
+	createdAt: number // tab's actual creation time, used for leader election
 }
 
 /** @internal */ export class Presence {
@@ -345,6 +346,7 @@ interface AnnouncePayload {
 	private onLeave: (tab: TabMeta) => void
 	private currentView: string | null = null
 	private visibilityHandler: (() => void) | null = null
+	private createdAt: number
 
 	constructor(
 		channel: Channel,
@@ -360,14 +362,15 @@ interface AnnouncePayload {
 		this.timeoutMs = timeoutMs
 		this.onJoin = onJoin
 		this.onLeave = onLeave
+		this.createdAt = Date.now()
 
 		// register self
 		this.tabMap.set(tabId, {
 			id: tabId,
 			view: null,
 			visible: typeof document !== 'undefined' ? document.visibilityState === 'visible' : true,
-			firstSeenAt: Date.now(),
-			lastSeenAt: Date.now(),
+			firstSeenAt: this.createdAt,
+			lastSeenAt: this.createdAt,
 		})
 	}
 
@@ -401,6 +404,7 @@ interface AnnouncePayload {
 		const payload: AnnouncePayload = {
 			visible: this.getSelf().visible,
 			view: this.currentView,
+			createdAt: this.createdAt,
 		}
 		this.channel.send('tab:announce', payload)
 	}
@@ -436,7 +440,8 @@ interface AnnouncePayload {
 				id: msg.from,
 				view: payload.view,
 				visible: payload.visible,
-				firstSeenAt: existing?.firstSeenAt ?? Date.now(), // locally observed
+				// Use the sender's actual creation time so all tabs agree on ordering
+				firstSeenAt: existing?.firstSeenAt ?? payload.createdAt ?? Date.now(),
 				lastSeenAt: Date.now(),
 			}
 			this.tabMap.set(msg.from, tab)
