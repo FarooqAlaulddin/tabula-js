@@ -1,10 +1,11 @@
 import { Presence } from '@tabula/tabula'
 import type { Message } from '@tabula/tabula'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createStubChannel, installMockDocument, makeMessage } from './helpers'
+import { createStubChannel, installMockDocument, installMockStorage, makeMessage } from './helpers'
 
 describe('Presence', () => {
 	let docMock: ReturnType<typeof installMockDocument>
+	let storageMock: ReturnType<typeof installMockStorage>
 	let stubChannel: ReturnType<typeof createStubChannel>
 	let onJoin: ReturnType<typeof vi.fn>
 	let onLeave: ReturnType<typeof vi.fn>
@@ -16,6 +17,7 @@ describe('Presence', () => {
 	beforeEach(() => {
 		vi.useFakeTimers()
 		docMock = installMockDocument('visible')
+		storageMock = installMockStorage()
 		stubChannel = createStubChannel(TAB_ID)
 		onJoin = vi.fn()
 		onLeave = vi.fn()
@@ -24,10 +26,11 @@ describe('Presence', () => {
 	afterEach(() => {
 		vi.useRealTimers()
 		docMock.restore()
+		storageMock.restore()
 	})
 
 	function createPresence(tabId = TAB_ID) {
-		return new Presence(stubChannel as any, tabId, HEARTBEAT_MS, TIMEOUT_MS, onJoin, onLeave)
+		return new Presence(stubChannel as any, tabId, HEARTBEAT_MS, TIMEOUT_MS, onJoin, onLeave, 'test-ns')
 	}
 
 	describe('construction', () => {
@@ -166,7 +169,7 @@ describe('Presence', () => {
 			expect(presence.getTab('tab-remote')?.lastSeenAt).toBeGreaterThan(initialLastSeen)
 		})
 
-		it('unknown tab is resurrected (was pruned but still alive)', () => {
+		it('unknown tab heartbeat is ignored (prune uses localStorage instead)', () => {
 			const presence = createPresence()
 
 			const heartbeat = makeMessage({
@@ -175,10 +178,9 @@ describe('Presence', () => {
 				id: 'hb-2',
 			})
 
-			// A heartbeat from an unknown tab means it was pruned but is still alive
+			// Heartbeats from unknown tabs are ignored — prune discovers alive tabs via localStorage
 			presence.handleMessage(heartbeat)
-			expect(presence.getTab('tab-unknown')).toBeDefined()
-			expect(onJoin).toHaveBeenCalledWith(expect.objectContaining({ id: 'tab-unknown' }))
+			expect(presence.getTab('tab-unknown')).toBeUndefined()
 		})
 	})
 
@@ -258,21 +260,21 @@ describe('Presence', () => {
 	})
 
 	describe('prune', () => {
-		it('removes dead tabs after timeout', () => {
+		it('removes dead tabs (no localStorage entry) after timeout', () => {
 			const presence = createPresence()
 			presence.start()
 
-			// Add a remote tab
+			// Add a remote tab via announce (but no localStorage entry from them)
 			const announce = makeMessage({
 				type: 'tab:announce',
 				from: 'tab-remote',
 				id: 'ann-prune',
-				payload: { visible: true, view: null },
+				payload: { visible: true, view: null, createdAt: Date.now() },
 			})
 			presence.handleMessage(announce)
 			expect(presence.getTab('tab-remote')).toBeDefined()
 
-			// Advance past timeout — prune fires at heartbeatMs intervals
+			// No localStorage entry → short timeout
 			vi.advanceTimersByTime(TIMEOUT_MS + HEARTBEAT_MS)
 
 			expect(presence.getTab('tab-remote')).toBeUndefined()
@@ -281,31 +283,33 @@ describe('Presence', () => {
 			presence.stop()
 		})
 
-		it('hidden tabs get extended grace period (survives browser throttling)', () => {
+		it('tabs with localStorage activity survive longer (3x timeout)', () => {
 			const presence = createPresence()
 			presence.start()
 
-			// Add a hidden remote tab
+			// Add a remote tab
 			const announce = makeMessage({
 				type: 'tab:announce',
-				from: 'tab-hidden',
-				id: 'ann-hidden',
-				payload: { visible: false, view: null },
+				from: 'tab-active',
+				id: 'ann-active',
+				payload: { visible: true, view: null, createdAt: Date.now() },
 			})
 			presence.handleMessage(announce)
 
-			// Advance past normal timeout — hidden tab should survive
+			// Simulate the remote tab writing its presence to localStorage
+			localStorage.setItem(
+				'tabula:test-ns:tab:tab-active',
+				JSON.stringify({ lastSeen: Date.now(), createdAt: Date.now(), visible: true }),
+			)
+
+			// Advance past normal timeout — should survive (localStorage is fresh)
 			vi.advanceTimersByTime(TIMEOUT_MS + HEARTBEAT_MS)
-			expect(presence.getTab('tab-hidden')).toBeDefined()
+			expect(presence.getTab('tab-active')).toBeDefined()
 
-			// Advance to 80s — still within 90s hidden grace
-			vi.advanceTimersByTime(75_000)
-			expect(presence.getTab('tab-hidden')).toBeDefined()
-
-			// Advance past 90s hidden grace
-			vi.advanceTimersByTime(15_000)
-			expect(presence.getTab('tab-hidden')).toBeUndefined()
-			expect(onLeave).toHaveBeenCalledWith(expect.objectContaining({ id: 'tab-hidden' }))
+			// Advance past 3x timeout — now should be pruned
+			vi.advanceTimersByTime(TIMEOUT_MS * 3)
+			expect(presence.getTab('tab-active')).toBeUndefined()
+			expect(onLeave).toHaveBeenCalledWith(expect.objectContaining({ id: 'tab-active' }))
 
 			presence.stop()
 		})

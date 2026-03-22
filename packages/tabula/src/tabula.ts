@@ -347,6 +347,7 @@ interface AnnouncePayload {
 	private currentView: string | null = null
 	private visibilityHandler: (() => void) | null = null
 	private createdAt: number
+	private presencePrefix: string
 
 	constructor(
 		channel: Channel,
@@ -355,6 +356,7 @@ interface AnnouncePayload {
 		timeoutMs: number,
 		onJoin: (tab: TabMeta) => void,
 		onLeave: (tab: TabMeta) => void,
+		namespace: string,
 	) {
 		this.channel = channel
 		this.tabId = tabId
@@ -363,36 +365,40 @@ interface AnnouncePayload {
 		this.onJoin = onJoin
 		this.onLeave = onLeave
 		this.createdAt = Date.now()
+		this.presencePrefix = `tabula:${namespace}:tab:`
 
 		// register self
-		this.tabMap.set(tabId, {
+		const self: TabMeta = {
 			id: tabId,
 			view: null,
 			visible: typeof document !== 'undefined' ? document.visibilityState === 'visible' : true,
 			firstSeenAt: this.createdAt,
 			lastSeenAt: this.createdAt,
-		})
+		}
+		this.tabMap.set(tabId, self)
+		this.writePresence()
 	}
 
 	start(): void {
 		// announce to others
 		this.announce()
 
-		// heartbeat
+		// heartbeat: update localStorage (not throttled) + send BC message
 		this.heartbeatTimer = setInterval(() => {
-			this.channel.send<null>('tab:heartbeat', null)
 			this.updateSelf()
+			this.writePresence()
+			this.channel.send<null>('tab:heartbeat', null)
 		}, this.heartbeatMs)
 
-		// prune dead tabs
+		// prune dead tabs by checking localStorage timestamps
 		this.pruneTimer = setInterval(() => this.prune(), this.heartbeatMs)
 
 		// visibility tracking
 		if (typeof document !== 'undefined') {
 			this.visibilityHandler = () => {
 				this.updateSelf()
+				this.writePresence()
 				if (document.visibilityState === 'visible') {
-					// wake-up: re-announce to update presence in other tabs
 					this.announce()
 				}
 			}
@@ -401,6 +407,7 @@ interface AnnouncePayload {
 	}
 
 	announce(): void {
+		this.writePresence()
 		const payload: AnnouncePayload = {
 			visible: this.getSelf().visible,
 			view: this.currentView,
@@ -409,30 +416,7 @@ interface AnnouncePayload {
 		this.channel.send('tab:announce', payload)
 	}
 
-	/** Re-add a tab that was pruned but is still sending messages. */
-	private resurrect(tabId: string): void {
-		const tab: TabMeta = {
-			id: tabId,
-			view: null,
-			visible: false, // assume hidden (that's why it was pruned)
-			firstSeenAt: Date.now(),
-			lastSeenAt: Date.now(),
-		}
-		this.tabMap.set(tabId, tab)
-		this.onJoin(tab)
-		// ask it to announce so we get its real metadata
-		this.announce()
-	}
-
 	handleMessage(msg: Message): void {
-		// Any message from an unknown tab (except tab:leave) means it's alive
-		// but was pruned due to browser throttling. Re-add it.
-		if (msg.type !== 'tab:leave' && msg.type !== 'tab:announce' && msg.type !== 'tab:heartbeat') {
-			if (!this.tabMap.has(msg.from)) {
-				this.resurrect(msg.from)
-			}
-		}
-
 		if (msg.type === 'tab:announce') {
 			const payload = msg.payload as AnnouncePayload
 			const existing = this.tabMap.get(msg.from)
@@ -440,36 +424,38 @@ interface AnnouncePayload {
 				id: msg.from,
 				view: payload.view,
 				visible: payload.visible,
-				// Use the sender's actual creation time so all tabs agree on ordering
 				firstSeenAt: existing?.firstSeenAt ?? payload.createdAt ?? Date.now(),
 				lastSeenAt: Date.now(),
 			}
 			this.tabMap.set(msg.from, tab)
 			if (!existing) this.onJoin(tab)
-			// respond with our own announce so they know about us
 			if (!existing) this.announce()
 		} else if (msg.type === 'tab:heartbeat') {
 			const existing = this.tabMap.get(msg.from)
 			if (existing) {
 				existing.lastSeenAt = Date.now()
-			} else {
-				// Tab was pruned but is still alive (browser throttled its heartbeats).
-				// Re-add it — a dead tab can't send heartbeats.
-				this.resurrect(msg.from)
 			}
+			// If unknown, prune() will discover them via localStorage if alive
 		} else if (msg.type === 'tab:leave') {
 			const tab = this.tabMap.get(msg.from)
 			if (tab) {
 				this.tabMap.delete(msg.from)
+				this.removePresenceEntry(msg.from)
 				this.onLeave(tab)
 			}
 		}
+	}
+
+	/** Touch presence — call on any activity (state changes, etc.) */
+	touch(): void {
+		this.writePresence()
 	}
 
 	setView(view: string | null): void {
 		this.currentView = view
 		const self = this.tabMap.get(this.tabId)
 		if (self) self.view = view
+		this.writePresence()
 	}
 
 	getSelf(): TabMeta {
@@ -490,6 +476,7 @@ interface AnnouncePayload {
 
 	broadcastLeave(): void {
 		this.channel.send<null>('tab:leave', null)
+		this.removePresenceEntry(this.tabId)
 	}
 
 	stop(): void {
@@ -511,17 +498,67 @@ interface AnnouncePayload {
 		}
 	}
 
+	/** Write this tab's presence to localStorage (not throttled by Chrome). */
+	private writePresence(): void {
+		try {
+			localStorage.setItem(
+				this.presencePrefix + this.tabId,
+				JSON.stringify({
+					lastSeen: Date.now(),
+					createdAt: this.createdAt,
+					visible: this.getSelf().visible,
+					view: this.currentView,
+				}),
+			)
+		} catch {
+			// ignore quota errors
+		}
+	}
+
+	private removePresenceEntry(tabId: string): void {
+		try {
+			localStorage.removeItem(this.presencePrefix + tabId)
+		} catch {
+			// ignore
+		}
+	}
+
 	private prune(): void {
 		const now = Date.now()
 		for (const [id, tab] of this.tabMap) {
 			if (id === this.tabId) continue
-			// Browsers aggressively throttle background tab timers (Chrome: up to 1/minute
-			// after 5 min). Hidden tabs need a much longer grace period to avoid false pruning.
-			// Visible: standard timeout. Hidden: 90s minimum (survives 1/minute throttling).
-			const hiddenGrace = Math.max(this.timeoutMs * 4, 90_000)
-			const effectiveTimeout = tab.visible ? this.timeoutMs : hiddenGrace
-			if (now - tab.lastSeenAt > effectiveTimeout) {
+
+			// Check localStorage for this tab's last activity (not throttled)
+			let lastActivity = tab.lastSeenAt
+			try {
+				const raw = localStorage.getItem(this.presencePrefix + id)
+				if (raw) {
+					const entry = JSON.parse(raw)
+					if (entry.lastSeen > lastActivity) {
+						lastActivity = entry.lastSeen
+						// Update in-memory from localStorage
+						tab.lastSeenAt = entry.lastSeen
+						if (entry.visible !== undefined) tab.visible = entry.visible
+						if (entry.view !== undefined) tab.view = entry.view
+					}
+				} else {
+					// No localStorage entry = tab cleaned up or crashed
+					// Use a short timeout
+					if (now - lastActivity > this.timeoutMs) {
+						this.tabMap.delete(id)
+						this.onLeave(tab)
+					}
+					continue
+				}
+			} catch {
+				// ignore parse errors
+			}
+
+			// Prune only if localStorage timestamp is also stale.
+			// Use generous timeout since localStorage writes can be delayed by heavy JS.
+			if (now - lastActivity > this.timeoutMs * 3) {
 				this.tabMap.delete(id)
+				this.removePresenceEntry(id)
 				this.onLeave(tab)
 			}
 		}
@@ -958,6 +995,7 @@ class Coordinator<S extends object> {
 				this.views.cleanupForTab(tab.id)
 				this.leader.recalculate()
 			},
+			namespace,
 		)
 
 		this.leader = new Leader(this.presence, (leaderId) => {
@@ -1230,7 +1268,10 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 
 	const stateApi: WorkspaceState<S> = {
 		set(key, value) {
-			coord.enqueue(() => coord.getState().set(key, value))
+			coord.enqueue(() => {
+				coord.getState().set(key, value)
+				coord.getPresence().touch()
+			})
 		},
 		get(key) {
 			return coord.getState().get(key)
