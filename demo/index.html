@@ -323,12 +323,18 @@ app.state.on('notificationCount', () => {
 // ── onLeader: mock notification counter ─────────────────────────────────
 
 app.onLeader(() => {
-	let count = app.state.get('notificationCount') ?? 0
-	// Use 1s interval so it's visible even when Chrome throttles timers
+	// Use elapsed time instead of counting interval ticks.
+	// Chrome throttles setInterval in background tabs, but Date.now() is accurate.
+	// When the timer finally fires (even after throttling), it catches up instantly.
+	const startCount = app.state.get('notificationCount') ?? 0
+	const startTime = Date.now()
+	const TICK_MS = 1000
+
 	const iv = setInterval(() => {
-		count++
-		app.state.set('notificationCount', count)
-	}, 1000)
+		const elapsed = Date.now() - startTime
+		const expected = startCount + Math.floor(elapsed / TICK_MS)
+		app.state.set('notificationCount', expected)
+	}, TICK_MS)
 	return () => clearInterval(iv)
 })
 
