@@ -542,13 +542,13 @@ interface AnnouncePayload {
 
 	recalculate(): void {
 		const tabs = this.presence.getAllTabs()
-		const visibleTabs = tabs.filter((t) => t.visible)
-		// prefer visible tabs; if none visible, use all
-		const candidates = visibleTabs.length > 0 ? visibleTabs : tabs
-		// sort by firstSeenAt (locally observed), then tabId lexicographic
-		candidates.sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.id.localeCompare(b.id))
-		const newLeader = candidates[0]
-		if (newLeader && newLeader.id !== this.currentLeaderId) {
+		if (tabs.length === 0) return
+		// Leader = oldest tab by createdAt, tiebreak by tabId.
+		// Visibility does NOT affect election — a hidden tab that's alive
+		// is still a valid leader. Only pruning removes dead tabs.
+		tabs.sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.id.localeCompare(b.id))
+		const newLeader = tabs[0]
+		if (newLeader.id !== this.currentLeaderId) {
 			this.currentLeaderId = newLeader.id
 			this.onChange(newLeader.id)
 		}

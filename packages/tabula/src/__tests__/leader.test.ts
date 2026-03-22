@@ -44,7 +44,7 @@ describe('Leader', () => {
 		expect(leader.getLeaderId()).toBe('aaa')
 	})
 
-	it('visible tab preferred over hidden even if hidden is older', () => {
+	it('oldest tab wins regardless of visibility', () => {
 		const hiddenOld = makeTab({ id: 'tab-hidden', firstSeenAt: 1000, visible: false })
 		const visibleNew = makeTab({ id: 'tab-visible', firstSeenAt: 2000, visible: true })
 		const presence = createStubPresence('tab-visible', [hiddenOld])
@@ -54,7 +54,8 @@ describe('Leader', () => {
 		const leader = new Leader(presence as any, onChange)
 		leader.recalculate()
 
-		expect(leader.getLeaderId()).toBe('tab-visible')
+		// Visibility does NOT affect election — oldest tab is leader
+		expect(leader.getLeaderId()).toBe('tab-hidden')
 	})
 
 	it('all hidden: oldest hidden wins', () => {
