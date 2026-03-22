@@ -13,8 +13,7 @@
 		<div class="header-title">Tabula <span>Demo</span></div>
 		<span class="header-badge" id="notif-badge" data-count="0">0</span>
 		<button class="btn btn-sm" id="btn-theme">Theme</button>
-		<button class="btn btn-sm btn-danger" id="btn-disconnect">Disconnect</button>
-		<button class="btn btn-sm btn-danger" id="btn-logout">Logout All</button>
+		<button class="btn btn-sm btn-danger" id="btn-logout">Logout All Tabs</button>
 	</header>
 
 	<!-- ── Left sidebar: Presence ─────────────────────────────────────── -->
@@ -89,18 +88,11 @@
 <div class="overlay" id="overlay-auth">
 	<div class="overlay-card">
 		<h2>Logged Out</h2>
-		<p>Another tab triggered a logout across all sessions.</p>
+		<p>A tab triggered logout — all tabs reacted instantly via shared state.</p>
 		<button class="btn btn-accent" id="btn-login">Log Back In</button>
 	</div>
 </div>
 
-<div class="overlay" id="overlay-disconnect">
-	<div class="overlay-card">
-		<h2>Disconnected</h2>
-		<p>This tab has left the workspace.</p>
-		<button class="btn btn-accent" onclick="location.reload()">Reconnect</button>
-	</div>
-</div>
 
 <!-- ── Toasts ────────────────────────────────────────────────────────── -->
 <div class="toast-container" id="toasts"></div>
@@ -328,11 +320,6 @@ document.getElementById('btn-dec').onclick = () => {
 document.getElementById('btn-theme').onclick = () => {
 	const cur = app.state.get('theme') || 'light'
 	app.state.set('theme', cur === 'light' ? 'dark' : 'light')
-}
-
-document.getElementById('btn-disconnect').onclick = () => {
-	app.destroy()
-	document.getElementById('overlay-disconnect').classList.add('active')
 }
 
 document.getElementById('btn-logout').onclick = () => {
