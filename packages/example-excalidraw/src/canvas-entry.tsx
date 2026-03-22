@@ -1,12 +1,7 @@
 import { createRoot } from 'react-dom/client'
-import {
-	TabulaProvider,
-	useSharedState,
-	useTabPresence,
-	useTabView,
-} from 'tabula-react'
-import { workspace } from './workspace'
+import { TabulaProvider, useSharedState, useTabPresence, useTabView } from 'tabula-react'
 import { SharedCanvas } from './SharedCanvas'
+import { workspace } from './workspace'
 import type { DrawingState } from './workspace'
 import './style.css'
 
@@ -40,6 +35,7 @@ function CanvasPage() {
 	)
 }
 
+// biome-ignore lint/style/noNonNullAssertion: root element always exists
 createRoot(document.getElementById('root')!).render(
 	<TabulaProvider workspace={workspace}>
 		<CanvasPage />

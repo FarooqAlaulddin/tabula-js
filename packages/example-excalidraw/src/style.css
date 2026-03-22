@@ -10,7 +10,7 @@ body {
 	color: #1a1a1a;
 }
 
-[data-theme='dark'] {
+[data-theme="dark"] {
 	background: #1e1e1e;
 	color: #e0e0e0;
 }
@@ -35,7 +35,7 @@ body {
 	border-bottom: 1px solid #e5e5e5;
 }
 
-[data-theme='dark'] .header {
+[data-theme="dark"] .header {
 	background: #2a2a2a;
 	border-color: #3a3a3a;
 }
@@ -55,7 +55,7 @@ body {
 	font-weight: 500;
 }
 
-[data-theme='dark'] .tag {
+[data-theme="dark"] .tag {
 	background: #1b3a1e;
 	color: #66bb6a;
 }
@@ -73,7 +73,7 @@ body {
 	overflow-y: auto;
 }
 
-[data-theme='dark'] .sidebar {
+[data-theme="dark"] .sidebar {
 	background: #2a2a2a;
 	border-color: #3a3a3a;
 }
@@ -98,7 +98,7 @@ body {
 	margin-bottom: 8px;
 }
 
-[data-theme='dark'] .sidebar-text {
+[data-theme="dark"] .sidebar-text {
 	color: #999;
 }
 
@@ -127,7 +127,7 @@ body {
 }
 
 .tab-id {
-	font-family: 'SF Mono', 'Fira Code', monospace;
+	font-family: "SF Mono", "Fira Code", monospace;
 	font-size: 11px;
 }
 
@@ -140,7 +140,7 @@ body {
 	font-weight: 500;
 }
 
-[data-theme='dark'] .badge {
+[data-theme="dark"] .badge {
 	background: #1a2f45;
 	color: #64b5f6;
 }
@@ -150,7 +150,7 @@ body {
 	color: #e65100;
 }
 
-[data-theme='dark'] .badge-leader {
+[data-theme="dark"] .badge-leader {
 	background: #3e2a10;
 	color: #ffb74d;
 }
@@ -165,7 +165,7 @@ body {
 	color: #2e7d32;
 }
 
-[data-theme='dark'] .badge-view {
+[data-theme="dark"] .badge-view {
 	background: #1b3a1e;
 	color: #66bb6a;
 }
@@ -177,19 +177,19 @@ body {
 	color: #666;
 }
 
-[data-theme='dark'] .hooks-list {
+[data-theme="dark"] .hooks-list {
 	color: #999;
 }
 
 .hooks-list code {
-	font-family: 'SF Mono', 'Fira Code', monospace;
+	font-family: "SF Mono", "Fira Code", monospace;
 	font-size: 11px;
 	padding: 1px 4px;
 	border-radius: 3px;
 	background: #f0f0f0;
 }
 
-[data-theme='dark'] .hooks-list code {
+[data-theme="dark"] .hooks-list code {
 	background: #333;
 }
 
@@ -211,12 +211,12 @@ body {
 	background: #f0f0f0;
 }
 
-[data-theme='dark'] .btn {
+[data-theme="dark"] .btn {
 	background: #3a3a3a;
 	border-color: #555;
 }
 
-[data-theme='dark'] .btn:hover {
+[data-theme="dark"] .btn:hover {
 	background: #444;
 }
 
@@ -248,7 +248,7 @@ body {
 	flex-shrink: 0;
 }
 
-[data-theme='dark'] .canvas-topbar {
+[data-theme="dark"] .canvas-topbar {
 	background: #2a2a2a;
 	border-color: #3a3a3a;
 }
