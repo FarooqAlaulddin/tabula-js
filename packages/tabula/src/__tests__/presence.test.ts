@@ -30,7 +30,15 @@ describe('Presence', () => {
 	})
 
 	function createPresence(tabId = TAB_ID) {
-		return new Presence(stubChannel as any, tabId, HEARTBEAT_MS, TIMEOUT_MS, onJoin, onLeave, 'test-ns')
+		return new Presence(
+			stubChannel as any,
+			tabId,
+			HEARTBEAT_MS,
+			TIMEOUT_MS,
+			onJoin,
+			onLeave,
+			'test-ns',
+		)
 	}
 
 	describe('construction', () => {

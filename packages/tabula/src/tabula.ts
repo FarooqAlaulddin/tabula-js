@@ -126,6 +126,9 @@ export interface WorkspaceState<S extends object> {
 	on<K extends keyof S & string>(key: K, cb: (value: S[K]) => void): () => void
 	on(key: '*', cb: (key: string, value: unknown) => void): () => void
 	delete<K extends keyof S & string>(key: K): void
+	keys(): Array<keyof S & string>
+	entries(): Array<[keyof S & string, S[keyof S & string]]>
+	setAll(entries: Partial<S>): void
 }
 
 export interface WorkspaceViews {
@@ -143,6 +146,14 @@ export interface WorkspaceTabs {
 // ── Layer 1: Transport ────────────────────────────────────────────────────
 
 /** @internal */ export function getTabId(): string {
+	// Tabula must run in a top-level browsing context — iframes share storage
+	// and BroadcastChannel in confusing ways that break coordination.
+	if (typeof window !== 'undefined' && window.self !== window.top) {
+		throw new Error(
+			'Tabula does not support running inside iframes. Use it in top-level browser tabs only.',
+		)
+	}
+
 	if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
 		throw new Error(
 			'Tabula requires crypto.randomUUID(). Supported in Chrome 92+, Firefox 95+, Safari 15.4+.',
@@ -152,8 +163,12 @@ export interface WorkspaceTabs {
 	// If this page was opened via window.open(), it inherits the opener's sessionStorage.
 	// We must generate a fresh ID to avoid sharing the same tabId (which breaks
 	// BroadcastChannel self-message filtering). Clear the inherited ID first.
-	if (window.opener) {
-		sessionStorage.removeItem('tabula:tab-id')
+	try {
+		if (window.opener && window.opener !== window) {
+			sessionStorage.removeItem('tabula:tab-id')
+		}
+	} catch {
+		// cross-origin opener — can't access, treat as no opener
 	}
 
 	const existing = sessionStorage.getItem('tabula:tab-id')
@@ -249,9 +264,23 @@ type MsgHandler = (msg: Message) => void
 	private prefix: string
 	private handler: ((e: StorageEvent) => void) | null = null
 	private listeners = new Set<(view: string, entry: ViewRegistryEntry | null) => void>()
+	private knownViews = new Set<string>()
+	private scannedOnce = false
 
 	constructor(namespace: string) {
 		this.prefix = `tabula:${namespace}:view:`
+	}
+
+	/** Scan localStorage once to seed the knownViews set */
+	private ensureScanned(): void {
+		if (this.scannedOnce) return
+		this.scannedOnce = true
+		for (let i = 0; i < localStorage.length; i++) {
+			const key = localStorage.key(i)
+			if (key?.startsWith(this.prefix)) {
+				this.knownViews.add(key.slice(this.prefix.length))
+			}
+		}
 	}
 
 	get(view: string): ViewRegistryEntry | null {
@@ -266,27 +295,35 @@ type MsgHandler = (msg: Message) => void
 
 	set(view: string, entry: ViewRegistryEntry): void {
 		localStorage.setItem(this.prefix + view, JSON.stringify(entry))
+		this.knownViews.add(view)
 	}
 
 	delete(view: string): void {
 		localStorage.removeItem(this.prefix + view)
+		this.knownViews.delete(view)
 	}
 
 	list(): Record<string, ViewRegistryEntry> {
+		this.ensureScanned()
 		const out: Record<string, ViewRegistryEntry> = {}
-		for (let i = 0; i < localStorage.length; i++) {
-			const key = localStorage.key(i)
-			if (!key?.startsWith(this.prefix)) continue
-			const entry = this.get(key.slice(this.prefix.length))
-			if (entry) out[key.slice(this.prefix.length)] = entry
+		for (const view of this.knownViews) {
+			const entry = this.get(view)
+			if (entry) {
+				out[view] = entry
+			} else {
+				// entry was removed externally — clean up the set
+				this.knownViews.delete(view)
+			}
 		}
 		return out
 	}
 
 	clearStale(epoch: string): string[] {
+		this.ensureScanned()
 		const cleared: string[] = []
-		for (const [view, entry] of Object.entries(this.list())) {
-			if (entry.epoch !== epoch) {
+		for (const view of this.knownViews) {
+			const entry = this.get(view)
+			if (!entry || entry.epoch !== epoch) {
 				this.delete(view)
 				cleared.push(view)
 			}
@@ -306,6 +343,9 @@ type MsgHandler = (msg: Message) => void
 				} catch {
 					/* ignore */
 				}
+				this.knownViews.add(view)
+			} else {
+				this.knownViews.delete(view)
 			}
 			for (const l of this.listeners) l(view, entry)
 		}
@@ -340,8 +380,7 @@ interface AnnouncePayload {
 	private channel: Channel
 	private heartbeatMs: number
 	private timeoutMs: number
-	private heartbeatTimer: ReturnType<typeof setInterval> | null = null
-	private pruneTimer: ReturnType<typeof setInterval> | null = null
+	private tickTimer: ReturnType<typeof setInterval> | null = null
 	private onJoin: (tab: TabMeta) => void
 	private onLeave: (tab: TabMeta) => void
 	private currentView: string | null = null
@@ -383,15 +422,13 @@ interface AnnouncePayload {
 		// announce to others
 		this.announce()
 
-		// heartbeat: update localStorage (not throttled) + send BC message
-		this.heartbeatTimer = setInterval(() => {
+		// Single timer: heartbeat (localStorage + BC) and prune dead tabs
+		this.tickTimer = setInterval(() => {
 			this.updateSelf()
 			this.writePresence()
 			this.channel.send<null>('tab:heartbeat', null)
+			this.prune()
 		}, this.heartbeatMs)
-
-		// prune dead tabs by checking localStorage timestamps
-		this.pruneTimer = setInterval(() => this.prune(), this.heartbeatMs)
 
 		// visibility tracking
 		if (typeof document !== 'undefined') {
@@ -446,11 +483,6 @@ interface AnnouncePayload {
 		}
 	}
 
-	/** Touch presence — call on any activity (state changes, etc.) */
-	touch(): void {
-		this.writePresence()
-	}
-
 	setView(view: string | null): void {
 		this.currentView = view
 		const self = this.tabMap.get(this.tabId)
@@ -480,13 +512,11 @@ interface AnnouncePayload {
 	}
 
 	stop(): void {
-		if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
-		if (this.pruneTimer) clearInterval(this.pruneTimer)
+		if (this.tickTimer) clearInterval(this.tickTimer)
 		if (this.visibilityHandler && typeof document !== 'undefined') {
 			document.removeEventListener('visibilitychange', this.visibilityHandler)
 		}
-		this.heartbeatTimer = null
-		this.pruneTimer = null
+		this.tickTimer = null
 		this.visibilityHandler = null
 	}
 
@@ -686,6 +716,20 @@ interface AnnouncePayload {
 		const out: Record<string, StateEntry> = {}
 		for (const [k, v] of this.entries) out[k] = v
 		return out
+	}
+
+	keys(): string[] {
+		return Array.from(this.entries.keys())
+	}
+
+	allEntries(): Array<[string, unknown]> {
+		return Array.from(this.entries.entries()).map(([k, e]) => [k, e.value])
+	}
+
+	setAll(entries: Record<string, unknown>): void {
+		for (const [key, value] of Object.entries(entries)) {
+			this.set(key as any, value as any)
+		}
 	}
 
 	getKeysForSync(keys: string[]): Record<string, unknown> {
@@ -941,6 +985,7 @@ class Coordinator<S extends object> {
 	private epoch: string
 	private options: Required<WorkspaceOptions>
 	private ready = false
+	private destroyed = false
 	private queue: QueuedCall[] = []
 	private readyResolve!: () => void
 	readonly readyPromise: Promise<void>
@@ -1223,6 +1268,9 @@ class Coordinator<S extends object> {
 	}
 
 	destroy(): void {
+		if (this.destroyed) return
+		this.destroyed = true
+
 		// run leader cleanups
 		for (const entry of this.leaderSetups) {
 			if (entry.cleanup) entry.cleanup()
@@ -1268,10 +1316,7 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 
 	const stateApi: WorkspaceState<S> = {
 		set(key, value) {
-			coord.enqueue(() => {
-				coord.getState().set(key, value)
-				coord.getPresence().touch()
-			})
+			coord.enqueue(() => coord.getState().set(key, value))
 		},
 		get(key) {
 			return coord.getState().get(key)
@@ -1284,6 +1329,15 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 		},
 		delete(key) {
 			coord.enqueue(() => coord.getState().delete(key))
+		},
+		keys() {
+			return coord.getState().keys() as any
+		},
+		entries() {
+			return coord.getState().allEntries() as any
+		},
+		setAll(entries) {
+			coord.enqueue(() => coord.getState().setAll(entries as any))
 		},
 	} as WorkspaceState<S>
 
@@ -1317,8 +1371,10 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 				)
 			}
 			coord.enqueue(() => {
-				// Check for pending-open data written by the opener tab
-				const pendingKey = `tabula:${namespace}:pending-open`
+				// Check for pending-open data written by the opener tab.
+				// Key is per-view so two concurrent open() calls for different views
+				// never overwrite each other's data.
+				const pendingKey = `tabula:${namespace}:pending-open:${viewName}`
 				try {
 					const raw = localStorage.getItem(pendingKey)
 					if (raw) {
@@ -1356,7 +1412,9 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 
 			// Write pending-open intent to localStorage so the new tab can read it
 			// without polluting the URL. The new tab reads this on init via app.claim().
-			const pendingKey = `tabula:${namespace}:pending-open`
+			// Key is per-view so two concurrent open() calls for different views
+			// never overwrite each other's data.
+			const pendingKey = `tabula:${namespace}:pending-open:${viewName}`
 			const pendingData: Record<string, unknown> = { view: viewName }
 			if (opts.syncKeys) {
 				pendingData.syncedState = coord.getState().getKeysForSync(opts.syncKeys)

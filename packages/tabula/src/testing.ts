@@ -141,6 +141,17 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 					payload: { key },
 				})
 			},
+			keys() {
+				return Array.from(self.stateMap.keys()) as any
+			},
+			entries() {
+				return Array.from(self.stateMap.entries()).map(([k, e]) => [k, e.value]) as any
+			},
+			setAll(entries: Partial<S>) {
+				for (const [key, value] of Object.entries(entries)) {
+					this.set(key as any, value as any)
+				}
+			},
 		} as WorkspaceState<S>
 
 		this.views = {

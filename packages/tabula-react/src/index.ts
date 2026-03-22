@@ -1,6 +1,7 @@
 import {
 	type ReactNode,
 	createContext,
+	createElement,
 	useCallback,
 	useContext,
 	useEffect,
@@ -32,7 +33,7 @@ export interface TabulaProviderProps {
 }
 
 export function TabulaProvider({ workspace, children }: TabulaProviderProps): ReactNode {
-	return TabulaContext.Provider({ value: workspace, children })
+	return createElement(TabulaContext.Provider, { value: workspace }, children)
 }
 
 // ── Hooks ─────────────────────────────────────────────────────────────────
