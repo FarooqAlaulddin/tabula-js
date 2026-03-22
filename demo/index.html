@@ -14,6 +14,7 @@
 		<span class="header-badge" id="notif-badge" data-count="0">0</span>
 		<button class="btn btn-sm" id="btn-theme">Theme</button>
 		<button class="btn btn-sm btn-danger" id="btn-logout">Logout All Tabs</button>
+		<button class="btn btn-sm" id="btn-clean">Clean Storage</button>
 	</header>
 
 	<!-- ── Left sidebar: Presence ─────────────────────────────────────── -->
@@ -345,6 +346,19 @@ document.getElementById('btn-dec').onclick = () => {
 document.getElementById('btn-theme').onclick = () => {
 	const cur = app.state.get('theme') || 'light'
 	app.state.set('theme', cur === 'light' ? 'dark' : 'light')
+}
+
+document.getElementById('btn-clean').onclick = () => {
+	// Clear persisted demo state
+	localStorage.removeItem(PERSIST_KEY)
+	// Clear all tabula keys from localStorage (view registry, pending-open)
+	for (let i = localStorage.length - 1; i >= 0; i--) {
+		const key = localStorage.key(i)
+		if (key?.startsWith('tabula:')) localStorage.removeItem(key)
+	}
+	// Clear session
+	sessionStorage.clear()
+	location.reload()
 }
 
 document.getElementById('btn-logout').onclick = () => {
