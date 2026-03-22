@@ -140,7 +140,7 @@ export interface WorkspaceTabs {
 
 // ── Layer 1: Transport ────────────────────────────────────────────────────
 
-function getTabId(): string {
+/** @internal */ export function getTabId(): string {
 	const existing = sessionStorage.getItem('tabula:tab-id')
 	if (existing) return existing
 	if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
@@ -153,7 +153,7 @@ function getTabId(): string {
 	return id
 }
 
-function getSessionEpoch(): string {
+/** @internal */ export function getSessionEpoch(): string {
 	const existing = sessionStorage.getItem('tabula:epoch')
 	if (existing) return existing
 	const epoch = Date.now().toString()
@@ -163,7 +163,8 @@ function getSessionEpoch(): string {
 
 let msgCounter = 0
 
-class Dedup {
+/** @internal — exported for testing only */
+export class Dedup {
 	private seen = new Set<string>()
 	private order: string[] = []
 
@@ -181,7 +182,7 @@ class Dedup {
 
 type MsgHandler = (msg: Message) => void
 
-class Channel {
+/** @internal */ export class Channel {
 	private bc: BroadcastChannel
 	private handlers = new Set<MsgHandler>()
 	private dedup = new Dedup()
@@ -232,7 +233,7 @@ class Channel {
 	}
 }
 
-class Registry {
+/** @internal */ export class Registry {
 	private prefix: string
 	private handler: ((e: StorageEvent) => void) | null = null
 	private listeners = new Set<(view: string, entry: ViewRegistryEntry | null) => void>()
@@ -320,7 +321,7 @@ interface AnnouncePayload {
 	view: string | null
 }
 
-class Presence {
+/** @internal */ export class Presence {
 	readonly tabId: string
 	private tabMap = new Map<string, TabMeta>()
 	private channel: Channel
@@ -482,7 +483,7 @@ class Presence {
 
 // ── Layer 2: Leader ───────────────────────────────────────────────────────
 
-class Leader {
+/** @internal */ export class Leader {
 	private presence: Presence
 	private currentLeaderId: string | null = null
 	private onChange: (leaderId: string) => void
@@ -517,7 +518,7 @@ class Leader {
 
 // ── Layer 2: State ────────────────────────────────────────────────────────
 
-class State<S extends object> {
+/** @internal */ export class State<S extends object> {
 	private entries = new Map<string, StateEntry>()
 	private versions = new Map<string, number>()
 	private keyListeners = new Map<string, Set<(value: unknown) => void>>()
@@ -631,7 +632,7 @@ class State<S extends object> {
 
 // ── Layer 2: Views ────────────────────────────────────────────────────────
 
-class Views {
+/** @internal */ export class Views {
 	private registry: Registry
 	private channel: Channel
 	private presence: Presence

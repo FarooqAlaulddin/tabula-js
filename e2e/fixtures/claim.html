@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head><title>Tabula E2E — Claim</title></head>
+<body>
+<div id="status">loading</div>
+<script type="module">
+import { createWorkspace } from 'tabula'
+
+const params = new URLSearchParams(location.search)
+const ns = params.get('__tabula_ns') || params.get('ns') || 'e2e-default'
+const viewName = params.get('__tabula_view') || params.get('view') || 'unknown'
+const heartbeat = Number(params.get('heartbeat')) || 200
+const timeout = Number(params.get('timeout')) || 1000
+
+const app = createWorkspace(ns, { heartbeat, timeout })
+
+window.__tabula = app
+window.__tabulaEvents = []
+
+// wait for init, then claim
+setTimeout(() => {
+	try {
+		app.claim(viewName)
+		document.getElementById('status').textContent = 'claimed'
+	} catch (e) {
+		document.getElementById('status').textContent = 'error: ' + e.message
+	}
+}, 500)
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head><title>Tabula E2E</title></head>
+<body>
+<div id="status">loading</div>
+<script type="module">
+import { createWorkspace } from 'tabula'
+
+const params = new URLSearchParams(location.search)
+const ns = params.get('ns') || 'e2e-default'
+const heartbeat = Number(params.get('heartbeat')) || 200
+const timeout = Number(params.get('timeout')) || 1000
+
+const app = createWorkspace(ns, { heartbeat, timeout })
+
+// expose for Playwright
+window.__tabula = app
+window.__tabulaEvents = []
+
+app.on('tab:join', (tab) => window.__tabulaEvents.push({ type: 'tab:join', tab }))
+app.on('tab:leave', (tab) => window.__tabulaEvents.push({ type: 'tab:leave', tab }))
+app.on('leader:change', (e) => window.__tabulaEvents.push({ type: 'leader:change', ...e }))
+app.on('view:claimed', (e) => window.__tabulaEvents.push({ type: 'view:claimed', ...e }))
+app.on('view:vacant', (e) => window.__tabulaEvents.push({ type: 'view:vacant', ...e }))
+
+// signal ready after a short delay for init
+setTimeout(() => {
+	document.getElementById('status').textContent = 'ready'
+}, 500)
+</script>
+</body>
+</html>
