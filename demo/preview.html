@@ -28,34 +28,20 @@
 <script type="module">
 import { createWorkspace } from 'tabula'
 
-const params = new URLSearchParams(location.search)
-const ns = params.get('__tabula_ns') || 'tabula-demo'
-const viewName = params.get('__tabula_view') || 'preview'
-
-const app = createWorkspace(ns, { heartbeat: 1000, timeout: 4000 })
+const NS = 'tabula-demo'
+const app = createWorkspace(NS, { heartbeat: 1000, timeout: 4000 })
 const statusEl = document.getElementById('status')
 const previewEl = document.getElementById('preview')
 
-// Parse URL sync data
-let syncedData = {}
-const syncParam = params.get('__tabula_sync')
-if (syncParam) {
-	try { syncedData = JSON.parse(atob(syncParam)) } catch {}
-}
-
-// Apply immediately — no flash
-if (syncedData.theme) document.documentElement.dataset.theme = syncedData.theme
-if (syncedData.editorContent) previewEl.textContent = syncedData.editorContent
-
-// Claim the view
-setTimeout(() => {
+// Claim after init
+app.ready.then(() => {
 	try {
-		app.claim(viewName)
-		statusEl.textContent = `Claimed "${viewName}"`
+		app.claim('preview')
+		statusEl.textContent = 'Claimed "preview"'
 	} catch (e) {
 		statusEl.textContent = 'Claim failed: ' + e.message
 	}
-}, 300)
+})
 
 // Theme sync — reactive
 app.state.on('theme', val => {
@@ -74,14 +60,14 @@ app.state.on('editorContent', val => {
 	previewEl.textContent = val || 'Waiting for editor content...'
 })
 
-// Init: apply state once ready, prefer state.get() over URL fallback
-setTimeout(() => {
-	const theme = app.state.get('theme') || syncedData.theme
+// Init: apply state once ready
+app.ready.then(() => {
+	const theme = app.state.get('theme')
 	if (theme) document.documentElement.dataset.theme = theme
 
-	const content = app.state.get('editorContent') || syncedData.editorContent
+	const content = app.state.get('editorContent')
 	if (content) previewEl.textContent = content
-}, 600)
+})
 </script>
 </body>
 </html>

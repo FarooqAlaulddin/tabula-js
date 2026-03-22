@@ -7,8 +7,8 @@
 import { createWorkspace } from 'tabula'
 
 const params = new URLSearchParams(location.search)
-const ns = params.get('__tabula_ns') || params.get('ns') || 'e2e-default'
-const viewName = params.get('__tabula_view') || params.get('view') || 'unknown'
+const ns = params.get('ns') || 'e2e-default'
+const viewName = params.get('view') || 'unknown'
 const heartbeat = Number(params.get('heartbeat')) || 200
 const timeout = Number(params.get('timeout')) || 1000
 
@@ -17,15 +17,15 @@ const app = createWorkspace(ns, { heartbeat, timeout })
 window.__tabula = app
 window.__tabulaEvents = []
 
-// wait for init, then claim
-setTimeout(() => {
+// Claim after init completes
+app.ready.then(() => {
 	try {
 		app.claim(viewName)
 		document.getElementById('status').textContent = 'claimed'
 	} catch (e) {
 		document.getElementById('status').textContent = 'error: ' + e.message
 	}
-}, 500)
+})
 </script>
 </body>
 </html>

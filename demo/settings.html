@@ -56,32 +56,20 @@
 <script type="module">
 import { createWorkspace } from 'tabula'
 
-const params = new URLSearchParams(location.search)
-const ns = params.get('__tabula_ns') || 'tabula-demo'
-const viewName = params.get('__tabula_view') || 'settings'
-
-const app = createWorkspace(ns, { heartbeat: 1000, timeout: 4000 })
+const NS = 'tabula-demo'
+const app = createWorkspace(NS, { heartbeat: 1000, timeout: 4000 })
 const statusEl = document.getElementById('status')
 
-// Parse synced state from URL (reliable initial values from opener)
-let syncedData = {}
-const syncParam = params.get('__tabula_sync')
-if (syncParam) {
-	try { syncedData = JSON.parse(atob(syncParam)) } catch {}
-}
-
-// Apply URL-synced theme immediately (no flash)
-if (syncedData.theme) document.documentElement.dataset.theme = syncedData.theme
-
-// Claim the view
-setTimeout(() => {
+// Claim the view after init — app.claim() reads pending-open data from localStorage
+// (written by the opener's app.open()) and applies synced state automatically.
+app.ready.then(() => {
 	try {
-		app.claim(viewName)
-		statusEl.textContent = `Claimed "${viewName}"`
+		app.claim('settings')
+		statusEl.textContent = 'Claimed "settings"'
 	} catch (e) {
 		statusEl.textContent = 'Claim failed: ' + e.message
 	}
-}, 300)
+})
 
 // Theme sync — reactive, handles all future changes
 const themeRadios = document.querySelectorAll('input[name="theme"]')
@@ -121,13 +109,12 @@ app.state.on('notificationCount', applyNotif)
 
 document.getElementById('btn-reset-notif').onclick = () => app.state.set('notificationCount', 0)
 
-// Init: apply synced/existing state once coordinator is ready.
-// URL sync data is trusted for immediate render. state.get() upgrades if available.
-setTimeout(() => {
-	applyTheme(app.state.get('theme') || syncedData.theme)
-	applyCounter(app.state.get('counter') ?? syncedData.counter)
-	applyNotif(app.state.get('notificationCount') ?? syncedData.notificationCount)
-}, 600)
+// Init: apply state once coordinator is ready
+app.ready.then(() => {
+	applyTheme(app.state.get('theme'))
+	applyCounter(app.state.get('counter'))
+	applyNotif(app.state.get('notificationCount'))
+})
 </script>
 </body>
 </html>

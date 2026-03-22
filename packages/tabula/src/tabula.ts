@@ -1232,7 +1232,31 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 					`app.claim('${viewName}') was called, but this tab already holds the '${currentView}' view. A tab can hold only one view at a time.`,
 				)
 			}
-			coord.enqueue(() => coord.getViews().claim(viewName))
+			coord.enqueue(() => {
+				// Check for pending-open data written by the opener tab
+				const pendingKey = `tabula:${namespace}:pending-open`
+				try {
+					const raw = localStorage.getItem(pendingKey)
+					if (raw) {
+						const pending = JSON.parse(raw) as {
+							view?: string
+							syncedState?: Record<string, unknown>
+						}
+						// Apply pre-synced state from the opener (instant, no round-trip)
+						if (pending.syncedState && pending.view === viewName) {
+							for (const [key, value] of Object.entries(pending.syncedState)) {
+								if (coord.getState().get(key as keyof S & string) === undefined) {
+									coord.getState().set(key as keyof S & string, value as S[keyof S & string])
+								}
+							}
+						}
+						localStorage.removeItem(pendingKey)
+					}
+				} catch {
+					// ignore malformed pending data
+				}
+				coord.getViews().claim(viewName)
+			})
 		},
 
 		async open(viewName: string, opts: ViewOpenOptions<S>): Promise<ViewHandle> {
@@ -1246,16 +1270,16 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 				})
 			}
 
-			// build URL with syncKeys data
-			const url = new URL(opts.url, window.location.href)
+			// Write pending-open intent to localStorage so the new tab can read it
+			// without polluting the URL. The new tab reads this on init via app.claim().
+			const pendingKey = `tabula:${namespace}:pending-open`
+			const pendingData: Record<string, unknown> = { view: viewName }
 			if (opts.syncKeys) {
-				const syncData = coord.getState().getKeysForSync(opts.syncKeys)
-				url.searchParams.set('__tabula_sync', btoa(JSON.stringify(syncData)))
-				url.searchParams.set('__tabula_view', viewName)
-				url.searchParams.set('__tabula_ns', namespace)
+				pendingData.syncedState = coord.getState().getKeysForSync(opts.syncKeys)
 			}
+			localStorage.setItem(pendingKey, JSON.stringify(pendingData))
 
-			const opened = window.open(url.toString())
+			const opened = window.open(new URL(opts.url, window.location.href).toString())
 			if (!opened) {
 				throw new Error(
 					`Failed to open tab for view '${viewName}'. The browser may have blocked the popup. app.open() must be called in direct response to a user gesture (click, keyboard).`,

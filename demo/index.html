@@ -339,21 +339,21 @@ document.getElementById('btn-logout').onclick = () => {
 
 document.getElementById('btn-open-editor').onclick = () => {
 	app.open('editor', {
-		url: `editor.html?__tabula_ns=${NS}&__tabula_view=editor`,
+		url: 'editor.html',
 		syncKeys: ['theme', 'editorContent']
 	})
 }
 
 document.getElementById('btn-open-preview').onclick = () => {
 	app.open('preview', {
-		url: `preview.html?__tabula_ns=${NS}&__tabula_view=preview`,
+		url: 'preview.html',
 		syncKeys: ['theme', 'editorContent']
 	})
 }
 
 document.getElementById('btn-open-settings').onclick = () => {
 	app.open('settings', {
-		url: `settings.html?__tabula_ns=${NS}&__tabula_view=settings`,
+		url: 'settings.html',
 		syncKeys: ['theme', 'counter']
 	})
 }
