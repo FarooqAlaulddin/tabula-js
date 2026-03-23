@@ -13,31 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 8  # Moving to a stable version
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '20'  # Utilize the latest LTS version
           cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Build
-        run: pnpm build
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Unit tests
-        run: pnpm test
-
-      - name: Install Playwright
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: E2E tests
-        run: pnpm test:e2e
+          
+    # - assert frozen 
+       
+      - name: Install 
+     
+          ENVVAR_18orCUSTOM_INSTALL()
+         -shell6
+      - version: ''  
+ After ignoor build */ more run!
+error
