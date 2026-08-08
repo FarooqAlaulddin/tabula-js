@@ -1,20 +1,38 @@
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
-import { TabulaProvider, useSharedState, useTabPresence, useTabView } from 'tabula-react'
 import { SharedCanvas } from './SharedCanvas'
 import { workspace } from './workspace'
-import type { DrawingState } from './workspace'
 import './style.css'
 
 // Claim the 'canvas' view — queued until workspace is ready
 workspace.claim('canvas')
 
-function CanvasPage() {
-	const tabs = useTabPresence()
-	const view = useTabView()
+const subscribeTheme = (onStoreChange: () => void) => workspace.state.on('theme', onStoreChange)
+const getTheme = () => workspace.state.get('theme') ?? 'light'
 
-	// useSharedState: theme syncs from dashboard automatically
-	const [theme] = useSharedState<DrawingState, 'theme'>('theme')
-	const currentTheme = theme ?? 'light'
+function CanvasPage() {
+	const [tabs, setTabs] = useState(() => workspace.tabs.list())
+	const [view, setView] = useState(() => workspace.tabs.current().view)
+	const currentTheme = useSyncExternalStore(subscribeTheme, getTheme)
+
+	useEffect(() => {
+		const refreshTabs = () => setTabs(workspace.tabs.list())
+		const refreshView = () => setView(workspace.tabs.current().view)
+		const unsubscribeJoin = workspace.on('tab:join', refreshTabs)
+		const unsubscribeLeave = workspace.on('tab:leave', refreshTabs)
+		const unsubscribeClaimed = workspace.on('view:claimed', refreshView)
+		const unsubscribeVacant = workspace.on('view:vacant', refreshView)
+
+		refreshTabs()
+		refreshView()
+
+		return () => {
+			unsubscribeJoin()
+			unsubscribeLeave()
+			unsubscribeClaimed()
+			unsubscribeVacant()
+		}
+	}, [])
 
 	return (
 		<div className="canvas-fullscreen" data-theme={currentTheme}>
@@ -36,8 +54,4 @@ function CanvasPage() {
 }
 
 // biome-ignore lint/style/noNonNullAssertion: root element always exists
-createRoot(document.getElementById('root')!).render(
-	<TabulaProvider workspace={workspace}>
-		<CanvasPage />
-	</TabulaProvider>,
-)
+createRoot(document.getElementById('root')!).render(<CanvasPage />)

@@ -1,5 +1,5 @@
 {
-	"name": "tabula",
+	"name": "@farooqalaulddin/tabula-js",
 	"version": "0.1.0",
 	"description": "Coordinate browser tabs as views of a single workspace",
 	"type": "module",

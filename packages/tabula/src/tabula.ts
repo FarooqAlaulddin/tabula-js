@@ -220,7 +220,7 @@ type MsgHandler = (msg: Message) => void
 		if (typeof BroadcastChannel === 'undefined') {
 			throw new Error(
 				'Tabula requires BroadcastChannel. Supported in all modern browsers. ' +
-					'For Node.js testing, use tabula/testing.',
+					'For Node.js testing, use @farooqalaulddin/tabula-js/testing.',
 			)
 		}
 		this.bc = new BroadcastChannel(`tabula:${namespace}`)

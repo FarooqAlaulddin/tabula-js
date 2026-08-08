@@ -1,22 +1,43 @@
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
-import { TabulaProvider, useLeader, useSharedState, useTabPresence, useTabView } from 'tabula-react'
 import { SharedCanvas } from './SharedCanvas'
 import { workspace } from './workspace'
-import type { DrawingState } from './workspace'
 import './style.css'
 
+const subscribeTheme = (onStoreChange: () => void) => workspace.state.on('theme', onStoreChange)
+const getTheme = () => workspace.state.get('theme') ?? 'light'
+
 function Dashboard() {
-	const tabs = useTabPresence()
-	const isLeader = useLeader()
-	const view = useTabView()
+	const [tabs, setTabs] = useState(() => workspace.tabs.list())
+	const [isLeader, setIsLeader] = useState(() => workspace.isLeader())
+	const [view, setView] = useState(() => workspace.tabs.current().view)
+	const currentTheme = useSyncExternalStore(subscribeTheme, getTheme)
 	const currentId = workspace.tabs.current().id
 
-	// useSharedState: theme syncs across all tabs automatically
-	const [theme, setTheme] = useSharedState<DrawingState, 'theme'>('theme')
-	const currentTheme = theme ?? 'light'
+	useEffect(() => {
+		const refreshTabs = () => setTabs(workspace.tabs.list())
+		const refreshView = () => setView(workspace.tabs.current().view)
+		const unsubscribeJoin = workspace.on('tab:join', refreshTabs)
+		const unsubscribeLeave = workspace.on('tab:leave', refreshTabs)
+		const unsubscribeLeader = workspace.on('leader:change', ({ isMe }) => setIsLeader(isMe))
+		const unsubscribeClaimed = workspace.on('view:claimed', refreshView)
+		const unsubscribeVacant = workspace.on('view:vacant', refreshView)
+
+		refreshTabs()
+		refreshView()
+		setIsLeader(workspace.isLeader())
+
+		return () => {
+			unsubscribeJoin()
+			unsubscribeLeave()
+			unsubscribeLeader()
+			unsubscribeClaimed()
+			unsubscribeVacant()
+		}
+	}, [])
 
 	const toggleTheme = () => {
-		setTheme(currentTheme === 'light' ? 'dark' : 'light')
+		workspace.state.set('theme', currentTheme === 'light' ? 'dark' : 'light')
 	}
 
 	const expandCanvas = () => {
@@ -60,19 +81,19 @@ function Dashboard() {
 				</div>
 
 				<div className="sidebar-section">
-					<h3>Hooks used</h3>
+					<h3>Core APIs</h3>
 					<ul className="hooks-list">
 						<li>
-							<code>useSharedState</code> — theme toggle
+							<code>state.on/get/set</code> — theme toggle
 						</li>
 						<li>
-							<code>useTabPresence</code> — tab list
+							<code>tabs.list</code> — tab list
 						</li>
 						<li>
-							<code>useLeader</code> — leader badge
+							<code>leader:change</code> — leader badge
 						</li>
 						<li>
-							<code>useTabView</code> — {view ? `"${view}"` : 'no view'}
+							<code>tabs.current</code> — {view ? `"${view}"` : 'no view'}
 						</li>
 					</ul>
 				</div>
@@ -80,8 +101,8 @@ function Dashboard() {
 				<div className="sidebar-section">
 					<h3>How it works</h3>
 					<p className="sidebar-text">
-						The Excalidraw component is used <strong>as-is</strong> — no modifications. A thin
-						Tabula wrapper syncs the drawing data across tabs via BroadcastChannel.
+						The Excalidraw component is used <strong>as-is</strong> — no modifications. The app
+						subscribes directly to the Tabula workspace and passes data as ordinary props.
 					</p>
 					<p className="sidebar-text">
 						Click <strong>Expand to Tab</strong> to open a full-screen canvas. Draw in either tab —
@@ -98,8 +119,4 @@ function Dashboard() {
 }
 
 // biome-ignore lint/style/noNonNullAssertion: root element always exists
-createRoot(document.getElementById('root')!).render(
-	<TabulaProvider workspace={workspace}>
-		<Dashboard />
-	</TabulaProvider>,
-)
+createRoot(document.getElementById('root')!).render(<Dashboard />)

@@ -6,8 +6,7 @@ export default defineConfig({
 	plugins: [react()],
 	resolve: {
 		alias: {
-			tabula: path.resolve(__dirname, '../tabula/src/index.ts'),
-			'tabula-react': path.resolve(__dirname, '../tabula-react/src/index.ts'),
+			'@farooqalaulddin/tabula-js': path.resolve(__dirname, '../tabula/src/index.ts'),
 			'@tabula/tabula': path.resolve(__dirname, '../tabula/src/tabula.ts'),
 		},
 	},

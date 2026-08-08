@@ -1,8 +1,8 @@
 /**
- * SharedCanvas — wraps Excalidraw with Tabula cross-tab sync.
+ * SharedCanvas — connects Excalidraw directly to Tabula cross-tab state.
  *
  * The <Excalidraw> component is used AS-IS, zero modifications.
- * This wrapper connects it to Tabula shared state so the canvas
+ * This application component connects it to Tabula shared state so the canvas
  * stays in sync across browser tabs automatically.
  */
 import { Excalidraw } from '@excalidraw/excalidraw'

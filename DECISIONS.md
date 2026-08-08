@@ -227,3 +227,15 @@ app.state.on('*', () => {
 - No UI components
 - No URL/routing opinions
 - No iframe support
+
+## 2026-08-08 — v1 package boundary
+
+- The sole v1 npm package is `@farooqalaulddin/tabula-js`; its testing utilities
+  remain the `@farooqalaulddin/tabula-js/testing` subpath.
+- The earlier `tabula` and `tabula-react` package notes above are historical. Neither
+  name was published by this project, and both workspace package identities are
+  removed from the v1 implementation.
+- A React wrapper is deferred until after v1. Framework applications consume the
+  core workspace directly and own their framework-specific subscription boundary.
+- The React-based Excalidraw example remains as proof of direct core integration,
+  not as a wrapper-package contract.

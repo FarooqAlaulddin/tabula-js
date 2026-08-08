@@ -5,7 +5,7 @@ export default defineConfig({
 	root: path.resolve(__dirname),
 	resolve: {
 		alias: {
-			tabula: path.resolve(__dirname, '../packages/tabula/dist/index.js'),
+			'@farooqalaulddin/tabula-js': path.resolve(__dirname, '../packages/tabula/dist/index.js'),
 		},
 	},
 	server: {

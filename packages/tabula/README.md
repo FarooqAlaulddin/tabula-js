@@ -20,19 +20,13 @@ Tabula solves all of these with a single primitive: the **workspace**.
 ## Install
 
 ```bash
-npm install tabula
-```
-
-React bindings (optional):
-
-```bash
-npm install tabula-react
+npm install @farooqalaulddin/tabula-js
 ```
 
 ## Quick start
 
 ```ts
-import { createWorkspace } from 'tabula'
+import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
 interface AppState {
   theme: 'light' | 'dark'
@@ -155,100 +149,36 @@ await app.ready   // wait for init (state sync, leader election)
 app.destroy()     // full teardown — broadcasts departure, releases views
 ```
 
-## React
+## Framework integration
 
-```bash
-npm install tabula-react
-```
-
-Wrap your app (or just the component that needs it) with `TabulaProvider`:
+Tabula v1 is framework-neutral and does not ship framework wrappers. React
+applications can subscribe directly with React's built-in external-store API:
 
 ```tsx
-import { createWorkspace } from 'tabula'
-import { TabulaProvider, useSharedState, useLeader, useTabPresence, useTabView } from 'tabula-react'
+import { useSyncExternalStore } from 'react'
+import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
 const workspace = createWorkspace<AppState>('my-app')
 
-function App() {
+function ThemeToggle() {
+  const theme = useSyncExternalStore(
+    onStoreChange => workspace.state.on('theme', onStoreChange),
+    () => workspace.state.get('theme') ?? 'light',
+  )
   return (
-    <TabulaProvider workspace={workspace}>
-      <Dashboard />
-    </TabulaProvider>
+    <button onClick={() => workspace.state.set('theme', theme === 'dark' ? 'light' : 'dark')}>
+      {theme}
+    </button>
   )
 }
 ```
-
-### Hooks
-
-#### `useSharedState<S, K>(key)`
-
-Subscribe to a shared state key. Returns `[value, setValue]` — works like `useState` but syncs across tabs.
-
-```tsx
-function ThemeToggle() {
-  const [theme, setTheme] = useSharedState<AppState, 'theme'>('theme')
-  return <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme}</button>
-}
-```
-
-#### `useLeader()`
-
-Returns `true` if this tab is the leader.
-
-```tsx
-function StatusBar() {
-  const isLeader = useLeader()
-  return isLeader ? <span>This tab is the leader</span> : null
-}
-```
-
-#### `useTabPresence()`
-
-Returns `TabMeta[]` for all connected tabs. Re-renders on join/leave.
-
-```tsx
-function TabList() {
-  const tabs = useTabPresence()
-  return <ul>{tabs.map(t => <li key={t.id}>{t.id.slice(0, 8)}</li>)}</ul>
-}
-```
-
-#### `useTabView()`
-
-Returns the current tab's claimed view name, or `null`.
-
-```tsx
-function ViewBadge() {
-  const view = useTabView()
-  return view ? <span>View: {view}</span> : null
-}
-```
-
-### Gradual adoption
-
-Tabula is designed to be added to existing apps with minimal changes. You don't need to restructure your app — wrap just the components that need cross-tab coordination:
-
-```tsx
-// Your existing component — unchanged
-function EditorPanel({ content, onChange }) {
-  return <textarea value={content} onChange={e => onChange(e.target.value)} />
-}
-
-// Tabula wrapper — the only new code
-function SyncedEditor() {
-  const [content, setContent] = useSharedState<AppState, 'draft'>('draft')
-  return <EditorPanel content={content ?? ''} onChange={setContent} />
-}
-```
-
-The component doesn't know it's in a multi-tab setup. It receives props the same way it always did.
 
 ## Testing
 
 Tabula ships test utilities that simulate multi-tab coordination in Node.js — no browser required.
 
 ```bash
-import { createMockWorkspace, createTestCluster } from 'tabula/testing'
+import { createMockWorkspace, createTestCluster } from '@farooqalaulddin/tabula-js/testing'
 ```
 
 ### Single tab
@@ -407,9 +337,8 @@ Tabula trusts all scripts on the same origin. Keep in mind:
 
 | Package | Description | Size |
 |---------|-------------|------|
-| [`tabula`](./packages/tabula) | Core library. Zero dependencies. | ~7 KB gzipped |
-| [`tabula-react`](./packages/tabula-react) | React bindings. 5 hooks. | ~1 KB gzipped |
-| [`tabula/testing`](./packages/tabula/src/testing.ts) | Test utilities. In-memory multi-tab simulation. | Included in core |
+| `@farooqalaulddin/tabula-js` | Core library. Zero dependencies. | ~7 KB gzipped |
+| `@farooqalaulddin/tabula-js/testing` | Test utilities. In-memory multi-tab simulation. | Included in core |
 
 ## License
 

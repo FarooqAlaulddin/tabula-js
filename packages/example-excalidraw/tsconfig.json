@@ -8,8 +8,7 @@
 		"skipLibCheck": true,
 		"esModuleInterop": true,
 		"paths": {
-			"tabula": ["../tabula/src/index.ts"],
-			"tabula-react": ["../tabula-react/src/index.ts"],
+			"@farooqalaulddin/tabula-js": ["../tabula/src/index.ts"],
 			"@tabula/tabula": ["../tabula/src/tabula.ts"]
 		}
 	},

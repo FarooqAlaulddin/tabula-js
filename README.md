@@ -28,7 +28,7 @@ Tabula is the missing coordination layer: shared state, presence, leader electio
 Tabula is deliberately narrow:
 
 - **Thin.** A coordination protocol over BroadcastChannel and localStorage, ~7 KB gzipped. No window manager, no UI, no framework.
-- **Removable.** State is a standalone key-value store, and the React hooks hand components plain props — components never know they're multi-tab. Removing Tabula means deleting a wrapper, not surgery.
+- **Removable.** State is a standalone key-value store. Framework components subscribe at their integration boundary and receive ordinary props, so removing Tabula does not require rewriting them.
 - **Zero dependencies.** The core has none.
 - **Niche by design.** Built for desktop workspace apps — editors with detached previews, trading consoles, monitoring dashboards, creative tools. Not for mobile, not cross-origin, not a persistence layer. The full non-goals list is in [DECISIONS.md](./DECISIONS.md).
 
@@ -37,19 +37,13 @@ If your app is a single-surface SPA, you don't need Tabula — until the day one
 ## Install
 
 ```bash
-npm install tabula
-```
-
-React bindings (optional):
-
-```bash
-npm install tabula-react
+npm install @farooqalaulddin/tabula-js
 ```
 
 ## Quick start
 
 ```ts
-import { createWorkspace } from 'tabula'
+import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
 interface AppState {
   theme: 'light' | 'dark'
@@ -233,10 +227,10 @@ If your requirements are stricter than this — durable state, guaranteed single
 Don't restructure anything. Pick the single pain you actually have, wire that one feature, and stop:
 
 1. **Lowest stakes first.** Leader-elect your WebSocket so ten tabs open one connection instead of ten. Or broadcast logout so signing out in one tab signs out all of them. Both are a few lines, touch no components, and fail soft.
-2. **Then shared UI state** — theme, filters, drafts — via `state` or `useSharedState`.
+2. **Then shared UI state** — theme, filters, drafts — through `workspace.state`.
 3. **Views last.** Detaching a panel into its own tab is the biggest payoff but also the biggest product decision; do it once the plumbing has earned trust.
 
-Each step is independently removable: delete the wrapper, keep the component.
+Each step is independently removable: delete the subscription boundary, keep the component.
 
 ### Fresh apps: only if multi-window is the product
 
@@ -252,81 +246,39 @@ function EditorPanel({ content, onChange }) {
   return <textarea value={content} onChange={e => onChange(e.target.value)} />
 }
 
-// Tabula wrapper — the only new code
+// Integration boundary — direct core subscription
 function SyncedEditor() {
-  const [content, setContent] = useSharedState<AppState, 'draft'>('draft')
-  return <EditorPanel content={content ?? ''} onChange={setContent} />
+	const content = useSyncExternalStore(
+		onStoreChange => workspace.state.on('draft', onStoreChange),
+		() => workspace.state.get('draft') ?? '',
+	)
+	return <EditorPanel content={content} onChange={value => workspace.state.set('draft', value)} />
 }
 ```
 
 Removing Tabula is deleting `SyncedEditor`, not rewriting `EditorPanel`.
 
-## React
+## Framework integration
 
-```bash
-npm install tabula-react
-```
-
-Wrap your app (or just the component that needs it) with `TabulaProvider`:
+Tabula v1 is framework-neutral and does not ship framework wrappers. React applications
+can subscribe to the core workspace with React's built-in external-store API:
 
 ```tsx
-import { createWorkspace } from 'tabula'
-import { TabulaProvider, useSharedState, useLeader, useTabPresence, useTabView } from 'tabula-react'
+import { useSyncExternalStore } from 'react'
+import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
 const workspace = createWorkspace<AppState>('my-app')
 
-function App() {
-  return (
-    <TabulaProvider workspace={workspace}>
-      <Dashboard />
-    </TabulaProvider>
-  )
-}
-```
-
-### Hooks
-
-#### `useSharedState<S, K>(key)`
-
-Subscribe to a shared state key. Returns `[value, setValue]` — works like `useState` but syncs across tabs.
-
-```tsx
 function ThemeToggle() {
-  const [theme, setTheme] = useSharedState<AppState, 'theme'>('theme')
-  return <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme}</button>
-}
-```
-
-#### `useLeader()`
-
-Returns `true` if this tab is the leader.
-
-```tsx
-function StatusBar() {
-  const isLeader = useLeader()
-  return isLeader ? <span>This tab is the leader</span> : null
-}
-```
-
-#### `useTabPresence()`
-
-Returns `TabMeta[]` for all connected tabs. Re-renders on join/leave.
-
-```tsx
-function TabList() {
-  const tabs = useTabPresence()
-  return <ul>{tabs.map(t => <li key={t.id}>{t.id.slice(0, 8)}</li>)}</ul>
-}
-```
-
-#### `useTabView()`
-
-Returns the current tab's claimed view name, or `null`.
-
-```tsx
-function ViewBadge() {
-  const view = useTabView()
-  return view ? <span>View: {view}</span> : null
+	const theme = useSyncExternalStore(
+		onStoreChange => workspace.state.on('theme', onStoreChange),
+		() => workspace.state.get('theme') ?? 'light',
+	)
+	return (
+		<button onClick={() => workspace.state.set('theme', theme === 'dark' ? 'light' : 'dark')}>
+			{theme}
+		</button>
+	)
 }
 ```
 
@@ -335,7 +287,7 @@ function ViewBadge() {
 Multi-tab behavior is notoriously hard to test — most teams either skip it or script real browsers. Tabula ships test utilities that simulate a whole tab cluster in Node.js, so cross-tab logic runs in your ordinary unit test suite:
 
 ```bash
-import { createMockWorkspace, createTestCluster } from 'tabula/testing'
+import { createMockWorkspace, createTestCluster } from '@farooqalaulddin/tabula-js/testing'
 ```
 
 ### Single tab
@@ -529,9 +481,8 @@ Tabula trusts all scripts on the same origin. Keep in mind:
 
 | Package | Description | Size |
 |---------|-------------|------|
-| [`tabula`](./packages/tabula) | Core library. Zero dependencies. | ~7 KB gzipped |
-| [`tabula-react`](./packages/tabula-react) | React bindings. Provider + 4 hooks. | ~1 KB gzipped |
-| [`tabula/testing`](./packages/tabula/src/testing.ts) | Test utilities. In-memory multi-tab simulation. | Included in core |
+| [`@farooqalaulddin/tabula-js`](./packages/tabula) | Core library. Zero dependencies. | ~7 KB gzipped |
+| [`@farooqalaulddin/tabula-js/testing`](./packages/tabula/src/testing.ts) | Test utilities. In-memory multi-tab simulation. | Included in core |
 
 ## License
 

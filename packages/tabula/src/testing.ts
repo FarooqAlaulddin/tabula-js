@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════
-// tabula/testing — Test utilities for Node.js and browser test environments
+// @farooqalaulddin/tabula-js/testing - utilities for Node.js and browser tests
 // In-memory BroadcastChannel simulation. No browser APIs required.
 // ════════════════════════════════════════════════════════════════════════════
 
