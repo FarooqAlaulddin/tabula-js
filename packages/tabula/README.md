@@ -313,16 +313,20 @@ interface TabMeta {
 }
 ```
 
-## Browser support
+## Runtime prerequisites
 
-Tabula requires:
+Tabula 1.0 targets desktop applications running in top-level, same-origin browser
+contexts. Every participating page must provide:
 
-- [BroadcastChannel](https://caniuse.com/broadcastchannel) — Chrome 54+, Firefox 38+, Safari 15.4+
-- [crypto.randomUUID](https://caniuse.com/mdn-api_crypto_randomuuid) — Chrome 92+, Firefox 95+, Safari 15.4+
+- a secure context with the Web Locks API;
+- `BroadcastChannel` and `crypto.randomUUID()`;
+- usable `localStorage` and `sessionStorage`; and
+- the same origin and workspace namespace as the tabs it coordinates.
 
-No polyfills are provided. If either API is unavailable, `createWorkspace` throws a descriptive error.
-
-Tabula does not support iframes. It must run in a top-level browsing context.
+Iframes are not supported. Storage-blocked or capability-limited contexts cannot
+join a workspace. Tabula does not provide storage, Web Locks, or BroadcastChannel
+polyfills. The tested browser-version matrix will be published before 1.0 rather
+than inferred from individual API compatibility tables.
 
 ## Security
 
