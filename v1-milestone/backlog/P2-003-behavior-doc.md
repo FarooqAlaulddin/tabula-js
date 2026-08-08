@@ -1,41 +1,48 @@
 ---
 id: P2-003
-title: Write docs/BEHAVIOR.md — observed behavior under browser adversity
+title: Publish the browser behavior and support contract
 phase: 2
 status: todo
 depends_on: [P1-003]
 owner: agent
-scope: 1 new doc (~120 lines)
+scope: behavior/support docs sourced from evidence
 ---
 
 ## Context
 
-The README's Guarantees table states the contract. Adopters evaluating for production ask a sharper question: what actually happens under tab freezing, laptop sleep, incognito, storage pressure? P1-003's edge-case suite provides tested answers; this doc publishes them.
+Production adopters need more than API signatures. They need to know what happens
+when tabs are hidden, frozen, restored, crashed, upgraded, denied storage, or subject
+to browser focus policy. P1-003 and the Safari checklist provide the evidence.
 
 ## Task
 
-Create `docs/BEHAVIOR.md` with sections:
+Create `docs/BEHAVIOR.md` with evidence-tagged sections for:
 
-- **Tab backgrounding & timer throttling** — what Chrome/Firefox/Safari do to timers, how localStorage-based heartbeats compensate, what P1-003 verified.
-- **Tab freezing/discard (Chrome memory saver)** — frozen tabs and heartbeats; what peers observe; recovery on unfreeze (wake-up reconciliation).
-- **Laptop sleep/wake** — all tabs suspended together; epoch/registry cleanup on wake; manual-test findings from P1-003's checklist.
-- **Incognito/private windows** — separate storage partition = separate workspace (by design); Safari private-mode storage quirks if observed.
-- **Crash vs graceful close** — leaving via `tab:leave` vs presence timeout vs (post-P1-001) lock release; what each looks like to survivors.
-- **Multiple windows vs tabs** — same origin coordinates across windows too; note OS-level window managers as intended usage.
+- Background throttling, liveness estimates, and configured timeout behavior.
+- Freeze/unfreeze and real discard for followers, lock holders, and view owners.
+- Laptop sleep/wake and clock movement.
+- Graceful close, crash, refresh, bfcache navigation, and browser restart.
+- Private browsing, storage partitioning, disabled storage, and quota failure.
+- Multiple tabs versus windows, secure-context requirements, and unsupported iframes.
+- Focus/popup policy and user-gesture requirements.
+- Mixed-version deployment, incompatibility signaling, and reload recovery.
+- State LWW/tombstone behavior and why document collaboration is out of scope.
 
-Every claim must be either (a) covered by a test (link the spec), (b) verified manually (say so and on which browser/OS), or (c) cited to browser documentation. No speculation presented as fact.
-
-Link from README ("Guarantees and tradeoffs" section → "observed behavior details: docs/BEHAVIOR.md").
+Every material claim must link to an automated test, a dated manual result, or primary
+browser documentation. Keep normative guarantees aligned with `docs/CONTRACT.md`.
 
 ## Acceptance criteria
 
-- [ ] `docs/BEHAVIOR.md` exists; every claim tagged tested/verified/cited.
-- [ ] README links to it.
-- [ ] No clock-time promises; behavior described in terms of events and configured timeouts.
+- [ ] Every material claim is tagged tested, manually verified, or externally cited.
+- [ ] No Linux WebKit result is described as Safari proof.
+- [ ] No behavior is described as immediate where the contract is eventual or timeout-based.
+- [ ] Browser/support table names required APIs, secure context, tested engines, and manual Safari status.
+- [ ] Root README links the detail instead of duplicating divergent promises.
 
 ## Files
 
-`docs/BEHAVIOR.md` (new), `README.md` (one link).
+`docs/BEHAVIOR.md` (new), support/guarantee portions of root README, CONTRACT links,
+and FEATURE-COMPLETE evidence.
 
 ## Outcome
 

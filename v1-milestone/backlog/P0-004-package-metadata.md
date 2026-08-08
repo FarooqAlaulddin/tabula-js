@@ -1,35 +1,41 @@
 ---
 id: P0-004
-title: Complete package metadata for publishing
+title: Complete package metadata and declared prerequisites
 phase: 0
 status: todo
-depends_on: [P0-003]
+depends_on: [P0-002]
 owner: agent
-scope: 2 files + tarball verification
+scope: manifests + package contents + prerequisite documentation
 ---
 
 ## Context
 
-Current state (verified 2026-07-23 — re-verify before starting): both `packages/tabula/package.json` and `packages/tabula-react/package.json` **already have** `files: ["dist"]` and `sideEffects: false`, and the core package already has a `keywords` array. What's actually missing: `repository`, `homepage`, and `bugs` in both; `keywords` in the react package. Both packages have per-package READMEs; only the repo root has a LICENSE, so packed tarballs may lack one. npm provenance publishing (P3-001) requires a `repository` field matching the GitHub repo.
+The package manifests lack repository, homepage, bugs, and complete keyword metadata.
+Published tarballs must contain their licenses and must state the browser/runtime
+prerequisites that later hardening will enforce: top-level same-origin contexts,
+secure context for Web Locks, BroadcastChannel, usable local/session storage, and
+`crypto.randomUUID()`.
 
 ## Task
 
-- Add to both package.jsons: `repository` (`{ "type": "git", "url": "git+https://github.com/FarooqAlaulddin/tabula-js.git", "directory": "packages/<dir>" }`), `homepage`, `bugs`.
-- React package: add `keywords`; core package: reconcile the prescribed set (browser-tabs, broadcastchannel, multi-tab, cross-tab, leader-election, presence, workspace, tab-coordination) with the existing list — merge, don't blindly replace.
-- Decide how LICENSE reaches each tarball: per-package copies added to `files`, or `license` field only. Implement the choice.
-- Add `packageManager` field to the root package.json (pin pnpm) for reproducible release builds.
-- Verify each per-package README has package-specific install and import samples (update if they still reference old names post-P0-002 — coordinate if P0-002 hasn't run yet; this task must not undo it).
+- Add repository metadata with package directories, homepage, bugs, keywords,
+  `publishConfig`, and the chosen Node/TypeScript/React declarations where already decided.
+- Pin the root `packageManager` and document the supported package manager for releases.
+- Put LICENSE in both tarballs and verify README selection for npm.
+- Add a short prerequisites section to each package README using the renamed packages.
+- Run `npm pack --dry-run` and inspect the exact file list for each package.
 
 ## Acceptance criteria
 
-- [ ] `npm pack --dry-run` in each package lists dist + README + LICENSE (per chosen mechanism) + package.json, nothing else.
-- [ ] Both packages have `repository` (with `directory`), `homepage`, `bugs`, `keywords`.
-- [ ] Root package.json has `packageManager`.
-- [ ] `pnpm build && pnpm typecheck` green.
+- [ ] Both packages contain repository, homepage, bugs, keywords, license, and publish access metadata.
+- [ ] Root `packageManager` pins the repository pnpm major and exact version.
+- [ ] Each dry-run tarball contains only package.json, README, LICENSE, changelog if present, and intended dist files.
+- [ ] Package docs state secure-context, storage, browser, same-origin, and top-level-context prerequisites without claiming unsupported versions.
+- [ ] Build, typecheck, and packed dry runs pass.
 
 ## Files
 
-`packages/tabula/package.json`, `packages/tabula-react/package.json`, root `package.json`, possibly `packages/*/LICENSE`, `packages/*/README.md`.
+Root/package manifests, package READMEs, and per-package LICENSE files as needed.
 
 ## Outcome
 

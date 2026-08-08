@@ -1,35 +1,43 @@
 ---
 id: P0-001
-title: Choose the npm package name
+title: Choose the npm package names
 phase: 0
 status: todo
 depends_on: []
 owner: human
-scope: 1 decision
+scope: 2 names + ownership decision
 ---
 
 ## Context
 
-`tabula` is taken on npm (a table-printing lib, v1.10.0) and `tabula-js` is taken (v1.0.1, a PDF-extraction wrapper that also dominates search results for the name). `tabula-react` is free but useless without the core. `@tabula/core` returns 404 but the `@tabula` org scope may not be claimable. Publishing is impossible until this is decided.
+`tabula` and `tabula-js` are already occupied on npm. Both the core and React
+package need names that can be owned together for the life of the project. The
+choice affects imports, searchability, trusted-publisher configuration, and the
+permanent 1.0 API identity.
 
 ## Task
 
-Maintainer decides between:
+The maintainer chooses one naming family:
 
-1. **Own scope**: `@<npm-username>/tabula` + `@<npm-username>/tabula-react`. Always available, weakest discoverability.
-2. **Claim an org scope**: try to register `tabula` org on npm → `@tabula/core`, `@tabula/react`. Best branding if available.
-3. **New unscoped name**: e.g. `tabulajs` variants or a different word entirely. Check availability before committing.
+1. An owned personal scope: `@<owner>/tabula` and `@<owner>/tabula-react`.
+2. An owned organization scope: preferably `<scope>/core` and `<scope>/react`.
+3. Two coordinated unscoped names whose ownership and search results are acceptable.
 
-Agent preparation allowed: check npm availability for a candidate shortlist (`npm view <name> version` — E404 means free; for org scopes check https://www.npmjs.com/org/<name>) and record results below.
+Agent preparation may check npm availability, GitHub/repository collisions, basic
+web-search ambiguity, and whether the npm account or organization can configure
+trusted publishing. Record the exact core package, React package, import examples,
+scope owner, and availability timestamp in Outcome.
 
 ## Acceptance criteria
 
-- [ ] A name is written in the `## Outcome` section by the maintainer.
-- [ ] `npm view` confirms the chosen name (or scope) is available at decision time.
+- [ ] Exact core and React names are recorded in Outcome by the maintainer.
+- [ ] `npm view` confirms both names are available or already controlled by the maintainer.
+- [ ] The relevant npm account/scope can configure trusted publishing for this repository.
+- [ ] The chosen names do not misleadingly impersonate an unrelated active project.
 
 ## Files
 
-None (decision only). P0-002 executes it.
+This decision file only. P0-002 performs the rename.
 
 ## Outcome
 

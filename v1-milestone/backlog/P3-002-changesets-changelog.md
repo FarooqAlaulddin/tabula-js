@@ -1,34 +1,41 @@
 ---
 id: P3-002
-title: Adopt changesets and seed CHANGELOG
+title: Adopt changesets and seed changelogs
 phase: 3
 status: todo
-depends_on: [P0-002]
+depends_on: [P0-004]
 owner: agent
-scope: changesets init + 2 files
+scope: version policy + changelogs + release scripts
 ---
 
 ## Context
 
-Version bumps and changelogs should be mechanical from here to 1.0.0. Changesets is the standard for pnpm monorepos and keeps the two packages' versions coordinated. **Decision recorded here so P3-001 doesn't have to guess: changesets IS the release model** — version PRs on main, publish on merge. P3-001 builds the workflow around it; this task runs first.
+Core and React form one product and must move through the preview train together.
+Version changes, dependency ranges, changelogs, prerelease mode, and dist-tags should
+be mechanical before the first npm artifact exists.
 
 ## Task
 
-- `pnpm add -Dw @changesets/cli && pnpm changeset init`; configure `fixed` versioning for the two packages so core and react release in lockstep.
-- Add root `package.json` scripts: `"version": "changeset version"`, `"release": "pnpm build && changeset publish"` (P3-001's workflow consumes these).
-- Seed the core package's `CHANGELOG.md` with a `0.1.0` entry summarizing what exists (from DECISIONS.md), so 0.2.0's entry has a baseline.
-- The standing rule in PLAN.md ("user-facing change = changeset in the same PR") activates when this task is done — note it in Outcome.
+- Add and initialize Changesets with fixed versioning for core and React.
+- Configure public access and document `next` as the only pre-1.0 dist-tag.
+- Add root scripts for changeset creation/status/version/publish without embedding
+  credentials or bypassing normal build/test gates.
+- Seed both package changelogs with the unpublished `0.1.0` source baseline and a note
+  that its occupied package names were never released.
+- Document prerelease entry/exit steps for `0.2.0-alpha`, normal `0.x`, and `1.0.0-rc`.
+- Activate the standing rule that every user-visible change carries a changeset.
 
 ## Acceptance criteria
 
-- [ ] `.changeset/config.json` present with `fixed` grouping of the two packages.
-- [ ] `pnpm changeset status` runs without error.
-- [ ] Root scripts `version`/`release` present.
-- [ ] CHANGELOG.md baseline entry exists.
+- [ ] Fixed package group, access policy, base branch, and ignored private packages are correct.
+- [ ] `pnpm changeset status` passes from a clean tree.
+- [ ] A temporary dry version exercise updates both packages and the React core range correctly, then is reverted without destructive git operations.
+- [ ] Both changelogs accurately describe the baseline and publication status.
+- [ ] Release scripts use repository-pinned tools and no `npx` fallback.
 
 ## Files
 
-`.changeset/` (new), `packages/tabula/CHANGELOG.md` (new), root `package.json`.
+`.changeset/`, root/package manifests, both package changelogs, and release documentation.
 
 ## Outcome
 

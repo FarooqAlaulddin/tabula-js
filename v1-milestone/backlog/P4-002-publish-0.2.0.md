@@ -1,35 +1,50 @@
 ---
 id: P4-002
-title: Publish 0.2.0
+title: Publish 0.2.0 alpha and technical preview
 phase: 4
 status: todo
-depends_on: [P4-001, P1-003, P1-004, P2-002, P2-003, P3-003]
+depends_on: [P1-003, P3-001]
 owner: human
-scope: 1 npm auth setup + 1 merged version PR
+scope: npm trusted-publisher setup + alpha proof + preview release
 ---
 
 ## Context
 
-0.2.0 is the burn-in candidate: hardened internals (Phase 1), honest docs and live demo (Phase 2), automated release (Phase 3), frozen API (P4-001). It goes to npm under the P0-001 name.
+`0.2.0-alpha.0` is the first real npm/OIDC/provenance integration test. `0.2.0`
+follows only after the alpha installs and runs from npm and the complete coordination
+suite passes against that published artifact. Both remain explicitly pre-1.0 and use
+the `next` dist-tag.
 
 ## Task
 
-Human parts:
-- Create/confirm the npm account or org for the chosen name; configure **trusted publishing (OIDC)** on npmjs.com for both packages pointing at the release workflow (the auth model P3-001 fixed — no long-lived token).
-- Approve the `0.2.0-rc.0` prerelease publish under the `next` dist-tag — this is the provenance integration test (dry-run cannot verify OIDC/attestation, per P3-001).
-- After the rc publishes cleanly with provenance visible, merge the changesets version PR for 0.2.0.
+Human prerequisites:
 
-Agent preparation allowed: draft the 0.2.0 changeset summarizing Phase 1–3 changes; run the dry-run pipeline; prepare the rc changeset; write release notes.
+- Create/confirm ownership of both npm names and configure GitHub Actions trusted
+  publishers for the exact release workflow/environment.
+- Approve the alpha and technical-preview version PRs.
+
+Agent preparation/execution support:
+
+- Prepare alpha changeset/release notes and run the proven dry-run.
+- Publish `0.2.0-alpha.0`, verify provenance, GitHub release, package metadata, install,
+  ESM/CJS/types, browser quick start, and core-before-React dependency resolution.
+- Run the full suite against the npm-installed alpha, not workspace packages.
+- Correct any release-only issue through another alpha; do not mutate a published version.
+- Publish `0.2.0` under `next` only when alpha evidence is clean.
+- Snapshot the real `0.2.0` tarballs/checksums into P3-004 compatibility fixtures.
 
 ## Acceptance criteria
 
-- [ ] Both packages at 0.2.0 on npm with provenance badges visible on npmjs.com.
-- [ ] `npm install <name>` in a scratch project works; the Quick start compiles and runs against the published artifact (not the workspace link).
-- [ ] GitHub release with notes exists for the tag.
+- [ ] Both alpha packages show npm provenance and install under `next`; `latest` remains untouched.
+- [ ] Full package, browser, sample, and compatibility suites pass against npm-installed alpha artifacts.
+- [ ] Both `0.2.0` packages publish with provenance and correct inter-package ranges.
+- [ ] Scratch ESM/CJS/TypeScript/React/browser consumers use the public artifacts successfully.
+- [ ] GitHub releases and manifests/checksums exist for alpha and preview.
+- [ ] P3-004 contains immutable `0.2.0` fixture metadata used by later candidates.
 
 ## Files
 
-`.changeset/*.md` (release changeset), GitHub/npm settings (human).
+Changesets/release notes, frozen fixture metadata, GitHub/npm settings, and this Outcome.
 
 ## Outcome
 

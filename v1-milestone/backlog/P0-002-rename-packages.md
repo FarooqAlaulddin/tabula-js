@@ -5,36 +5,38 @@ phase: 0
 status: todo
 depends_on: [P0-001, P0-003]
 owner: agent
-scope: ~8 files
+scope: package manifests + every install/import reference
 ---
 
 ## Context
 
-The workspace packages are named `tabula` and `tabula-react` in package.json but must carry the name chosen in P0-001 to be publishable.
+The workspace currently uses occupied npm names. P0-001 records the permanent
+published names. This task must leave no executable or user-facing reference using
+the unavailable names as package specifiers.
 
 ## Task
 
-Rename both packages to the chosen name everywhere:
-
-- `packages/tabula/package.json` — `name`
-- `packages/tabula-react/package.json` — `name` and its dependency on the core package
-- `pnpm-workspace.yaml` / root `package.json` scripts if they reference package names
-- All import statements in `demo/`, `packages/example-excalidraw/`, `e2e/`, and test files (`from 'tabula'`, `from 'tabula/testing'`, `from 'tabula-react'`)
-- README install commands, import samples, and the Packages table
-- DECISIONS.md package-structure section (add a note; do not rewrite history)
-
-Directory names (`packages/tabula/`) may stay as-is — only published names must change. Run `grep -rn "from 'tabula" --include='*.ts' --include='*.tsx'` to find all import sites.
+- Rename both package manifests and the React core peer/development dependency.
+- Update import specifiers in demos, examples, e2e fixtures, React bindings, tests,
+  tsconfig aliases, build configuration, and workspace filters.
+- Update root and package README install/import examples and package tables.
+- Add a dated naming note to DECISIONS.md without rewriting historical decisions.
+- Regenerate the lockfile through pnpm; do not hand-edit it.
+- Search both quoted import forms, package JSON values, npm install commands, and
+  scoped testing-subpath references before declaring completion.
 
 ## Acceptance criteria
 
-- [ ] `grep -rn '"name": "tabula"\|"name": "tabula-react"' packages/*/package.json` returns no matches (old names gone); manual inspection confirms both `name` fields carry the P0-001 name.
-- [ ] `pnpm build && pnpm typecheck && pnpm test` all green.
-- [ ] `pnpm test:e2e` green.
-- [ ] README contains no install/import references to the old name.
+- [ ] Both package `name` fields exactly match P0-001 and React references the renamed core.
+- [ ] `rg` finds no old install command or import specifier outside historical Outcome text.
+- [ ] `pnpm install --frozen-lockfile`, build, typecheck, lint, unit tests, and e2e all pass.
+- [ ] Packed package README examples contain only the new names.
+- [ ] The lockfile and all path aliases resolve without unpublished placeholder packages.
 
 ## Files
 
-`packages/tabula/package.json`, `packages/tabula-react/package.json`, `README.md`, `DECISIONS.md`, imports across `demo/`, `e2e/`, `packages/example-excalidraw/`, `packages/tabula-react/src/`.
+Package manifests, lockfile, TypeScript/build aliases, imports in `demo/`, `e2e/`,
+`packages/`, root/package READMEs, and `DECISIONS.md`.
 
 ## Outcome
 

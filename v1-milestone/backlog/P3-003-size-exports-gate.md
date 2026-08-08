@@ -1,34 +1,43 @@
 ---
 id: P3-003
-title: Bundle size and exports regression gate
+title: Gate packed exports, declarations, dependencies, and size
 phase: 3
 status: todo
-depends_on: [P0-002]
+depends_on: [P3-002]
 owner: agent
-scope: 1 CI check + 1 smoke-test script
+scope: reproducible pack/consumer/size CI gate
 ---
 
 ## Context
 
-The README advertises ~7 KB gzipped core / ~1 KB react, and zero dependencies is the identity. Nothing currently fails CI if a change doubles the bundle, adds a dependency, breaks tree-shaking, or breaks the `./testing` subpath export for CJS consumers. `npm pack --dry-run` doesn't catch any of these.
+The workspace build can pass while npm users receive broken exports, declarations,
+peer ranges, licenses, or tree-shaking. Zero core dependencies and a small bundle are
+part of Tabula's identity and require mechanical regression gates.
 
 ## Task
 
-- Add a size check (size-limit or a script gzipping `dist/index.js`) with budgets: core ≤ 8 KB gzip, react ≤ 2 KB gzip — failing CI on breach. Budgets live in package.json so raising one is a visible, reviewed diff.
-- Add a dependency-count assertion: core `dependencies` must be absent/empty; react may depend only on the core package (peer: react).
-- Consumer smoke test in CI, from packed tarballs (`npm pack`, install into a temp project): ESM `import` and CJS `require` of both `.` and `./testing`; tsc consuming the emitted `.d.ts`/`.d.cts` in that temp project.
-- Tree-shaking smoke: bundle a file importing only `createWorkspace` with esbuild; assert testing-only symbols (e.g. `createTestCluster`) are absent from output.
+- Build and `npm pack` both packages into a fresh temporary directory using a script
+  that validates the exact tarball contents.
+- Create fresh ESM and CJS consumers for core, React, and the testing subpath; run Node,
+  TypeScript minimum/latest declaration checks, and a browser bundle smoke.
+- Assert export conditions, `.d.ts`/`.d.cts`, sideEffects, sourcemaps policy, peer
+  dependencies, core-zero-dependency rule, and React's allowed dependency set.
+- Gzip built entry points with deterministic budgets: core <= 8 KiB and React <= 2 KiB,
+  or lower limits if the measured baseline supports them. Budgets are visible config.
+- Bundle a consumer importing only `createWorkspace`; assert testing and React code are absent.
+- Run the same script in CI and make every later publish workflow call it.
 
 ## Acceptance criteria
 
-- [ ] CI job fails when a budget is exceeded (prove by temporarily inflating, then revert).
-- [ ] Smoke test passes for ESM+CJS × core+testing+react from packed tarballs.
-- [ ] Tree-shake assertion green.
-- [ ] Budgets recorded in package.json (or size-limit config), visible in diffs.
+- [ ] ESM/CJS x core/testing/React consumers execute from tarballs without workspace links.
+- [ ] Declarations compile against declared minimum and latest TypeScript versions.
+- [ ] Dependency, tarball-content, tree-shaking, and gzip checks fail under proven temporary negative tests.
+- [ ] Tarballs contain intended dist, README, LICENSE, changelog, and package.json only.
+- [ ] The script creates and removes only validated temporary directories.
 
 ## Files
 
-`.github/workflows/ci.yml`, `package.json` / size-limit config, `scripts/` smoke-test script (new).
+Package/root manifests, size config, consumer/pack scripts, CI workflow, and support policy docs.
 
 ## Outcome
 
