@@ -18,15 +18,15 @@ correction must be released and restart affected evidence.
 
 - Prepare a changeset and release notes organized by the seven product capabilities.
 - Run all gates against packed candidate artifacts and the frozen `0.2.0` fixture.
-- Publish both packages with provenance under `next`; verify public docs/demo links.
-- Install from npm into clean ESM/CJS/React/browser consumers and execute every sample.
+- Publish the package with provenance under `next`; verify public docs/demo links.
+- Install from npm into clean ESM/CJS/React-app/browser consumers and execute every sample.
 - Snapshot `0.3.0` tarballs, API declarations, protocol version, and checksums as the
   baseline for burn-in and eventual 1.0 comparison.
 - Announce it only as a feature-complete preview/API candidate, not stable 1.0.
 
 ## Acceptance criteria
 
-- [ ] Core and React `0.3.0` publish under `next` with provenance and correct ranges.
+- [ ] `0.3.0` publishes under `next` with provenance.
 - [ ] All CI/package/browser/sample/compatibility gates pass against npm artifacts.
 - [ ] FEATURE-COMPLETE pre-burn-in cells are all done with evidence links.
 - [ ] API/protocol/tarball baselines and GitHub release notes are immutable and linked.

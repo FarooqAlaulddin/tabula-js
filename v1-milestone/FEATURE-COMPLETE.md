@@ -30,7 +30,7 @@ burn-in evidence required by the row. `not-applicable` requires a written reason
 | Protocol | Unsupported versions surface one recovery signal | required | required | required | required | todo |
 | Protocol | Long-lived message/bookkeeping stress remains bounded | required | stress smoke | required | sampled | todo |
 | Storage | Unavailable, blocked, corrupt, and quota-limited storage fail clearly | required | required/manual | required | sampled | todo |
-| React | Provider and all hooks match core events and teardown | required | browser smoke | required | required | todo |
+| Frameworks | React and vanilla apps consume the core API directly; no framework wrapper is part of v1 | required | browser smoke | required | sampled | todo |
 | Testing | Mock workspace and cluster cover every public capability | required | not-applicable | required | sampled | todo |
 | Packages | ESM/CJS/types/subpath/tree-shaking from packed tarballs | required | consumer smoke | required | required | todo |
 | Packages | Core dependency-free and gzip budgets respected | required | CI gate | required | not-applicable | todo |

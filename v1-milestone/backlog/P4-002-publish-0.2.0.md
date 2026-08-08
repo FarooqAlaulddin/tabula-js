@@ -19,15 +19,16 @@ the `next` dist-tag.
 
 Human prerequisites:
 
-- Create/confirm ownership of both npm names and configure GitHub Actions trusted
-  publishers for the exact release workflow/environment.
+- Create/confirm ownership of the npm name, make the source repository public for
+  provenance, and configure the GitHub Actions trusted publisher for the exact
+  release workflow/environment.
 - Approve the alpha and technical-preview version PRs.
 
 Agent preparation/execution support:
 
 - Prepare alpha changeset/release notes and run the proven dry-run.
 - Publish `0.2.0-alpha.0`, verify provenance, GitHub release, package metadata, install,
-  ESM/CJS/types, browser quick start, and core-before-React dependency resolution.
+  ESM/CJS/types, and the browser quick start.
 - Run the full suite against the npm-installed alpha, not workspace packages.
 - Correct any release-only issue through another alpha; do not mutate a published version.
 - Publish `0.2.0` under `next` only when alpha evidence is clean.
@@ -35,10 +36,10 @@ Agent preparation/execution support:
 
 ## Acceptance criteria
 
-- [ ] Both alpha packages show npm provenance and install under `next`; `latest` remains untouched.
+- [ ] The alpha package shows npm provenance and installs under `next`; `latest` remains untouched.
 - [ ] Full package, browser, sample, and compatibility suites pass against npm-installed alpha artifacts.
-- [ ] Both `0.2.0` packages publish with provenance and correct inter-package ranges.
-- [ ] Scratch ESM/CJS/TypeScript/React/browser consumers use the public artifacts successfully.
+- [ ] The `0.2.0` package publishes with provenance.
+- [ ] Scratch ESM/CJS/TypeScript/React-app/browser consumers use the public artifact successfully.
 - [ ] GitHub releases and manifests/checksums exist for alpha and preview.
 - [ ] P3-004 contains immutable `0.2.0` fixture metadata used by later candidates.
 

@@ -7,7 +7,7 @@ tabs and windows as views of one workspace.
 
 `1.0.0` is not permission to add adjacent features. It is the point at which every
 feature already implied by the workspace model has a stable contract, converges
-under ordinary browser adversity, works from the published packages, and has been
+under ordinary browser adversity, works from the published package, and has been
 exercised outside this repository.
 
 ## Product contract for 1.0
@@ -30,11 +30,11 @@ Tabula 1.0 consists of these supported capabilities:
 5. **Named views** -- at most one valid owner per view, atomic claim/conflict,
    vacancy, focus requests, opened-view handoff, stale-owner recovery, and fencing
    against stale handles or delayed messages.
-6. **Framework and test adapters** -- React bindings that match the core lifecycle
-   and a deterministic `tabula/testing` model whose intentional browser divergences
-   are documented.
-7. **Consumable packages** -- ESM and CJS exports, declarations, tree-shaking,
-   bounded bundle size, zero core dependencies, complete npm documentation, and
+6. **Framework-neutral integration and test adapters** -- direct use from framework
+   applications without a v1 wrapper, plus a deterministic testing subpath whose
+   intentional browser divergences are documented.
+7. **Consumable package** -- ESM and CJS exports, declarations, tree-shaking,
+   bounded bundle size, zero runtime dependencies, complete npm documentation, and
    reproducible provenance-backed releases.
 
 The contract is complete only when every row in `v1-milestone/FEATURE-COMPLETE.md`
@@ -179,8 +179,8 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 
 | ID | Title | Owner | Status |
 |----|-------|-------|--------|
-| P0-001 | Choose the npm package names | human | todo |
-| P0-002 | Rename packages and all references | agent | todo |
+| P0-001 | Choose the npm package name | human | done |
+| P0-002 | Rename the package and remove the React wrapper from v1 | agent | todo |
 | P0-003 | Correct and commit the pending e2e work | agent | done |
 | P0-004 | Complete package metadata and declared prerequisites | agent | todo |
 | P1-000 | Freeze the behavioral invariants and protocol design | agent | todo |

@@ -18,9 +18,9 @@ behavior, protocol, default, or API change is allowed between approval and publi
 - Prepare the final version/changelog-only changeset and prove generated runtime code,
   declarations, exports, protocol, and docs are unchanged from the approved RC except
   approved version/release metadata.
-- Publish core then React with provenance; verify npm/GitHub metadata and move `latest`
-  only after both packages and dependency resolution are healthy.
-- Install `latest` in fresh ESM, CJS, TypeScript, React, and browser consumers; run the
+- Publish the package with provenance; verify npm/GitHub metadata and move `latest`
+  only after the artifact is healthy.
+- Install `latest` in fresh ESM, CJS, TypeScript, React-app, and browser consumers; run the
   documented quick starts and a multi-tab state/leader/view smoke.
 - Verify live demo/docs links and rollback/recovery instructions.
 - Mark every backlog item/index row done with Outcomes, archive release evidence, and
@@ -28,8 +28,8 @@ behavior, protocol, default, or API change is allowed between approval and publi
 
 ## Acceptance criteria
 
-- [ ] Both packages are `1.0.0` with provenance and correct core-before-React dependency resolution.
-- [ ] `latest` resolves to healthy 1.0 packages only after post-publish verification.
+- [ ] The package is `1.0.0` with provenance.
+- [ ] `latest` resolves to the healthy 1.0 package only after post-publish verification.
 - [ ] Runtime/API/protocol comparison confirms no change from the approved RC beyond release metadata.
 - [ ] Fresh public-artifact consumers and browser smoke pass.
 - [ ] GitHub release, checksums/manifest, migration notes, demo, and docs are public and linked.

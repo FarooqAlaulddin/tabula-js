@@ -13,8 +13,8 @@ scope: one or more independent apps covering the complete feature matrix
 Examples authored for Tabula prove integration mechanics, not production fitness.
 The `0.3.0` candidate must run in applications that exist for their own purpose.
 Starting with low-stakes features remains correct, but 1.0 evidence must eventually
-cover state, presence, leadership, named views, lifecycle, React where claimed, and
-the published testing adapter.
+cover state, presence, leadership, named views, lifecycle, framework-neutral usage,
+and the published testing adapter.
 
 ## Task
 
@@ -25,7 +25,7 @@ Human selects one or more real apps. Collectively their normal usage paths must 
 - A leader-owned restartable connection/poll/background responsibility.
 - An exclusive named view opened/focused/reclaimed through real user interaction.
 - Lifecycle through refresh, close, background, sleep/wake, and application deployment.
-- React bindings if React remains a supported 1.0 package.
+- Direct core integration from at least one framework application.
 - `tabula/testing` in the consumer's ordinary test suite.
 
 Agent integrates incrementally and adds privacy-conscious instrumentation for library

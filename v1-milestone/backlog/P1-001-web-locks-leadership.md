@@ -38,7 +38,7 @@ exactly-once execution service.
 - [ ] Stale/delayed leader messages cannot overwrite a newer lock-holder generation.
 - [ ] A frozen holder's behavior is tested/documented without falsely promising failover while the lock remains held.
 - [ ] Missing Web Locks/insecure context errors state the prerequisite and recovery.
-- [ ] Core and React leader APIs retain the CONTRACT-selected observable shape.
+- [ ] Core and testing-subpath leader APIs retain the CONTRACT-selected observable shape.
 
 ## Files
 

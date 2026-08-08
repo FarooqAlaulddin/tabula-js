@@ -5,7 +5,7 @@ phase: 2
 status: todo
 depends_on: [P2-001, P2-002, P2-003]
 owner: agent
-scope: root/core/react docs + example semantic audit + sample harness
+scope: root/package docs + example semantic audit + sample harness
 ---
 
 ## Context
@@ -16,16 +16,16 @@ non-goals. Every code sample must compile against what users actually install.
 
 ## Task
 
-- Reconcile root, core-package, and React-package documentation from CONTRACT and
-  BEHAVIOR without maintaining contradictory prose.
+- Reconcile root and package documentation from CONTRACT and BEHAVIOR without
+  maintaining contradictory prose.
 - Include install commands, quick starts, full public API links, prerequisites,
   lifecycle/error guidance, security/trust model, and alternatives where appropriate.
 - Audit demo and Excalidraw code. Make editing single-owner or clearly non-concurrent;
-  preserve the useful removable-wrapper demonstration.
-- Build a sample extractor/harness that compiles TypeScript/TSX blocks against packed
-  packages. Execute browser-dependent samples in a fixture using those packages.
-- Verify React hook examples, testing-subpath examples, ESM/CJS examples, and package
-  names independently of workspace aliases.
+  prove that React applications can use the core API without a framework wrapper.
+- Build a sample extractor/harness that compiles TypeScript/TSX blocks against the
+  packed package. Execute browser-dependent samples in a fixture using that artifact.
+- Verify direct React integration, testing-subpath examples, ESM/CJS examples, and
+  the package name independently of workspace aliases.
 
 ## Acceptance criteria
 

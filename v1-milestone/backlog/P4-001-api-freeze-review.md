@@ -17,16 +17,16 @@ are allowed only through a new `0.x` release and evidence reset.
 
 ## Task
 
-Review every exported core, React, and testing symbol plus package export condition:
+Review every exported core and testing symbol plus package export condition:
 
 - Naming and subscription consistency; claim/open/release/focus result/error semantics.
 - Ready/destroy and pre-ready/post-destroy behavior.
 - Option defaults after Web Locks, including heartbeat/timeout/session decisions.
 - State delete/tombstone and `setAll` public semantics.
 - Leader and view event payload generations/tokens without exposing unnecessary internals.
-- React generic inference, provider typing, external-store behavior, and supported React range.
+- Framework-neutral integration ergonomics, including direct React application usage.
 - Testing/browser divergence and completeness of mock interfaces.
-- Node, TypeScript, React, browser, secure-context, and storage support policy.
+- Node, TypeScript, browser, secure-context, and storage support policy.
 - Error classes/messages and protocol incompatibility observability.
 - Same-origin threat model, unsafe-data guidance, state-data exposure, prototype
   pollution defenses, dependency/supply-chain surface, and privacy implications of
@@ -47,7 +47,7 @@ Generate and commit a machine-readable API/declaration baseline for later diffs.
 
 ## Files
 
-Public core/React/testing APIs, manifests, docs, API snapshot tooling/artifact,
+Public core/testing APIs, manifests, docs, API snapshot tooling/artifact,
 FEATURE-COMPLETE, and tests required by accepted decisions.
 
 ## Outcome

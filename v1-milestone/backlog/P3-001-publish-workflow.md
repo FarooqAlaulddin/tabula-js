@@ -20,17 +20,18 @@ integration proof is `0.2.0-alpha.0` under `next` in P4-002.
   pinned Node/pnpm, frozen install, and reviewed/pinned action versions.
 - Before publish, run lint, build, typecheck, unit tests, portable browser matrix,
   package gate, sample harness, and compatibility harness against packed artifacts.
-- Publish core before React with public access, provenance enabled, and the correct
-  dependency range. Fail if a pre-1.0 workflow targets `latest`.
+- Publish the package with public access and provenance enabled. Fail if a pre-1.0
+  workflow targets `latest`.
 - Create signed/annotated tags as selected, GitHub releases, changelog notes, tarball
   checksums, and a machine-readable release manifest.
-- Add workflow_dispatch dry-run that performs the exact pipeline through both
-  `npm publish --dry-run` calls but clearly reports that OIDC/provenance remain unproven.
-- Document human npm trusted-publisher setup for both package names.
+- Add workflow_dispatch dry-run that performs the exact pipeline through
+  `npm publish --dry-run` but clearly reports that OIDC/provenance remain unproven.
+- Document human npm trusted-publisher setup for the package name, including the
+  public-repository prerequisite for provenance.
 
 ## Acceptance criteria
 
-- [ ] Dry-run workflow is green and logs core-before-React order from packed artifacts.
+- [ ] Dry-run workflow is green and publishes only the validated packed artifact.
 - [ ] No npm token secret is required or referenced.
 - [ ] Provenance/public-access configuration is visible and inherited by the real publish command.
 - [ ] A negative test proves `latest` is rejected for alpha/preview/RC versions.
