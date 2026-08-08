@@ -32,6 +32,7 @@ app.on('leader:change', (e) => window.__tabulaEvents.push({ type: 'leader:change
 app.on('view:claimed', (e) => window.__tabulaEvents.push({ type: 'view:claimed', ...e }))
 app.on('view:vacant', (e) => window.__tabulaEvents.push({ type: 'view:vacant', ...e }))
 app.on('view:conflict', (e) => window.__tabulaEvents.push({ type: 'view:conflict', ...e }))
+app.on('sync:status', (status) => window.__tabulaEvents.push({ type: 'sync:status', ...status }))
 
 window.__leaderLifecycle = { setupCount: 0, cleanupCount: 0 }
 
@@ -61,6 +62,9 @@ app.state.on('notificationCount', () => {
 // signal ready when workspace init is complete
 app.ready.then(() => {
 	document.getElementById('status').textContent = 'ready'
+}).catch((error) => {
+	window.__tabulaReadyError = { name: error.name, message: error.message }
+	document.getElementById('status').textContent = 'failed'
 })
 </script>
 </body>

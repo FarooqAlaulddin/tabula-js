@@ -263,3 +263,23 @@ app.state.on('*', () => {
   opener presence and storage inheritance are not identity authority.
 - The selected and rejected alternatives, rationale, limits, failure semantics, and
   browser-policy boundaries are recorded in the contract rather than duplicated here.
+
+## 2026-08-08 — lifecycle, identity, and storage hardening
+
+- `readyTimeout` is one total runnable-time budget for identity probing, discovery,
+  and initial state synchronization. It is not a separate budget for every stage.
+- A session-stored tab id is only a candidate. Every document has a separate instance
+  id and probes before announcing presence; the later `(startedAt, instanceId)` claim
+  repairs to a fresh tab id. Opener state is not used as identity authority.
+- Lifecycle is observable through immutable `status()` snapshots and `sync:status`.
+  Terminal destroy/failure rejects queued asynchronous work and prevents all later
+  public operations except status inspection and repeated destroy.
+- Persisted `pagehide` suspends resources without broadcasting departure. Persisted
+  `pageshow` revalidates identity and reruns bounded discovery before queued work and
+  leader callbacks resume.
+- Baseline browser and storage capabilities are probed synchronously before attachment.
+  Later storage writes use typed transactional errors; malformed non-authoritative
+  projections are quarantined with a bounded diagnostic.
+- The old `session` option and startup epoch sweep were removed. A newly loaded tab
+  must never delete another live tab's registry projection merely because its document
+  session differs.

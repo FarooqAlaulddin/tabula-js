@@ -21,4 +21,14 @@ export type {
 	MessageTarget,
 	ProtocolIncompatibleEvent,
 	ProtocolVersion,
+	WorkspaceLifecycle,
+	WorkspaceStatus,
+	WorkspaceSyncState,
+} from '@tabula/tabula'
+export {
+	CapabilityError,
+	StorageCorruptionError,
+	StorageOperationError,
+	WorkspaceDestroyedError,
+	WorkspaceFailedError,
 } from '@tabula/tabula'

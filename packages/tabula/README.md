@@ -145,9 +145,24 @@ app.on('leader:change', ({ tab, isMe }) => { })
 ### Lifecycle
 
 ```ts
-await app.ready   // wait for init (state sync, leader election)
-app.destroy()     // full teardown — broadcasts departure, releases views
+await app.ready
+
+const status = app.status()
+// { lifecycle: 'ready', sync: 'complete', missingPeerIds: [] }
+
+app.on('sync:status', (nextStatus) => { })
+app.destroy()
 ```
+
+Initialization uses one bounded readiness budget (default `1000` ms of runnable timer
+time). `ready` can resolve with `sync: 'repairing'`; inspect `status()` or subscribe to
+`sync:status` when completeness matters. Mutations made while initializing or suspended
+in the back/forward cache are queued in call order.
+
+`destroy()` is terminal and idempotent. Destroying before readiness rejects `ready` with
+`WorkspaceDestroyedError`; asynchronous startup failure rejects it with
+`WorkspaceFailedError`. All operations except `status()` and repeated `destroy()` throw
+the matching terminal error afterward.
 
 ## Framework integration
 
@@ -238,13 +253,15 @@ Layer 1 — Transport       BroadcastChannel, localStorage, Dedup
 
 ### Message protocol
 
-Tabula uses 13 domain message types:
+Tabula uses 13 domain message types plus identity and compatibility control messages:
 
 ```
+identity:probe · identity:claim
 tab:announce · tab:heartbeat · tab:leave
 state:sync-request · state:sync · state:set · state:delete
 view:claim · view:claimed · view:release · view:conflict · view:focus
 leader:change
+protocol:reject
 ```
 
 Every message uses a validated, versioned envelope:
@@ -262,6 +279,7 @@ Malformed, misdirected, duplicate, or oversized traffic is dropped before domain
 | `namespace` | `string` | Workspace identifier. Tabs with the same namespace coordinate together. |
 | `options.heartbeat` | `number` | Presence heartbeat interval in ms. Default: `1500`. |
 | `options.timeout` | `number` | Time before a silent tab is pruned. Default: `5000`. |
+| `options.readyTimeout` | `number` | Total initial discovery/sync budget in runnable ms. Default: `1000`. |
 
 Returns `Workspace<S>`.
 
@@ -270,6 +288,7 @@ Returns `Workspace<S>`.
 | Property / Method | Type | Description |
 |-------------------|------|-------------|
 | `ready` | `Promise<void>` | Resolves when init is complete. |
+| `status()` | `WorkspaceStatus` | Immutable lifecycle and synchronization snapshot. |
 | `state` | `WorkspaceState<S>` | Shared state API. |
 | `views` | `WorkspaceViews` | View registry queries. |
 | `tabs` | `WorkspaceTabs` | Presence information. |

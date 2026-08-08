@@ -150,8 +150,14 @@ export function installMockWindow(): {
 } {
 	const handlers = new Map<string, Array<(...args: unknown[]) => void>>()
 	const origWindow = globalThis.window
+	const secureContextDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'isSecureContext')
+	const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
 
-	const mockWin = {
+	const mockWin: Record<string, unknown> & {
+		focus: ReturnType<typeof vi.fn>
+		addEventListener: (event: string, handler: (...args: unknown[]) => void) => void
+		removeEventListener: (event: string, handler: (...args: unknown[]) => void) => void
+	} = {
 		focus: vi.fn(),
 		addEventListener(event: string, handler: (...args: unknown[]) => void) {
 			if (!handlers.has(event)) handlers.set(event, [])
@@ -165,13 +171,30 @@ export function installMockWindow(): {
 			}
 		},
 	}
+	mockWin.self = mockWin
+	mockWin.top = mockWin
 
 	Object.defineProperty(globalThis, 'window', { value: mockWin, writable: true })
+	Object.defineProperty(globalThis, 'isSecureContext', { value: true, configurable: true })
+	Object.defineProperty(globalThis, 'navigator', {
+		value: { locks: { request: vi.fn() } },
+		configurable: true,
+	})
 
 	return {
 		getHandlers: (event: string) => handlers.get(event) ?? [],
 		restore: () => {
 			Object.defineProperty(globalThis, 'window', { value: origWindow, writable: true })
+			if (secureContextDescriptor) {
+				Object.defineProperty(globalThis, 'isSecureContext', secureContextDescriptor)
+			} else {
+				delete (globalThis as { isSecureContext?: boolean }).isSecureContext
+			}
+			if (navigatorDescriptor) {
+				Object.defineProperty(globalThis, 'navigator', navigatorDescriptor)
+			} else {
+				delete (globalThis as { navigator?: Navigator }).navigator
+			}
 		},
 	}
 }

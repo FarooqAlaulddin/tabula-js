@@ -2,7 +2,7 @@
 id: P1-006
 title: Harden lifecycle, tab identity, storage access, and bfcache recovery
 phase: 1
-status: todo
+status: done
 depends_on: [P1-005]
 owner: agent
 scope: coordinator lifecycle + identity/storage adapters + tests
@@ -34,13 +34,13 @@ duplicate-id repair, bfcache behavior, and capability failure timing are authori
 
 ## Acceptance criteria
 
-- [ ] Destroy before/during/after ready is idempotent and leaves zero active resources.
-- [ ] Initialization never reattaches work or resolves as usable after terminal destroy.
-- [ ] Normal, opener-created, refreshed, duplicated, and bfcache-restored tab identities satisfy I1.
-- [ ] A new independent tab cannot clear a live tab's view registry solely because its page session differs.
-- [ ] bfcache leave/restore rejoins and repairs without duplicate presence or callbacks.
-- [ ] Blocked storage and quota/corruption scenarios produce actionable, tested behavior.
-- [ ] Unit tests and Chromium e2e lifecycle tests pass before downstream coordination rewrites begin.
+- [x] Destroy before/during/after ready is idempotent and leaves zero active resources.
+- [x] Initialization never reattaches work or resolves as usable after terminal destroy.
+- [x] Normal, opener-created, refreshed, duplicated, and bfcache-restored tab identities satisfy I1.
+- [x] A new independent tab cannot clear a live tab's view registry solely because its page session differs.
+- [x] bfcache leave/restore rejoins and repairs without duplicate presence or callbacks.
+- [x] Blocked storage and quota/corruption scenarios produce actionable, tested behavior.
+- [x] Unit tests and Chromium e2e lifecycle tests pass before downstream coordination rewrites begin.
 
 ## Files
 
@@ -49,4 +49,31 @@ fixtures/specs, `docs/CONTRACT.md`, and `DECISIONS.md`.
 
 ## Outcome
 
-(pending)
+Implemented an abortable coordinator lifecycle with immutable status snapshots,
+terminal typed errors, ordered pre-ready/suspension queues, one total configurable
+readiness budget, and idempotent terminal cleanup. Persisted page transitions now
+suspend and resume the same workspace; ordinary pagehide still performs graceful
+terminal teardown.
+
+Tab identity now combines a reload-stable session candidate with a document instance
+id and deterministic duplicate probing. The later claimant repairs before presence,
+including opener-created and duplicated tabs, and the unsafe cross-session registry
+sweep is no longer called. Removed the obsolete public `session` option.
+
+Added synchronous secure-context/Web Locks/BroadcastChannel/UUID/storage capability
+checks, typed runtime storage errors, transactional claim/open writes, and bounded
+quarantine diagnostics for corrupt projections. Added identity messages to the
+validated protocol.
+
+Evidence:
+
+- `pnpm test`: 229 tests passed, including 13 lifecycle/capability tests and a
+  connected duplicate-identity integration test.
+- `pnpm typecheck`, `pnpm lint`, and `pnpm build`: passed.
+- Full Chromium suite: 29 tests passed, including opener identity repair across
+  refresh, duplicated-session repair, and persisted bfcache suspend/resume.
+- `node v1-milestone/validate.mjs`: passed after status updates.
+
+Expanded the listed file scope to `runtime.ts`, public exports/READMEs, the protocol
+validator/tests, e2e fixture/spec, and `DECISIONS.md`; these are required to expose,
+validate, document, and record the lifecycle and identity contract implemented here.

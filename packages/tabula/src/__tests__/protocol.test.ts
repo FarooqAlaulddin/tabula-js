@@ -24,6 +24,8 @@ const stateEntry = {
 
 describe('protocol validation', () => {
 	it.each([
+		['identity:probe', { startedAt: 1 }],
+		['identity:claim', { startedAt: 1 }],
 		['tab:announce', { visible: true, view: null, createdAt: 1 }],
 		['tab:heartbeat', null],
 		['tab:leave', null],

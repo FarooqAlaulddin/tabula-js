@@ -10,6 +10,7 @@ import type {
 	Workspace,
 	WorkspaceEventMap,
 	WorkspaceState,
+	WorkspaceStatus,
 	WorkspaceTabs,
 	WorkspaceViews,
 } from '@tabula/tabula'
@@ -77,6 +78,7 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 	private channel: MemoryChannel | null
 	private allTabs: Map<string, MockWorkspaceImpl<S>> | null
 	private unsub: (() => void) | null = null
+	private destroyed = false
 
 	constructor(
 		tabId: string,
@@ -225,6 +227,8 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 	}
 
 	destroy(): void {
+		if (this.destroyed) return
+		this.destroyed = true
 		for (const entry of this.leaderSetups) {
 			if (entry.cleanup) entry.cleanup()
 		}
@@ -235,6 +239,14 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 		this.eventListeners.clear()
 		this.stateListeners.clear()
 		this.wildcardListeners.clear()
+	}
+
+	status(): WorkspaceStatus {
+		return Object.freeze({
+			lifecycle: this.destroyed ? 'destroyed' : 'ready',
+			sync: 'complete',
+			missingPeerIds: Object.freeze([]),
+		})
 	}
 
 	onLeader(setup: () => (() => void) | undefined): () => void {

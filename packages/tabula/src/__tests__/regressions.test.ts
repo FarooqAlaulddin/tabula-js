@@ -286,7 +286,8 @@ describe('Bug 4: message ID uniqueness across page refresh', () => {
 		const msg = channel.send('tab:announce', {})
 
 		const parts = msg.id.split(':')
-		expect(parts).toEqual(['load-instance', '1'])
+		expect(parts[0]).toBe('load-instance')
+		expect(parts[1]).toMatch(/^\d+$/)
 		expect(msg.from).toEqual({ tabId, instanceId: 'load-instance' })
 
 		channel.close()
@@ -301,8 +302,8 @@ describe('Bug 4: message ID uniqueness across page refresh', () => {
 		const msg2 = channel2.send('tab:announce', {})
 
 		expect(msg1.id).not.toBe(msg2.id)
-		expect(msg1.id).toBe('instance-a:1')
-		expect(msg2.id).toBe('instance-b:1')
+		expect(msg1.id).toMatch(/^instance-a:\d+$/)
+		expect(msg2.id).toMatch(/^instance-b:\d+$/)
 
 		channel1.close()
 		channel2.close()

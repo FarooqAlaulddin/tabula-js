@@ -18,6 +18,20 @@ import {
 	validateStoredPresence,
 	validateStoredViewRegistryEntry,
 } from './protocol'
+import {
+	StorageOperationError,
+	WorkspaceDestroyedError,
+	WorkspaceFailedError,
+	type WorkspaceLifecycle,
+	type WorkspaceStatus,
+	type WorkspaceSyncState,
+	assertBaselineCapabilities,
+	getDocumentIdentity,
+	nextMessageId,
+	storageGet,
+	storageRemove,
+	storageSet,
+} from './runtime'
 
 export type {
 	Message,
@@ -27,6 +41,14 @@ export type {
 	ProtocolIncompatibleEvent,
 	ProtocolVersion,
 } from './protocol'
+export {
+	CapabilityError,
+	StorageCorruptionError,
+	StorageOperationError,
+	WorkspaceDestroyedError,
+	WorkspaceFailedError,
+} from './runtime'
+export type { WorkspaceLifecycle, WorkspaceStatus, WorkspaceSyncState } from './runtime'
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -55,7 +77,7 @@ export interface ViewRegistryEntry {
 export interface WorkspaceOptions {
 	heartbeat?: number
 	timeout?: number
-	session?: boolean
+	readyTimeout?: number
 }
 
 export interface ViewOpenOptions<S> {
@@ -91,6 +113,7 @@ export interface WorkspaceEventMap {
 	'tab:leave': TabMeta
 	'leader:change': LeaderChangeEvent
 	'protocol:incompatible': ProtocolIncompatibleEvent
+	'sync:status': WorkspaceStatus
 }
 
 export interface ViewHandle {
@@ -106,6 +129,7 @@ export interface Workspace<S extends object = Record<string, unknown>> {
 	readonly tabs: WorkspaceTabs
 	/** Resolves when the workspace has completed init (presence discovery, state sync, leader election). */
 	readonly ready: Promise<void>
+	status(): WorkspaceStatus
 	claim(viewName: string): void
 	open(viewName: string, options: ViewOpenOptions<S>): Promise<ViewHandle>
 	focus(viewName: string): void
@@ -148,44 +172,23 @@ export interface WorkspaceTabs {
 // ── Layer 1: Transport ────────────────────────────────────────────────────
 
 /** @internal */ export function getTabId(): string {
-	// Tabula must run in a top-level browsing context — iframes share storage
-	// and BroadcastChannel in confusing ways that break coordination.
-	if (typeof window !== 'undefined' && window.self !== window.top) {
-		throw new Error(
-			'Tabula does not support running inside iframes. Use it in top-level browser tabs only.',
-		)
-	}
-
-	if (typeof crypto === 'undefined' || typeof crypto.randomUUID !== 'function') {
-		throw new Error(
-			'Tabula requires crypto.randomUUID(). Supported in Chrome 92+, Firefox 95+, Safari 15.4+.',
-		)
-	}
-
-	// If this page was opened via window.open(), it inherits the opener's sessionStorage.
-	// We must generate a fresh ID to avoid sharing the same tabId (which breaks
-	// BroadcastChannel self-message filtering). Clear the inherited ID first.
-	try {
-		if (window.opener && window.opener !== window) {
-			sessionStorage.removeItem('tabula:tab-id')
-		}
-	} catch {
-		// cross-origin opener — can't access, treat as no opener
-	}
-
-	const existing = sessionStorage.getItem('tabula:tab-id')
+	const existing = storageGet(sessionStorage, 'sessionStorage', 'tabula:tab-id')
 	if (isValidId(existing)) return existing
 
 	const id = crypto.randomUUID()
-	sessionStorage.setItem('tabula:tab-id', id)
+	storageSet(sessionStorage, 'sessionStorage', 'tabula:tab-id', id)
 	return id
 }
 
+function replaceTabId(id: string): void {
+	storageSet(sessionStorage, 'sessionStorage', 'tabula:tab-id', id)
+}
+
 /** @internal */ export function getSessionEpoch(): string {
-	const existing = sessionStorage.getItem('tabula:epoch')
+	const existing = storageGet(sessionStorage, 'sessionStorage', 'tabula:epoch')
 	if (isValidId(existing)) return existing
 	const epoch = Date.now().toString()
-	sessionStorage.setItem('tabula:epoch', epoch)
+	storageSet(sessionStorage, 'sessionStorage', 'tabula:epoch', epoch)
 	return epoch
 }
 
@@ -236,7 +239,6 @@ type MsgHandler = (msg: Message) => void
 	private handlers = new Set<MsgHandler>()
 	private dedup = new Dedup()
 	private identity: MessageIdentity
-	private messageCounter = 0
 	private incompatibilities = new Map<string, number>()
 	private incompatibilityHandlers = new Set<(event: ProtocolIncompatibleEvent) => void>()
 	private warnedAtCapacity = false
@@ -297,11 +299,19 @@ type MsgHandler = (msg: Message) => void
 			from: this.identity,
 			...(to ? { to: typeof to === 'string' ? { tabId: to } : to } : {}),
 			payload,
-			id: `${this.identity.instanceId}:${++this.messageCounter}`,
+			id: nextMessageId(this.identity.instanceId),
 			sentAt: Date.now(),
 		}
 		if (!this.closed) this.bc.postMessage(msg)
 		return msg
+	}
+
+	getIdentity(): MessageIdentity {
+		return { ...this.identity }
+	}
+
+	replaceTabId(tabId: string): void {
+		this.identity = { ...this.identity, tabId }
 	}
 
 	onMessage(handler: MsgHandler): () => void {
@@ -360,6 +370,7 @@ type MsgHandler = (msg: Message) => void
 	private listeners = new Set<(view: string, entry: ViewRegistryEntry | null) => void>()
 	private knownViews = new Set<string>()
 	private scannedOnce = false
+	private warnedCorruption = false
 
 	constructor(namespace: string) {
 		this.prefix = `tabula:${namespace}:view:`
@@ -369,33 +380,41 @@ type MsgHandler = (msg: Message) => void
 	private ensureScanned(): void {
 		if (this.scannedOnce) return
 		this.scannedOnce = true
-		for (let i = 0; i < localStorage.length; i++) {
-			const key = localStorage.key(i)
-			if (key?.startsWith(this.prefix)) {
-				const view = key.slice(this.prefix.length)
-				if (isValidName(view)) this.knownViews.add(view)
+		try {
+			for (let i = 0; i < localStorage.length; i++) {
+				const key = localStorage.key(i)
+				if (key?.startsWith(this.prefix)) {
+					const view = key.slice(this.prefix.length)
+					if (isValidName(view)) this.knownViews.add(view)
+				}
 			}
+		} catch (cause) {
+			throw new StorageOperationError('localStorage', 'read', cause)
 		}
 	}
 
 	get(view: string): ViewRegistryEntry | null {
 		if (!isValidName(view)) return null
-		const raw = localStorage.getItem(this.prefix + view)
+		const key = this.prefix + view
+		const raw = storageGet(localStorage, 'localStorage', key)
 		if (!raw) return null
 		try {
-			return validateStoredViewRegistryEntry(JSON.parse(raw))
+			const entry = validateStoredViewRegistryEntry(JSON.parse(raw))
+			if (entry) return entry
 		} catch {
-			return null
+			// Quarantine malformed non-authoritative projections below.
 		}
+		this.quarantine(key)
+		return null
 	}
 
 	set(view: string, entry: ViewRegistryEntry): void {
-		localStorage.setItem(this.prefix + view, JSON.stringify(entry))
+		storageSet(localStorage, 'localStorage', this.prefix + view, JSON.stringify(entry))
 		this.knownViews.add(view)
 	}
 
 	delete(view: string): void {
-		localStorage.removeItem(this.prefix + view)
+		storageRemove(localStorage, 'localStorage', this.prefix + view)
 		this.knownViews.delete(view)
 	}
 
@@ -462,6 +481,18 @@ type MsgHandler = (msg: Message) => void
 		}
 		this.listeners.clear()
 	}
+
+	private quarantine(key: string): void {
+		try {
+			storageRemove(localStorage, 'localStorage', key)
+		} catch {
+			// A later operation will surface continuing storage loss.
+		}
+		if (!this.warnedCorruption) {
+			this.warnedCorruption = true
+			console.warn('Tabula removed a corrupt view-registry projection from localStorage.')
+		}
+	}
 }
 
 // ── Layer 2: Presence ─────────────────────────────────────────────────────
@@ -473,7 +504,7 @@ interface AnnouncePayload {
 }
 
 /** @internal */ export class Presence {
-	readonly tabId: string
+	tabId: string
 	private tabMap = new Map<string, TabMeta>()
 	private channel: Channel
 	private heartbeatMs: number
@@ -486,6 +517,8 @@ interface AnnouncePayload {
 	private createdAt: number
 	private presencePrefix: string
 	private warnedAtCapacity = false
+	private started = false
+	private warnedStorage = false
 
 	constructor(
 		channel: Channel,
@@ -514,10 +547,11 @@ interface AnnouncePayload {
 			lastSeenAt: this.createdAt,
 		}
 		this.tabMap.set(tabId, self)
-		this.writePresence()
 	}
 
 	start(): void {
+		if (this.started) return
+		this.started = true
 		// announce to others
 		this.announce()
 
@@ -626,6 +660,22 @@ interface AnnouncePayload {
 		}
 		this.tickTimer = null
 		this.visibilityHandler = null
+		this.started = false
+	}
+
+	reidentify(tabId: string): void {
+		const oldTabId = this.tabId
+		const self = this.getSelf()
+		this.removePresenceEntry(oldTabId)
+		this.tabMap.delete(oldTabId)
+		this.tabId = tabId
+		self.id = tabId
+		self.firstSeenAt = Date.now()
+		self.lastSeenAt = self.firstSeenAt
+		self.view = null
+		this.currentView = null
+		this.tabMap.set(tabId, self)
+		this.writePresence()
 	}
 
 	private updateSelf(): void {
@@ -639,7 +689,9 @@ interface AnnouncePayload {
 	/** Write this tab's presence to localStorage (not throttled by Chrome). */
 	private writePresence(): void {
 		try {
-			localStorage.setItem(
+			storageSet(
+				localStorage,
+				'localStorage',
 				this.presencePrefix + this.tabId,
 				JSON.stringify({
 					lastSeen: Date.now(),
@@ -648,17 +700,23 @@ interface AnnouncePayload {
 					view: this.currentView,
 				}),
 			)
-		} catch {
-			// ignore quota errors
+		} catch (error) {
+			this.warnStorage(error)
 		}
 	}
 
 	private removePresenceEntry(tabId: string): void {
 		try {
-			localStorage.removeItem(this.presencePrefix + tabId)
-		} catch {
-			// ignore
+			storageRemove(localStorage, 'localStorage', this.presencePrefix + tabId)
+		} catch (error) {
+			this.warnStorage(error)
 		}
+	}
+
+	private warnStorage(error: unknown): void {
+		if (this.warnedStorage) return
+		this.warnedStorage = true
+		console.warn('Tabula presence could not update its localStorage projection.', error)
 	}
 
 	private prune(): void {
@@ -736,6 +794,10 @@ interface AnnouncePayload {
 
 	isLeader(): boolean {
 		return this.currentLeaderId === this.presence.tabId
+	}
+
+	reset(): void {
+		this.currentLeaderId = null
 	}
 }
 
@@ -827,6 +889,15 @@ interface AnnouncePayload {
 		this.channel.send<null>('state:sync-request', null)
 	}
 
+	reidentify(tabId: string): void {
+		this.tabId = tabId
+	}
+
+	stop(): void {
+		this.keyListeners.clear()
+		this.wildcardListeners.clear()
+	}
+
 	getSnapshot(): Record<string, StateEntry> {
 		const out: Record<string, StateEntry> = {}
 		for (const [k, v] of this.entries) out[k] = v
@@ -887,6 +958,8 @@ interface AnnouncePayload {
 	private onVacant: (name: string) => void
 	private onConflict: (name: string, existing: TabMeta, incoming: TabMeta) => void
 	private visibilityHandler: (() => void) | null = null
+	private registryUnsubscribe: (() => void) | null = null
+	private started = false
 
 	constructor(
 		registry: Registry,
@@ -907,8 +980,10 @@ interface AnnouncePayload {
 	}
 
 	start(): void {
+		if (this.started) return
+		this.started = true
 		// listen for storage events as secondary sync
-		this.registry.onChange((viewName, entry) => {
+		this.registryUnsubscribe = this.registry.onChange((viewName, entry) => {
 			if (!entry) {
 				// deleted externally
 				if (this.inMemory.has(viewName)) {
@@ -1050,6 +1125,14 @@ interface AnnouncePayload {
 		if (this.visibilityHandler && typeof document !== 'undefined') {
 			document.removeEventListener('visibilitychange', this.visibilityHandler)
 		}
+		this.visibilityHandler = null
+		this.registryUnsubscribe?.()
+		this.registryUnsubscribe = null
+		this.started = false
+	}
+
+	reconcileNow(): void {
+		this.reconcile()
 	}
 
 	private reconcile(): void {
@@ -1086,24 +1169,37 @@ interface AnnouncePayload {
 
 interface QueuedCall {
 	fn: () => void
+	reject?: (error: Error) => void
 }
 
 class Coordinator<S extends object> {
+	private readonly namespace: string
 	private channel: Channel
 	private registry: Registry
-	private presence: Presence
-	private leader: Leader
-	private state: State<S>
-	private views: Views
+	private presence!: Presence
+	private leader!: Leader
+	private state!: State<S>
+	private views!: Views
+	private domainsAttached = false
 
 	private tabId: string
+	private readonly instanceId: string
+	private readonly startedAt: number
 	private epoch: string
 	private options: Required<WorkspaceOptions>
-	private ready = false
-	private destroyed = false
+	private lifecycle: WorkspaceLifecycle = 'initializing'
+	private sync: WorkspaceSyncState = 'pending'
+	private missingPeerIds = new Set<string>()
 	private queue: QueuedCall[] = []
 	private readyResolve!: () => void
+	private readyReject!: (error: Error) => void
+	private readySettled = false
 	readonly readyPromise: Promise<void>
+	private initAbort: AbortController | null = null
+	private identityClaims = new Map<string, number>()
+	private identityRepairRequested = false
+	private identityRepairing = false
+	private resourceCleanups = new Set<() => void>()
 
 	// event system
 	private eventListeners = new Map<string, Set<(payload: unknown) => void>>()
@@ -1114,33 +1210,51 @@ class Coordinator<S extends object> {
 		cleanup: (() => void) | undefined
 	}> = []
 
-	// pagehide handler
-	private pagehideHandler: (() => void) | null = null
+	private pagehideHandler: (event: PageTransitionEvent) => void
+	private pageshowHandler: (event: PageTransitionEvent) => void
 
 	constructor(namespace: string, opts: WorkspaceOptions) {
-		this.readyPromise = new Promise<void>((resolve) => {
+		this.namespace = namespace
+		this.readyPromise = new Promise<void>((resolve, reject) => {
 			this.readyResolve = resolve
+			this.readyReject = reject
 		})
+		void this.readyPromise.catch(() => undefined)
 		this.options = {
 			heartbeat: opts.heartbeat ?? 1500,
 			timeout: opts.timeout ?? 5000,
-			session: opts.session ?? true,
+			readyTimeout: opts.readyTimeout ?? 1000,
 		}
 
-		// Step 1: tab identity
+		const documentIdentity = getDocumentIdentity()
+		this.instanceId = documentIdentity.instanceId
+		this.startedAt = documentIdentity.startedAt
 		this.tabId = getTabId()
 		this.epoch = getSessionEpoch()
-
-		// Step 2: transport
-		this.channel = new Channel(namespace, this.tabId)
+		this.channel = new Channel(namespace, this.tabId, this.instanceId)
 		this.registry = new Registry(namespace)
 
-		// Step 3: clear stale entries
-		if (this.options.session) {
-			this.registry.clearStale(this.epoch)
-		}
+		this.channel.onProtocolIncompatible((event) => this.emit('protocol:incompatible', event))
+		this.channel.onMessage((msg) => this.handleIdentityMessage(msg))
 
-		// Step 4: domain modules
+		this.pagehideHandler = (event) => {
+			if (event.persisted) {
+				this.suspendForBfcache()
+			} else {
+				this.destroy()
+			}
+		}
+		this.pageshowHandler = (event) => {
+			if (event.persisted) this.resumeFromBfcache()
+		}
+		window.addEventListener('pagehide', this.pagehideHandler)
+		window.addEventListener('pageshow', this.pageshowHandler)
+
+		this.attachDomains()
+		this.startInitialization()
+	}
+
+	private attachDomains(): void {
 		this.presence = new Presence(
 			this.channel,
 			this.tabId,
@@ -1155,7 +1269,7 @@ class Coordinator<S extends object> {
 				this.views.cleanupForTab(tab.id)
 				this.leader.recalculate()
 			},
-			namespace,
+			this.namespace,
 		)
 
 		this.leader = new Leader(this.presence, (leaderId) => {
@@ -1177,64 +1291,78 @@ class Coordinator<S extends object> {
 			(name, existing, incoming) => this.emit('view:conflict', { name, existing, incoming }),
 		)
 
-		// message routing
-		this.channel.onProtocolIncompatible((event) => this.emit('protocol:incompatible', event))
 		this.channel.onMessage((msg) => {
+			if (msg.type === 'identity:probe' || msg.type === 'identity:claim') return
+			if (msg.from.tabId === this.tabId && msg.from.instanceId !== this.instanceId) return
 			this.presence.handleMessage(msg)
 			this.state.handleMessage(msg)
 			this.views.handleMessage(msg)
 		})
-
-		// start localStorage listener
 		this.registry.startListening()
-
-		// startup
-		this.init()
+		this.domainsAttached = true
 	}
 
-	private async init(): Promise<void> {
-		// Step 5: start presence (broadcasts announce)
-		this.presence.start()
+	private startInitialization(): void {
+		this.initAbort?.abort()
+		const controller = new AbortController()
+		this.initAbort = controller
+		void this.initialize(controller.signal).catch((error) => {
+			if (controller.signal.aborted || this.isTerminal()) return
+			this.fail(error)
+		})
+	}
 
-		// Step 6: wait for announce responses
-		// If we know tabs from the view registry, wait for them specifically.
-		// Otherwise, wait briefly for any announce (resolves on first join or timeout).
+	private async initialize(signal: AbortSignal): Promise<void> {
+		const deadline = Date.now() + this.options.readyTimeout
+		this.setSync('pending', [])
+		await this.establishIdentity(deadline, signal)
+		this.ensureRunning(signal)
+
+		this.presence.start()
 		const knownFromRegistry = Object.values(this.registry.list())
 		const expectedTabs = new Set(knownFromRegistry.map((e) => e.tabId))
-		await this.waitForTabs(expectedTabs, expectedTabs.size > 0 ? 150 : 100)
+		expectedTabs.delete(this.tabId)
+		await this.waitForTabs(expectedTabs, this.remainingBudget(deadline, 150), signal)
+		this.ensureRunning(signal)
 
-		// Step 7: leader calculation
 		this.leader.recalculate()
+		await this.syncState(this.remainingBudget(deadline, 150), signal)
+		this.ensureRunning(signal)
 
-		// Step 8: state sync
-		await this.syncState()
-
-		// Step 9: validate views against presence
 		this.views.loadFromRegistry()
 		this.views.validateAgainstPresence()
 		this.views.start()
 
-		// Step 10: ready
-		this.ready = true
+		const missing = [...expectedTabs].filter((id) => !this.presence.isAlive(id))
+		this.lifecycle = 'ready'
+		this.setSync(missing.length > 0 ? 'repairing' : 'complete', missing)
 		this.flushQueue()
-		this.readyResolve()
-
-		// graceful shutdown
-		this.pagehideHandler = () => {
-			this.presence.broadcastLeave()
-			// release any view we hold
-			const self = this.presence.getSelf()
-			if (self.view) {
-				this.views.release(self.view)
-			}
+		if (!this.readySettled) {
+			this.readySettled = true
+			this.readyResolve()
 		}
-		window.addEventListener('pagehide', this.pagehideHandler)
+		this.runLeaderCallbacks()
 	}
 
-	private waitForTabs(expected: Set<string>, maxMs: number): Promise<void> {
+	private remainingBudget(deadline: number, stageLimit: number): number {
+		return Math.max(0, Math.min(stageLimit, deadline - Date.now()))
+	}
+
+	private waitForTabs(expected: Set<string>, maxMs: number, signal: AbortSignal): Promise<void> {
 		return new Promise((resolve) => {
+			let settled = false
+			const finish = () => {
+				if (settled) return
+				settled = true
+				clearTimeout(timeout)
+				unsub?.()
+				signal.removeEventListener('abort', finish)
+				resolve()
+			}
+			let unsub: (() => void) | undefined
+			const timeout = setTimeout(finish, maxMs)
+			signal.addEventListener('abort', finish, { once: true })
 			if (expected.size > 0) {
-				// Wait for specific known tabs or timeout
 				const check = () => {
 					for (const tabId of expected) {
 						if (!this.presence.isAlive(tabId)) return false
@@ -1242,60 +1370,209 @@ class Coordinator<S extends object> {
 					return true
 				}
 				if (check()) {
-					resolve()
+					finish()
 					return
 				}
-				const timeout = setTimeout(done, maxMs)
-				const unsub = this.on('tab:join', () => {
-					if (check()) done()
+				unsub = this.onInternal('tab:join', () => {
+					if (check()) finish()
 				})
-				function done() {
-					clearTimeout(timeout)
-					unsub()
-					resolve()
-				}
 			} else {
-				// No known tabs — wait briefly for any announce, resolve on first join or timeout
-				const timeout = setTimeout(done, maxMs)
-				const unsub = this.on('tab:join', () => done())
-				function done() {
-					clearTimeout(timeout)
-					unsub()
-					resolve()
-				}
+				unsub = this.onInternal('tab:join', finish)
 			}
 		})
 	}
 
-	private async syncState(): Promise<void> {
-		// Always request sync — other tabs may exist even if not yet discovered via presence.
-		// BroadcastChannel delivery is sub-millisecond, so a short timeout suffices.
-		// If another tab exists, it responds almost instantly and done() fires.
-		// If no tab exists, we wait the timeout and move on.
+	private async syncState(maxMs: number, signal: AbortSignal): Promise<void> {
 		return new Promise<void>((resolve) => {
-			const unsub = this.channel.onMessage((msg) => {
-				if (msg.type === 'state:sync') done()
-			})
-			const timeout = setTimeout(done, 150)
-			this.state.requestSync()
-
-			function done() {
-				clearTimeout(timeout)
-				unsub()
+			let settled = false
+			const resources: { timeout?: ReturnType<typeof setTimeout>; unsub?: () => void } = {}
+			const finish = () => {
+				if (settled) return
+				settled = true
+				if (resources.timeout) clearTimeout(resources.timeout)
+				resources.unsub?.()
+				signal.removeEventListener('abort', finish)
 				resolve()
 			}
+			resources.unsub = this.channel.onMessage((msg) => {
+				if (msg.type === 'state:sync') finish()
+			})
+			resources.timeout = setTimeout(finish, maxMs)
+			signal.addEventListener('abort', finish, { once: true })
+			this.state.requestSync()
 		})
+	}
+
+	private async establishIdentity(deadline: number, signal: AbortSignal): Promise<void> {
+		while (!signal.aborted) {
+			this.identityClaims.clear()
+			this.channel.send('identity:probe', { startedAt: this.startedAt })
+			await this.waitForIdentityClaims(this.remainingBudget(deadline, 75), signal)
+			this.ensureRunning(signal)
+			if (!this.hasEarlierIdentityClaim()) return
+			this.applyFreshTabId()
+			if (Date.now() >= deadline) return
+		}
+	}
+
+	private waitForIdentityClaims(maxMs: number, signal: AbortSignal): Promise<void> {
+		return new Promise((resolve) => {
+			let settled = false
+			const finish = () => {
+				if (settled) return
+				settled = true
+				clearTimeout(timeout)
+				signal.removeEventListener('abort', finish)
+				resolve()
+			}
+			const timeout = setTimeout(finish, maxMs)
+			signal.addEventListener('abort', finish, { once: true })
+		})
+	}
+
+	private handleIdentityMessage(msg: Message): void {
+		if (msg.type !== 'identity:probe' && msg.type !== 'identity:claim') return
+		if (msg.from.tabId !== this.tabId || msg.from.instanceId === this.instanceId) return
+		const { startedAt } = msg.payload as { startedAt: number }
+		this.identityClaims.set(msg.from.instanceId, startedAt)
+		if (msg.type === 'identity:probe') {
+			this.channel.send('identity:claim', { startedAt: this.startedAt }, msg.from)
+		}
+		if (this.isEarlierClaim(startedAt, msg.from.instanceId)) {
+			this.identityRepairRequested = true
+			if (this.lifecycle === 'ready') this.scheduleIdentityRepair()
+		}
+	}
+
+	private hasEarlierIdentityClaim(): boolean {
+		for (const [instanceId, startedAt] of this.identityClaims) {
+			if (this.isEarlierClaim(startedAt, instanceId)) return true
+		}
+		return false
+	}
+
+	private isEarlierClaim(startedAt: number, instanceId: string): boolean {
+		return (
+			startedAt < this.startedAt || (startedAt === this.startedAt && instanceId < this.instanceId)
+		)
+	}
+
+	private applyFreshTabId(): void {
+		const nextTabId = crypto.randomUUID()
+		replaceTabId(nextTabId)
+		this.tabId = nextTabId
+		this.channel.replaceTabId(nextTabId)
+		if (this.domainsAttached) {
+			this.presence.reidentify(nextTabId)
+			this.state.reidentify(nextTabId)
+			this.leader.reset()
+		}
+		this.identityRepairRequested = false
+	}
+
+	private scheduleIdentityRepair(): void {
+		if (this.identityRepairing || this.isTerminal()) return
+		this.identityRepairing = true
+		queueMicrotask(() => {
+			void this.repairIdentity()
+				.catch((error) => this.fail(error))
+				.finally(() => {
+					this.identityRepairing = false
+				})
+		})
+	}
+
+	private async repairIdentity(): Promise<void> {
+		if (!this.identityRepairRequested || this.isTerminal()) return
+		this.lifecycle = 'initializing'
+		this.stopLeaderCallbacks()
+		const self = this.presence.getSelf()
+		if (self.view) this.views.release(self.view)
+		this.presence.broadcastLeave()
+		this.presence.stop()
+		this.views.stop()
+		this.applyFreshTabId()
+		this.startInitialization()
+	}
+
+	private suspendForBfcache(): void {
+		if (this.isTerminal() || this.lifecycle === 'bfcache-suspended') return
+		this.initAbort?.abort()
+		this.lifecycle = 'bfcache-suspended'
+		this.setSync('pending', [])
+		this.stopLeaderCallbacks()
+		if (this.domainsAttached) {
+			this.presence.stop()
+			this.views.stop()
+		}
+	}
+
+	private resumeFromBfcache(): void {
+		if (this.lifecycle !== 'bfcache-suspended') return
+		this.lifecycle = 'initializing'
+		this.startInitialization()
+	}
+
+	private setSync(sync: WorkspaceSyncState, missingPeerIds: string[]): void {
+		const nextMissing = new Set(missingPeerIds)
+		const changed =
+			this.sync !== sync ||
+			nextMissing.size !== this.missingPeerIds.size ||
+			[...nextMissing].some((id) => !this.missingPeerIds.has(id))
+		this.sync = sync
+		this.missingPeerIds = nextMissing
+		if (changed) this.emit('sync:status', this.status())
+	}
+
+	status(): WorkspaceStatus {
+		return Object.freeze({
+			lifecycle: this.lifecycle,
+			sync: this.sync,
+			missingPeerIds: Object.freeze([...this.missingPeerIds].sort()),
+		})
+	}
+
+	private ensureRunning(signal: AbortSignal): void {
+		if (signal.aborted || this.isTerminal() || this.lifecycle === 'bfcache-suspended') {
+			throw new DOMException('Tabula initialization was aborted.', 'AbortError')
+		}
+	}
+
+	private isTerminal(): boolean {
+		return this.lifecycle === 'failed' || this.lifecycle === 'destroyed'
+	}
+
+	assertActive(): void {
+		if (this.lifecycle === 'destroyed') throw new WorkspaceDestroyedError()
+		if (this.lifecycle === 'failed') throw new WorkspaceFailedError()
+	}
+
+	private fail(cause: unknown): void {
+		if (this.isTerminal()) return
+		this.lifecycle = 'failed'
+		const error = new WorkspaceFailedError(cause)
+		if (!this.readySettled) {
+			this.readySettled = true
+			this.readyReject(error)
+		}
+		this.cleanupTerminal(error)
 	}
 
 	// ── Event system ──
 
 	private emit(event: string, payload: unknown): void {
+		if (this.isTerminal()) return
 		const listeners = this.eventListeners.get(event)
 		if (!listeners) return
 		for (const cb of listeners) cb(payload)
 	}
 
 	on(event: string, cb: (payload: unknown) => void): () => void {
+		this.assertActive()
+		return this.onInternal(event, cb)
+	}
+
+	private onInternal(event: string, cb: (payload: unknown) => void): () => void {
 		let set = this.eventListeners.get(event)
 		if (!set) {
 			set = new Set()
@@ -1306,17 +1583,19 @@ class Coordinator<S extends object> {
 	}
 
 	off(event: string, cb: (payload: unknown) => void): void {
+		this.assertActive()
 		this.eventListeners.get(event)?.delete(cb)
 	}
 
 	// ── Leader callbacks ──
 
 	addLeaderSetup(setup: () => (() => void) | undefined): () => void {
+		this.assertActive()
 		const entry = { setup, cleanup: undefined as (() => void) | undefined }
 		this.leaderSetups.push(entry)
 
 		// if already leader, run immediately
-		if (this.leader.isLeader()) {
+		if (this.lifecycle === 'ready' && this.leader.isLeader()) {
 			entry.cleanup = setup() ?? undefined
 		}
 
@@ -1328,6 +1607,7 @@ class Coordinator<S extends object> {
 	}
 
 	private runLeaderCallbacks(): void {
+		if (this.lifecycle !== 'ready') return
 		for (const entry of this.leaderSetups) {
 			if (this.leader.isLeader()) {
 				if (!entry.cleanup) {
@@ -1342,6 +1622,13 @@ class Coordinator<S extends object> {
 		}
 	}
 
+	private stopLeaderCallbacks(): void {
+		for (const entry of this.leaderSetups) {
+			entry.cleanup?.()
+			entry.cleanup = undefined
+		}
+	}
+
 	// ── Queue ──
 
 	private flushQueue(): void {
@@ -1350,11 +1637,31 @@ class Coordinator<S extends object> {
 	}
 
 	enqueue(fn: () => void): void {
-		if (this.ready) {
+		this.assertActive()
+		if (this.lifecycle === 'ready') {
 			fn()
 		} else {
 			this.queue.push({ fn })
 		}
+	}
+
+	runWhenReady<T>(fn: () => Promise<T> | T): Promise<T> {
+		this.assertActive()
+		if (this.lifecycle === 'ready') return Promise.resolve().then(fn)
+		return new Promise<T>((resolve, reject) => {
+			this.queue.push({
+				fn: () => {
+					void Promise.resolve().then(fn).then(resolve, reject)
+				},
+				reject,
+			})
+		})
+	}
+
+	trackResource(cleanup: () => void): () => void {
+		this.assertActive()
+		this.resourceCleanups.add(cleanup)
+		return () => this.resourceCleanups.delete(cleanup)
 	}
 
 	// ── Public accessors ──
@@ -1380,38 +1687,46 @@ class Coordinator<S extends object> {
 	}
 
 	isReady(): boolean {
-		return this.ready
+		return this.lifecycle === 'ready'
 	}
 
 	destroy(): void {
-		if (this.destroyed) return
-		this.destroyed = true
-
-		// run leader cleanups
-		for (const entry of this.leaderSetups) {
-			if (entry.cleanup) entry.cleanup()
+		if (this.lifecycle === 'destroyed' || this.lifecycle === 'failed') return
+		this.lifecycle = 'destroyed'
+		const error = new WorkspaceDestroyedError()
+		if (!this.readySettled) {
+			this.readySettled = true
+			this.readyReject(error)
 		}
+		this.cleanupTerminal(error)
+	}
+
+	private cleanupTerminal(error: Error): void {
+		this.initAbort?.abort()
+		this.initAbort = null
+		this.stopLeaderCallbacks()
 		this.leaderSetups = []
-
-		// release views
-		const self = this.presence.getSelf()
-		if (self.view) this.views.release(self.view)
-
-		// broadcast leave
-		this.presence.broadcastLeave()
-
-		// stop everything
-		this.presence.stop()
-		this.views.stop()
-		this.registry.stopListening()
-		this.channel.close()
-
-		if (this.pagehideHandler) {
-			window.removeEventListener('pagehide', this.pagehideHandler)
+		if (this.domainsAttached) {
+			try {
+				const self = this.presence.getSelf()
+				if (self.view) this.views.release(self.view)
+				this.presence.broadcastLeave()
+			} catch {
+				// Terminal cleanup is best effort after a storage/runtime failure.
+			}
+			this.presence.stop()
+			this.views.stop()
+			this.state.stop()
 		}
-
-		this.eventListeners.clear()
+		this.registry.stopListening()
+		for (const cleanup of this.resourceCleanups) cleanup()
+		this.resourceCleanups.clear()
+		for (const item of this.queue) item.reject?.(error)
 		this.queue = []
+		this.channel.close()
+		window.removeEventListener('pagehide', this.pagehideHandler)
+		window.removeEventListener('pageshow', this.pageshowHandler)
+		this.eventListeners.clear()
 	}
 }
 
@@ -1427,6 +1742,16 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 				"This identifies your workspace across tabs — e.g. createWorkspace('my-app').",
 		)
 	}
+	for (const [name, value] of [
+		['heartbeat', options.heartbeat],
+		['timeout', options.timeout],
+		['readyTimeout', options.readyTimeout],
+	] as const) {
+		if (value !== undefined && (!Number.isFinite(value) || value <= 0)) {
+			throw new TypeError(`createWorkspace() option ${name} must be a positive finite number.`)
+		}
+	}
+	assertBaselineCapabilities()
 
 	const coord = new Coordinator<S>(namespace, options)
 
@@ -1435,9 +1760,11 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 			coord.enqueue(() => coord.getState().set(key, value))
 		},
 		get(key) {
+			coord.assertActive()
 			return coord.getState().get(key)
 		},
 		on(key: string, cb: (...args: unknown[]) => void) {
+			coord.assertActive()
 			if (key === '*') {
 				return coord.getState().onWildcard(cb as (key: string, value: unknown) => void)
 			}
@@ -1447,9 +1774,11 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 			coord.enqueue(() => coord.getState().delete(key))
 		},
 		keys() {
+			coord.assertActive()
 			return coord.getState().keys() as any
 		},
 		entries() {
+			coord.assertActive()
 			return coord.getState().allEntries() as any
 		},
 		setAll(entries) {
@@ -1458,15 +1787,31 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 	} as WorkspaceState<S>
 
 	const viewsApi: WorkspaceViews = {
-		get: (name) => coord.getViews().get(name),
-		list: () => coord.getViews().listAll(),
-		has: (name) => coord.getViews().has(name),
+		get: (name) => {
+			coord.assertActive()
+			return coord.getViews().get(name)
+		},
+		list: () => {
+			coord.assertActive()
+			return coord.getViews().listAll()
+		},
+		has: (name) => {
+			coord.assertActive()
+			return coord.getViews().has(name)
+		},
 	}
 
 	const tabsApi: WorkspaceTabs = {
-		list: () => coord.getPresence().getAllTabs(),
-		current: () => coord.getPresence().getSelf(),
+		list: () => {
+			coord.assertActive()
+			return coord.getPresence().getAllTabs()
+		},
+		current: () => {
+			coord.assertActive()
+			return coord.getPresence().getSelf()
+		},
 		leader: () => {
+			coord.assertActive()
 			const lid = coord.getLeader().getLeaderId()
 			if (!lid) return null
 			return coord.getPresence().getTab(lid) ?? null
@@ -1478,8 +1823,10 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 		views: viewsApi,
 		tabs: tabsApi,
 		ready: coord.readyPromise,
+		status: () => coord.status(),
 
 		claim(viewName: string) {
+			coord.assertActive()
 			const currentView = coord.getPresence().getSelf().view
 			if (currentView) {
 				throw new Error(
@@ -1491,9 +1838,9 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 				// Key is per-view so two concurrent open() calls for different views
 				// never overwrite each other's data.
 				const pendingKey = `tabula:${namespace}:pending-open:${viewName}`
-				try {
-					const raw = localStorage.getItem(pendingKey)
-					if (raw) {
+				const raw = storageGet(localStorage, 'localStorage', pendingKey)
+				if (raw) {
+					try {
 						const pending = JSON.parse(raw) as {
 							view?: string
 							syncedState?: Record<string, unknown>
@@ -1506,106 +1853,129 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 								}
 							}
 						}
-						localStorage.removeItem(pendingKey)
+					} catch {
+						console.warn('Tabula removed a corrupt pending-open projection from localStorage.')
 					}
-				} catch {
-					// ignore malformed pending data
+					storageRemove(localStorage, 'localStorage', pendingKey)
 				}
 				coord.getViews().claim(viewName)
 			})
 		},
 
-		async open(viewName: string, opts: ViewOpenOptions<S>): Promise<ViewHandle> {
-			const existing = coord.getViews().get(viewName)
-			if (existing) {
-				const self = coord.getPresence().getSelf()
-				coord.getViews().focus(viewName)
-				throw Object.assign(new Error(`View '${viewName}' is already held by another tab.`), {
-					existing,
-					self,
-				})
-			}
-
-			// Write pending-open intent to localStorage so the new tab can read it
-			// without polluting the URL. The new tab reads this on init via app.claim().
-			// Key is per-view so two concurrent open() calls for different views
-			// never overwrite each other's data.
-			const pendingKey = `tabula:${namespace}:pending-open:${viewName}`
-			const pendingData: Record<string, unknown> = { view: viewName }
-			if (opts.syncKeys) {
-				pendingData.syncedState = coord.getState().getKeysForSync(opts.syncKeys)
-			}
-			localStorage.setItem(pendingKey, JSON.stringify(pendingData))
-
-			const opened = window.open(new URL(opts.url, window.location.href).toString())
-			if (!opened) {
-				throw new Error(
-					`Failed to open tab for view '${viewName}'. The browser may have blocked the popup. app.open() must be called in direct response to a user gesture (click, keyboard).`,
-				)
-			}
-
-			// wait for the new tab to claim the view
-			const claimed = await new Promise<boolean>((resolve) => {
-				const timeout = setTimeout(() => resolve(false), 5000)
-				const unsub = coord.on('view:claimed', (payload: unknown) => {
-					const e = payload as ViewClaimedEvent
-					if (e.name === viewName) {
-						clearTimeout(timeout)
-						unsub()
-						resolve(true)
-					}
-				})
-			})
-
-			if (!claimed) {
-				throw new Error(
-					`View '${viewName}' was not claimed by the new tab within 5 seconds. Make sure the opened page calls app.claim('${viewName}').`,
-				)
-			}
-
-			// return handle
-			const handleListeners = new Map<string, Set<(...args: unknown[]) => void>>()
-
-			const handle: ViewHandle = {
-				on(event: string, cb: (...args: unknown[]) => void) {
-					let set = handleListeners.get(event)
-					if (!set) {
-						set = new Set()
-						handleListeners.set(event, set)
-					}
-					set.add(cb)
-
-					let unsub: (() => void) | undefined
-					if (event === 'vacant') {
-						unsub = coord.on('view:vacant', (payload: unknown) => {
-							const e = payload as ViewVacantEvent
-							if (e.name === viewName) cb()
-						})
-					} else if (event === 'conflict') {
-						unsub = coord.on('view:conflict', (payload: unknown) => {
-							const e = payload as ViewConflictEvent
-							if (e.name === viewName) cb({ existing: e.existing, incoming: e.incoming })
-						})
-					}
-
-					return () => {
-						set.delete(cb)
-						unsub?.()
-					}
-				},
-				release() {
-					coord.getViews().release(viewName)
-				},
-				focus() {
+		open(viewName: string, opts: ViewOpenOptions<S>): Promise<ViewHandle> {
+			return coord.runWhenReady(async () => {
+				const existing = coord.getViews().get(viewName)
+				if (existing) {
+					const self = coord.getPresence().getSelf()
 					coord.getViews().focus(viewName)
-				},
-			} as ViewHandle
+					throw Object.assign(new Error(`View '${viewName}' is already held by another tab.`), {
+						existing,
+						self,
+					})
+				}
 
-			return handle
+				// Write pending-open intent to localStorage so the new tab can read it
+				// without polluting the URL. The new tab reads this on init via app.claim().
+				// Key is per-view so two concurrent open() calls for different views
+				// never overwrite each other's data.
+				const pendingKey = `tabula:${namespace}:pending-open:${viewName}`
+				const pendingData: Record<string, unknown> = { view: viewName }
+				if (opts.syncKeys) {
+					pendingData.syncedState = coord.getState().getKeysForSync(opts.syncKeys)
+				}
+				storageSet(localStorage, 'localStorage', pendingKey, JSON.stringify(pendingData))
+
+				const opened = window.open(new URL(opts.url, window.location.href).toString())
+				if (!opened) {
+					storageRemove(localStorage, 'localStorage', pendingKey)
+					throw new Error(
+						`Failed to open tab for view '${viewName}'. The browser may have blocked the popup. app.open() must be called in direct response to a user gesture (click, keyboard).`,
+					)
+				}
+
+				// wait for the new tab to claim the view
+				const claimed = await new Promise<boolean>((resolve) => {
+					let settled = false
+					const resources: { timeout?: ReturnType<typeof setTimeout> } = {}
+					let unsub: () => void = () => undefined
+					let untrack: () => void = () => undefined
+					const finish = (result: boolean) => {
+						if (settled) return
+						settled = true
+						if (resources.timeout) clearTimeout(resources.timeout)
+						unsub()
+						untrack()
+						if (!result) {
+							try {
+								storageRemove(localStorage, 'localStorage', pendingKey)
+							} catch {
+								// The terminal or timeout error remains primary.
+							}
+						}
+						resolve(result)
+					}
+					resources.timeout = setTimeout(() => finish(false), 5000)
+					unsub = coord.on('view:claimed', (payload: unknown) => {
+						const e = payload as ViewClaimedEvent
+						if (e.name === viewName) {
+							finish(true)
+						}
+					})
+					untrack = coord.trackResource(() => finish(false))
+				})
+
+				if (!claimed) {
+					coord.assertActive()
+					throw new Error(
+						`View '${viewName}' was not claimed by the new tab within 5 seconds. Make sure the opened page calls app.claim('${viewName}').`,
+					)
+				}
+
+				// return handle
+				const handleListeners = new Map<string, Set<(...args: unknown[]) => void>>()
+
+				const handle: ViewHandle = {
+					on(event: string, cb: (...args: unknown[]) => void) {
+						coord.assertActive()
+						let set = handleListeners.get(event)
+						if (!set) {
+							set = new Set()
+							handleListeners.set(event, set)
+						}
+						set.add(cb)
+
+						let unsub: (() => void) | undefined
+						if (event === 'vacant') {
+							unsub = coord.on('view:vacant', (payload: unknown) => {
+								const e = payload as ViewVacantEvent
+								if (e.name === viewName) cb()
+							})
+						} else if (event === 'conflict') {
+							unsub = coord.on('view:conflict', (payload: unknown) => {
+								const e = payload as ViewConflictEvent
+								if (e.name === viewName) cb({ existing: e.existing, incoming: e.incoming })
+							})
+						}
+
+						return () => {
+							set.delete(cb)
+							unsub?.()
+						}
+					},
+					release() {
+						coord.enqueue(() => coord.getViews().release(viewName))
+					},
+					focus() {
+						coord.enqueue(() => coord.getViews().focus(viewName))
+					},
+				} as ViewHandle
+
+				return handle
+			})
 		},
 
 		focus(viewName: string) {
-			coord.getViews().focus(viewName)
+			coord.enqueue(() => coord.getViews().focus(viewName))
 		},
 
 		destroy() {
@@ -1617,6 +1987,7 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 		},
 
 		isLeader() {
+			coord.assertActive()
 			return coord.getLeader().isLeader()
 		},
 

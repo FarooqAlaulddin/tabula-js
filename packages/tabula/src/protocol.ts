@@ -14,6 +14,8 @@ const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const textEncoder = new TextEncoder()
 
 export type MessageType =
+	| 'identity:probe'
+	| 'identity:claim'
 	| 'tab:announce'
 	| 'tab:heartbeat'
 	| 'tab:leave'
@@ -30,6 +32,8 @@ export type MessageType =
 	| 'protocol:reject'
 
 const MESSAGE_TYPES = new Set<MessageType>([
+	'identity:probe',
+	'identity:claim',
 	'tab:announce',
 	'tab:heartbeat',
 	'tab:leave',
@@ -280,6 +284,9 @@ function hasName(value: unknown): boolean {
 
 function validatePayload(type: MessageType, payload: unknown): boolean {
 	switch (type) {
+		case 'identity:probe':
+		case 'identity:claim':
+			return isRecord(payload) && hasSafeOwnKeys(payload) && isFiniteTimestamp(payload.startedAt)
 		case 'tab:announce':
 			return (
 				isRecord(payload) &&
