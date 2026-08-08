@@ -14,12 +14,15 @@ The happy-path suite does not prove I1-I9 under scheduling and lifecycle adversi
 This task exercises the final protocol across engines and produces the raw evidence
 for the public behavior contract.
 
+Use `docs/CONTRACT.md` sections 3-9 as the assertion oracle. Tests must distinguish
+Web Lock authority from eventual projections and browser-policy outcomes.
+
 ## Task
 
 Portable three-engine scenarios:
 
 - 8-tab join/leave/open/claim storms with converged presence, one leader, and one owner per view.
-- Simultaneous leader/view-holder termination and immediate authority transfer plus eventual registry cleanup.
+- Simultaneous leader/view-holder termination, lock-authorized transfer, and eventual registry cleanup.
 - Refresh storms for normal and opener-created tabs with stable identity and no dedup ghosts.
 - Destroy at every initialization/lock/sync/open stage, including destroy-before-ready.
 - Backgrounding past configured timeouts without false permanent membership or state divergence.

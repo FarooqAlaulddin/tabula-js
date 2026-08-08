@@ -1,5 +1,10 @@
 # Tabula — Design Decisions
 
+> **Status note (2026-08-08):** Sections written before the dated v1 decisions are
+> preserved as the `0.1.0` design history. [The 1.0 behavioral contract](./docs/CONTRACT.md)
+> is normative where it supersedes oldest-tab leadership, timestamp-only state order,
+> unconditional deletes, session epochs, or localStorage view claims.
+
 ## What it is
 A coordination layer that makes a web app coherent across multiple browser tabs.
 One sentence: "Tabula lets you build web apps that treat multiple tabs as one surface."
@@ -239,3 +244,22 @@ app.state.on('*', () => {
   core workspace directly and own their framework-specific subscription boundary.
 - The React-based Excalidraw example remains as proof of direct core integration,
   not as a wrapper-package contract.
+
+## 2026-08-08 — v1 coordination authority and convergence
+
+- `docs/CONTRACT.md` freezes I1-I10 before implementation changes. Phase 1 tasks must
+  update that contract explicitly if implementation evidence forces a design change.
+- Leadership and named-view ownership use held Web Locks as their only exclusion
+  authority. Presence and localStorage remain eventual projections, never authority.
+- Leader and view projections carry persistent monotonic generations created while
+  the corresponding lock is held. Stale messages and handles cannot mutate a newer term.
+- Shared state uses totally ordered hybrid-logical-clock operations. Delete is a
+  retained tombstone, and `setAll` is an atomic batch with post-commit notifications.
+- Startup merges correlated responses from all known peers and exposes incomplete
+  sync while bounded repair continues after readiness.
+- Every wire message uses the validated major/revision envelope. Unsupported ranges
+  produce one public recovery signal instead of silent partition.
+- A session-stored tab id is paired with a per-load instance id and duplicate probing;
+  opener presence and storage inheritance are not identity authority.
+- The selected and rejected alternatives, rationale, limits, failure semantics, and
+  browser-policy boundaries are recorded in the contract rather than duplicated here.

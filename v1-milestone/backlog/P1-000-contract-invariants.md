@@ -2,7 +2,7 @@
 id: P1-000
 title: Freeze the behavioral invariants and protocol design
 phase: 1
-status: todo
+status: done
 depends_on: [P0-002, P0-004]
 owner: agent
 scope: contract/design documents; no behavior implementation
@@ -36,11 +36,11 @@ decisions in this task.
 
 ## Acceptance criteria
 
-- [ ] Every I1-I10 invariant has a corresponding normative CONTRACT section.
-- [ ] Every decision above has one selected design, rejected alternatives, and rationale.
-- [ ] No contract claims "oldest leader", exactly-once work, atomic LWW without tombstones, or atomic localStorage compare-and-set.
-- [ ] The contract separates normative guarantees from best-effort browser policies such as focus.
-- [ ] All Phase 1 implementation tasks cite the selected design and have compatible acceptance criteria.
+- [x] Every I1-I10 invariant has a corresponding normative CONTRACT section.
+- [x] Every decision above has one selected design, rejected alternatives, and rationale.
+- [x] No contract claims "oldest leader", exactly-once work, atomic LWW without tombstones, or atomic localStorage compare-and-set.
+- [x] The contract separates normative guarantees from best-effort browser policies such as focus.
+- [x] All Phase 1 implementation tasks cite the selected design and have compatible acceptance criteria.
 
 ## Files
 
@@ -49,4 +49,20 @@ decisions in this task.
 
 ## Outcome
 
-(pending)
+- Created `docs/CONTRACT.md` as the normative v1 design target and mapped every
+  milestone invariant I1-I10 to a specific contract section.
+- Selected exact identity/lifecycle states, bounded readiness and repair status,
+  Web Lock names and fenced generations, HLC state operations and tombstones,
+  atomic `setAll`, view claim results/TTL/authority, protocol major/revision envelope,
+  payload/bookkeeping limits, storage failure timing, and artifact-first release rules.
+- Recorded rejected alternatives and rationale for each design family, including why
+  presence, raw timestamps, localStorage read/write, first-response sync, and timeout
+  lock stealing cannot provide the v1 guarantees.
+- Reconciled `DECISIONS.md` without deleting the historical `0.1.0` design and made
+  the contract authoritative where the old algorithms differ.
+- Updated FEATURE-COMPLETE to the selected semantics and made all eight downstream
+  Phase 1 implementation/evidence tasks cite the applicable contract sections.
+- No runtime behavior changed in this design-freeze task.
+- Verified milestone validation, diff whitespace, and repository lint.
+- Committed and pushed on `codex/v1-milestone-execution` as the P1-000 task commit.
+- No unrelated working-tree changes were present when the task was completed.

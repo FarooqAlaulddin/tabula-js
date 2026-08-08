@@ -16,10 +16,13 @@ succeed, stale handles can release later owners, and pending-open records can su
 failure indefinitely. A registry is useful for discovery but cannot be the exclusion
 authority.
 
+Implement against `docs/CONTRACT.md` section 7; the exact lock name, one-view-per-tab
+rule, claim result, fencing token, release authority, and intent TTL are authoritative.
+
 ## Task
 
-- Implement the CONTRACT-selected per-view exclusion authority, expected to be an
-  exclusive Web Lock whose name includes the workspace and view.
+- Implement the CONTRACT-selected per-view exclusive Web Lock with the exact encoded
+  workspace/view name and non-waiting `ifAvailable` claim.
 - Give every successful claim a unique monotonically fenced claim token/generation.
   Registry projections and protocol messages carry it; stale claim/release/focus/
   vacancy traffic cannot mutate a newer owner.
@@ -32,6 +35,8 @@ authority.
   structured-clone values retain their types.
 - Define ViewHandle authority. A stale handle must not release or focus a replacement
   claim; remote release, if retained, must target the exact claim token.
+- Return the CONTRACT discriminated claim result and reject a second concurrently
+  owned view in the same tab with `ViewAlreadyClaimedError`.
 - Reconcile refresh, graceful close, crash, bfcache, frozen holders, and wake-up without
   ghost owners. Focus remains a browser-policy request and must be observed separately
   from ownership.

@@ -15,10 +15,13 @@ child tab id on every refresh, per-tab session epochs can invalidate another liv
 view registry, and unconditional `pagehide` cleanup mishandles back/forward cache.
 Storage access can also throw before Tabula produces an actionable error.
 
+Implement against `docs/CONTRACT.md` sections 3 and 9; the lifecycle/status states,
+duplicate-id repair, bfcache behavior, and capability failure timing are authoritative.
+
 ## Task
 
-- Implement a small explicit lifecycle state machine covering initializing, ready,
-  bfcache-suspended, and destroyed states.
+- Implement the explicit initializing, ready, bfcache-suspended, failed, and destroyed
+  lifecycle states plus pending/repairing/complete sync status.
 - Cancel all initialization waits and queued work on destroy; settle `ready` according
   to CONTRACT; make post-destroy reads/mutations behave consistently.
 - Give new top-level contexts fresh ids while preserving id across reload, including a

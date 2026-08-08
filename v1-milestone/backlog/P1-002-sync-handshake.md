@@ -15,6 +15,9 @@ state operation model from P1-008 makes safe multi-responder merging possible, b
 startup still needs correlated rounds, bounded completion, cohort handling, and
 post-ready repair.
 
+Implement against `docs/CONTRACT.md` sections 3.2 and 6.6; bounded ready with
+pending/repairing/complete status and correlated multi-responder rounds are authoritative.
+
 ## Task
 
 - Start sync only after the CONTRACT-defined presence discovery barrier.
@@ -24,8 +27,8 @@ post-ready repair.
   arrival order or the first responder.
 - Resolve a genuinely empty simultaneous-start cohort deterministically without
   deadlock and let a verified single tab become ready without full retry delay.
-- Retry known-peer misses with bounded backoff. If the ready bound is reached, settle
-  as CONTRACT defines, expose incomplete status, and repair on peer activity until a
+- Retry known-peer misses with bounded backoff. If the ready bound is reached, resolve
+  ready with `repairing` status, emit `sync:status`, and repair on peer activity until a
   complete response arrives or peers are proven gone.
 - Cancel requests/retries on destroy and bound all correlation records.
 

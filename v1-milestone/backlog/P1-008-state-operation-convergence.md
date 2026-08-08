@@ -15,16 +15,19 @@ tombstone. Delayed sets or sync snapshots can therefore resurrect deleted values
 Wall-clock rollback and same-millisecond operations also need one documented total
 order before the handshake can merge multiple responders correctly.
 
+Implement against `docs/CONTRACT.md` section 6; its hybrid logical clock tuple,
+tombstone lifetime, transactional send, value limits, and batch semantics are authoritative.
+
 ## Task
 
-- Represent set and delete as the CONTRACT-selected versioned operation shape.
+- Represent set and delete as the CONTRACT hybrid-logical-clock operation shape.
 - Retain tombstones for the life of the live workspace cohort so snapshots and delayed
   messages cannot resurrect deleted keys. Tombstones are not returned by public
   `keys()`/`entries()`/`get()`.
 - Implement one deterministic total order that survives duplicate, reordered,
   same-millisecond, and clock-rollback scenarios documented by CONTRACT.
-- Define and implement `setAll` as atomic or explicitly non-atomic. If non-atomic,
-  preserve a deterministic operation order and document partial observation.
+- Implement `setAll` as one atomic batch: install every winning entry before ordered
+  key/wildcard notifications and commit nothing when validation/clone/send fails.
 - Enforce the CONTRACT-selected structured-clone value domain and `undefined`
   semantics. A clone/send failure must not leave an unbroadcast local winner or emit
   a misleading change notification.

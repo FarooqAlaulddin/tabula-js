@@ -15,6 +15,9 @@ The 1.0 contract instead uses an exclusive Web Lock as the sole authority. This 
 semantic correction: request order is browser-controlled, and leadership is not an
 exactly-once execution service.
 
+Implement against `docs/CONTRACT.md` section 5; the exact lock name, persistent
+generation, projection rules, and frozen-holder boundary are authoritative.
+
 ## Task
 
 - Request and hold the CONTRACT-defined workspace lock through an unresolved promise.
@@ -23,8 +26,9 @@ exactly-once execution service.
 - Run `onLeader` setup only inside the held-lock interval and cleanup exactly once
   before voluntary release. Closing/crashing terminates the holder; no follower may
   run setup before it actually acquires the lock.
-- Project holder identity through versioned protocol messages. Answer late joiners,
-  recover after missed announcements, reject stale holder generations, and keep
+- Increment the persistent leader generation while holding the lock and project holder
+  identity through versioned protocol messages. Answer late joiners, recover after
+  missed announcements, reject stale generations, and keep
   `tabs.leader()` eventually accurate without making it an authority.
 - Throw a descriptive capability error when Web Locks or a secure context is absent.
 - Keep the test cluster deterministic, but document that its oldest-created choice is

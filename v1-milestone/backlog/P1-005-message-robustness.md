@@ -15,9 +15,12 @@ types. A malformed message can reach every domain module, and a new deployment c
 silently partition long-lived tabs if versions disagree. Protocol evolution and
 validation must land before any public preview.
 
+Implement against `docs/CONTRACT.md` section 8; its envelope, revision window,
+validation limits, bounded stores, and incompatibility event are authoritative.
+
 ## Task
 
-- Add the CONTRACT-selected protocol version and compatibility range to every message.
+- Add protocol major 1/revision 1 with revision 0 compatibility to every message.
 - Validate the envelope and each domain payload before dispatch. Reject unknown types,
   invalid ids/timestamps/targets, dangerous keys, excessive nesting, and documented
   oversize payloads without throwing from the message event.
@@ -35,7 +38,7 @@ validation must land before any public preview.
 - [ ] Unknown compatible fields are handled according to CONTRACT; unsupported versions surface exactly one observable signal per peer/version episode.
 - [ ] `__proto__`, `prototype`, and `constructor` cannot pollute objects or become unsafe state keys.
 - [ ] All protocol bookkeeping is bounded and eviction is tested.
-- [ ] A fixture representing the immediately previous compatible protocol passes; an incompatible fixture degrades exactly as documented.
+- [ ] The revision-0 compatible fixture passes; an incompatible major/range degrades exactly as documented.
 - [ ] Unit, fuzz, typecheck, and existing browser tests pass.
 
 ## Files

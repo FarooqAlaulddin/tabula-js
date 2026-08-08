@@ -15,6 +15,9 @@ is engine-sensitive. Chromium-only success cannot support a Chrome/Firefox/Safar
 claim. This task starts after the final Phase 1 protocol so failures are fixed once,
 not independently against intermediate schemas.
 
+Verify `docs/CONTRACT.md` sections 3-9; section 9's capability-based support floor and
+eventual/best-effort boundaries are authoritative until matrix evidence adds versions.
+
 ## Task
 
 - Add named Chromium, Firefox, and WebKit projects using the same portable suite.
