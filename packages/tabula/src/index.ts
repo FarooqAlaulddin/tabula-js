@@ -17,4 +17,8 @@ export type {
 	ViewVacantEvent,
 	ViewConflictEvent,
 	LeaderChangeEvent,
+	MessageIdentity,
+	MessageTarget,
+	ProtocolIncompatibleEvent,
+	ProtocolVersion,
 } from '@tabula/tabula'

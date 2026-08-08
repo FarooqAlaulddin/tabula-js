@@ -31,6 +31,13 @@ describe('State', () => {
 		expect(state.get('nonexistent')).toBeUndefined()
 	})
 
+	it.each(['__proto__', 'prototype', 'constructor'])('rejects the unsafe local key %s', (key) => {
+		const { state, channel } = createState()
+		expect(() => state.set(key, 'value')).toThrow(TypeError)
+		expect(channel.send).not.toHaveBeenCalled()
+		expect(state.get(key)).toBeUndefined()
+	})
+
 	it('delete removes key', () => {
 		const { state } = createState()
 		state.set('theme', 'dark')
@@ -322,7 +329,7 @@ describe('State', () => {
 			// Should have sent state:sync back to tab-2
 			const syncCall = channel.send.mock.calls.find((call: any[]) => call[0] === 'state:sync')
 			expect(syncCall).toBeDefined()
-			expect(syncCall?.[2]).toBe('tab-2') // directed to requester
+			expect(syncCall?.[2]).toEqual({ tabId: 'tab-2', instanceId: 'tab-2-instance' })
 
 			const snapshot = (syncCall?.[1] as any).state
 			expect(snapshot.theme.value).toBe('dark')

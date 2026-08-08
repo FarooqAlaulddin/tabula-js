@@ -352,7 +352,7 @@ Layer 1 — Transport       BroadcastChannel, localStorage, Dedup
 
 ### Message protocol
 
-Tabula uses 13 internal message types:
+Tabula uses 13 domain message types:
 
 ```
 tab:announce · tab:heartbeat · tab:leave
@@ -361,7 +361,11 @@ view:claim · view:claimed · view:release · view:conflict · view:focus
 leader:change
 ```
 
-All messages use a shared envelope: `{ type, from, to?, payload, id, ts }`.
+Every message uses a validated, versioned envelope:
+`{ protocol, type, id, from: { tabId, instanceId }, to?, sentAt, payload }`.
+Revision 1 readers accept revision 0, reject unsupported version ranges, and emit one
+`protocol:incompatible` event with the recovery action for each peer/version episode.
+Malformed, misdirected, duplicate, or oversized traffic is dropped before domain code.
 
 ## API reference
 
@@ -480,6 +484,7 @@ Tabula trusts all scripts on the same origin. Keep in mind:
 - XSS on any page compromises all tabs in the workspace.
 - Any same-origin script can observe all Tabula traffic.
 - Leader identity is based on self-reported presence metadata and is not a security boundary.
+- Protocol validation limits malformed traffic; it does not authenticate same-origin peers.
 
 ## Packages
 

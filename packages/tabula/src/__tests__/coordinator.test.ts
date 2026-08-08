@@ -52,7 +52,12 @@ describe('Coordinator (via createWorkspace)', () => {
 
 	describe('createWorkspace validation', () => {
 		it('throws with empty namespace', () => {
-			expect(() => createWorkspace('')).toThrow('createWorkspace() requires a namespace string')
+			expect(() => createWorkspace('')).toThrow('createWorkspace() requires a non-empty namespace')
+		})
+
+		it('rejects control characters and namespaces over 128 UTF-8 bytes', () => {
+			expect(() => createWorkspace('unsafe\nnamespace')).toThrow('non-empty namespace')
+			expect(() => createWorkspace('x'.repeat(129))).toThrow('non-empty namespace')
 		})
 
 		it('throws when BroadcastChannel is unavailable', () => {
@@ -348,6 +353,31 @@ describe('Coordinator (via createWorkspace)', () => {
 			ws.claim('editor')
 
 			expect(cb).not.toHaveBeenCalled()
+			ws.destroy()
+		})
+
+		it('surfaces an incompatible protocol episode once with recovery guidance', async () => {
+			const ws = await createAndInit<TestState>()
+			const cb = vi.fn()
+			ws.on('protocol:incompatible', cb)
+			const message = {
+				protocol: { major: 2, revision: 0, minRevision: 0 },
+				type: 'tab:heartbeat',
+				id: 'remote-instance:1',
+				from: { tabId: 'remote-tab', instanceId: 'remote-instance' },
+				sentAt: Date.now(),
+				payload: null,
+			}
+			bcMock.instances[0].simulateMessage(message)
+			bcMock.instances[0].simulateMessage({ ...message, id: 'remote-instance:2' })
+
+			expect(cb).toHaveBeenCalledTimes(1)
+			expect(cb).toHaveBeenCalledWith(
+				expect.objectContaining({
+					recovery: 'Save work and reload all application tabs.',
+					remote: { major: 2, revision: 0, minRevision: 0 },
+				}),
+			)
 			ws.destroy()
 		})
 	})

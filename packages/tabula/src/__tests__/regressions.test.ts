@@ -280,50 +280,29 @@ describe('Bug 4: message ID uniqueness across page refresh', () => {
 		storageMock.restore()
 	})
 
-	it('message IDs contain a nonce segment beyond simple tabId:counter', () => {
+	it('message IDs use the per-load instance identity and a counter', () => {
 		const tabId = 'persistent-tab-id'
-		const channel = new Channel('test-ns', tabId)
+		const channel = new Channel('test-ns', tabId, 'load-instance')
 		const msg = channel.send('tab:announce', {})
 
-		// The message ID should have the format tabId:nonce:counter
-		// NOT the old format of tabId:counter
 		const parts = msg.id.split(':')
-		// Old format would be 2 parts (tabId:counter)
-		// New format is 3 parts (tabId:nonce:counter)
-		expect(parts.length).toBe(3)
-		expect(parts[0]).toBe(tabId)
-		// The nonce segment should be a non-empty alphanumeric string
-		expect(parts[1]).toMatch(/^[a-z0-9]+$/)
-		// The counter segment should be a numeric string
-		expect(parts[2]).toMatch(/^\d+$/)
+		expect(parts).toEqual(['load-instance', '1'])
+		expect(msg.from).toEqual({ tabId, instanceId: 'load-instance' })
 
 		channel.close()
 	})
 
-	it('two Channel instances with the same tabId produce IDs that share a nonce (module-level)', () => {
+	it('two Channel instances with the same tabId have distinct per-load identities', () => {
 		const tabId = 'same-tab-id'
-		const channel1 = new Channel('ns-a', tabId)
-		const channel2 = new Channel('ns-b', tabId)
+		const channel1 = new Channel('ns-a', tabId, 'instance-a')
+		const channel2 = new Channel('ns-b', tabId, 'instance-b')
 
 		const msg1 = channel1.send('tab:announce', {})
 		const msg2 = channel2.send('tab:announce', {})
 
-		// Both IDs start with the same tabId
-		expect(msg1.id.startsWith(tabId)).toBe(true)
-		expect(msg2.id.startsWith(tabId)).toBe(true)
-
-		// The IDs must be different (counter increments globally)
 		expect(msg1.id).not.toBe(msg2.id)
-
-		// Both share the same nonce (since it's module-level)
-		const nonce1 = msg1.id.split(':')[1]
-		const nonce2 = msg2.id.split(':')[1]
-		expect(nonce1).toBe(nonce2)
-
-		// But the counter portion differs
-		const counter1 = msg1.id.split(':')[2]
-		const counter2 = msg2.id.split(':')[2]
-		expect(counter1).not.toBe(counter2)
+		expect(msg1.id).toBe('instance-a:1')
+		expect(msg2.id).toBe('instance-b:1')
 
 		channel1.close()
 		channel2.close()
@@ -333,7 +312,7 @@ describe('Bug 4: message ID uniqueness across page refresh', () => {
 		const tabId = 'refreshing-tab'
 
 		// First "session" — create channel and send messages
-		const channel1 = new Channel('ns-refresh', tabId)
+		const channel1 = new Channel('ns-refresh', tabId, 'before-refresh')
 		const ids1 = [
 			channel1.send('tab:announce', {}).id,
 			channel1.send('tab:heartbeat', {}).id,
@@ -341,11 +320,8 @@ describe('Bug 4: message ID uniqueness across page refresh', () => {
 		]
 		channel1.close()
 
-		// Second "session" — same tabId, new Channel instance
-		// In a real refresh, msgNonce would be re-generated (new module load).
-		// Within a single test process the nonce is the same, but the counter
-		// keeps incrementing, so IDs are still unique.
-		const channel2 = new Channel('ns-refresh', tabId)
+		// Second load keeps the session tab id but gets a new instance id.
+		const channel2 = new Channel('ns-refresh', tabId, 'after-refresh')
 		const ids2 = [
 			channel2.send('tab:announce', {}).id,
 			channel2.send('tab:heartbeat', {}).id,

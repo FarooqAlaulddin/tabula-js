@@ -452,6 +452,11 @@ revision-0 fixture represents the earlier additive shape used by compatibility t
 missing optional fields receive documented defaults. Unknown optional fields are
 ignored. Unknown message types are ignored after envelope validation.
 
+The revision-0 fixture uses the same envelope with
+`protocol: { major: 1, revision: 0 }`. Its omitted `minRevision` defaults to `0`;
+all other envelope fields remain required. Unversioned traffic is not a revision-0
+fixture and is rejected.
+
 Peers are compatible only when majors match and their revision ranges overlap. An
 additive change increments revision and preserves an overlap window. A breaking
 change increments major and requires a release that can read both old and new majors

@@ -48,6 +48,24 @@ describe('Registry', () => {
 				teardown()
 			}
 		})
+
+		it('returns null for a malformed or prototype-bearing stored entry', () => {
+			const { registry } = setup()
+			try {
+				localStorage.setItem(
+					'tabula:test:view:malformed',
+					JSON.stringify({ tabId: '', claimedAt: 'now', epoch: 'epoch', meta: {} }),
+				)
+				localStorage.setItem(
+					'tabula:test:view:polluting',
+					'{"tabId":"tab","claimedAt":1,"epoch":"epoch","meta":{"__proto__":{}}}',
+				)
+				expect(registry.get('malformed')).toBeNull()
+				expect(registry.get('polluting')).toBeNull()
+			} finally {
+				teardown()
+			}
+		})
 	})
 
 	describe('set() and get()', () => {
@@ -218,6 +236,22 @@ describe('Registry', () => {
 					newValue: 'value',
 				} as unknown as StorageEvent)
 
+				expect(listener).not.toHaveBeenCalled()
+			} finally {
+				teardown()
+			}
+		})
+
+		it('ignores malformed storage event values', () => {
+			const { registry } = setup()
+			try {
+				const listener = vi.fn()
+				registry.startListening()
+				registry.onChange(listener)
+				windowMock.getHandlers('storage')[0]({
+					key: 'tabula:test:view:editor',
+					newValue: '{"tabId":"","claimedAt":1,"epoch":"epoch","meta":{}}',
+				} as unknown as StorageEvent)
 				expect(listener).not.toHaveBeenCalled()
 			} finally {
 				teardown()

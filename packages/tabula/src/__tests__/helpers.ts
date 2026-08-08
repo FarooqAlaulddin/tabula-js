@@ -1,4 +1,11 @@
-import type { Message, MessageType, TabMeta, ViewRegistryEntry } from '@tabula/tabula'
+import type {
+	Message,
+	MessageIdentity,
+	MessageTarget,
+	MessageType,
+	TabMeta,
+	ViewRegistryEntry,
+} from '@tabula/tabula'
 import { vi } from 'vitest'
 
 // ── Mock BroadcastChannel ─────────────────────────────────────────────────
@@ -14,7 +21,7 @@ export class MockBroadcastChannel {
 	}
 
 	// simulate receiving a message from another tab
-	simulateMessage(data: Message): void {
+	simulateMessage(data: unknown): void {
 		if (this.onmessage) {
 			this.onmessage({ data } as MessageEvent)
 		}
@@ -174,13 +181,14 @@ export function installMockWindow(): {
 export function createStubChannel(tabId = 'tab-1') {
 	return {
 		send: vi.fn(
-			(type: MessageType, payload: unknown, to?: string): Message => ({
+			(type: MessageType, payload: unknown, to?: string | MessageTarget): Message => ({
+				protocol: { major: 1, revision: 1, minRevision: 0 },
 				type,
-				from: tabId,
-				to,
+				from: { tabId, instanceId: `${tabId}-instance` },
+				...(to ? { to: typeof to === 'string' ? { tabId: to } : to } : {}),
 				payload,
 				id: `${tabId}:${Math.random()}`,
-				ts: Date.now(),
+				sentAt: Date.now(),
 			}),
 		),
 		onMessage: vi.fn(() => () => {}),
@@ -269,13 +277,23 @@ export function makeTab(overrides: Partial<TabMeta> = {}): TabMeta {
 
 // ── Helper: create a Message ──────────────────────────────────────────────
 
-export function makeMessage(overrides: Partial<Message> = {}): Message {
+type MessageOverrides = Omit<Partial<Message>, 'from' | 'to'> & {
+	from?: string | MessageIdentity
+	to?: string | MessageTarget
+}
+
+export function makeMessage(overrides: MessageOverrides = {}): Message {
+	const { from: fromOverride, to: toOverride, ...rest } = overrides
+	const from = fromOverride ?? 'remote-tab'
+	const to = toOverride
 	return {
+		protocol: { major: 1, revision: 1, minRevision: 0 },
 		type: 'tab:announce',
-		from: 'remote-tab',
-		payload: {},
+		payload: { visible: true, view: null, createdAt: Date.now() },
 		id: `msg-${Math.random().toString(36).slice(2, 8)}`,
-		ts: Date.now(),
-		...overrides,
+		sentAt: Date.now(),
+		...rest,
+		from: typeof from === 'string' ? { tabId: from, instanceId: `${from}-instance` } : from,
+		...(to ? { to: typeof to === 'string' ? { tabId: to } : to } : {}),
 	}
 }

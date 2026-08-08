@@ -3,31 +3,32 @@
 // Single-file core. Zero dependencies. ~6kb gzipped target.
 // ════════════════════════════════════════════════════════════════════════════
 
+import {
+	LOCAL_PROTOCOL,
+	MAX_PRESENCE_PEERS,
+	type Message,
+	type MessageIdentity,
+	type MessageTarget,
+	type MessageType,
+	type ProtocolIncompatibleEvent,
+	isValidId,
+	isValidName,
+	isValidStateKey,
+	validateInboundMessage,
+	validateStoredPresence,
+	validateStoredViewRegistryEntry,
+} from './protocol'
+
+export type {
+	Message,
+	MessageIdentity,
+	MessageTarget,
+	MessageType,
+	ProtocolIncompatibleEvent,
+	ProtocolVersion,
+} from './protocol'
+
 // ── Types ─────────────────────────────────────────────────────────────────
-
-export type MessageType =
-	| 'tab:announce'
-	| 'tab:heartbeat'
-	| 'tab:leave'
-	| 'state:sync-request'
-	| 'state:sync'
-	| 'state:set'
-	| 'state:delete'
-	| 'view:claim'
-	| 'view:claimed'
-	| 'view:release'
-	| 'view:conflict'
-	| 'view:focus'
-	| 'leader:change'
-
-export interface Message<T = unknown> {
-	type: MessageType
-	from: string
-	to?: string
-	payload: T
-	id: string
-	ts: number
-}
 
 export interface TabMeta {
 	id: string
@@ -89,6 +90,7 @@ export interface WorkspaceEventMap {
 	'tab:join': TabMeta
 	'tab:leave': TabMeta
 	'leader:change': LeaderChangeEvent
+	'protocol:incompatible': ProtocolIncompatibleEvent
 }
 
 export interface ViewHandle {
@@ -172,7 +174,7 @@ export interface WorkspaceTabs {
 	}
 
 	const existing = sessionStorage.getItem('tabula:tab-id')
-	if (existing) return existing
+	if (isValidId(existing)) return existing
 
 	const id = crypto.randomUUID()
 	sessionStorage.setItem('tabula:tab-id', id)
@@ -181,29 +183,49 @@ export interface WorkspaceTabs {
 
 /** @internal */ export function getSessionEpoch(): string {
 	const existing = sessionStorage.getItem('tabula:epoch')
-	if (existing) return existing
+	if (isValidId(existing)) return existing
 	const epoch = Date.now().toString()
 	sessionStorage.setItem('tabula:epoch', epoch)
 	return epoch
 }
 
-let msgCounter = 0
-const msgNonce = Math.random().toString(36).slice(2, 8)
-
 /** @internal — exported for testing only */
 export class Dedup {
-	private seen = new Set<string>()
-	private order: string[] = []
+	private seen = new Map<string, number>()
+	private readonly limit: number
+	private readonly ttlMs: number
+	private readonly now: () => number
+
+	constructor(limit = 2048, ttlMs = 5 * 60_000, now: () => number = Date.now) {
+		this.limit = limit
+		this.ttlMs = ttlMs
+		this.now = now
+	}
 
 	isDuplicate(id: string): boolean {
-		if (this.seen.has(id)) return true
-		this.seen.add(id)
-		this.order.push(id)
-		if (this.order.length > 500) {
-			const evict = this.order.shift()
-			if (evict) this.seen.delete(evict)
+		const now = this.now()
+		const previous = this.seen.get(id)
+		if (previous !== undefined && now - previous <= this.ttlMs) return true
+		if (previous !== undefined) this.seen.delete(id)
+		this.prune(now)
+		this.seen.set(id, now)
+		while (this.seen.size > this.limit) {
+			const oldest = this.seen.keys().next().value
+			if (oldest === undefined) break
+			this.seen.delete(oldest)
 		}
 		return false
+	}
+
+	get size(): number {
+		return this.seen.size
+	}
+
+	private prune(now: number): void {
+		for (const [id, seenAt] of this.seen) {
+			if (now - seenAt <= this.ttlMs) break
+			this.seen.delete(id)
+		}
 	}
 }
 
@@ -213,10 +235,14 @@ type MsgHandler = (msg: Message) => void
 	private bc: BroadcastChannel
 	private handlers = new Set<MsgHandler>()
 	private dedup = new Dedup()
-	private tabId: string
+	private identity: MessageIdentity
+	private messageCounter = 0
+	private incompatibilities = new Map<string, number>()
+	private incompatibilityHandlers = new Set<(event: ProtocolIncompatibleEvent) => void>()
+	private warnedAtCapacity = false
 	private closed = false
 
-	constructor(namespace: string, tabId: string) {
+	constructor(namespace: string, tabId: string, instanceId: string = crypto.randomUUID()) {
 		if (typeof BroadcastChannel === 'undefined') {
 			throw new Error(
 				'Tabula requires BroadcastChannel. Supported in all modern browsers. ' +
@@ -224,25 +250,55 @@ type MsgHandler = (msg: Message) => void
 			)
 		}
 		this.bc = new BroadcastChannel(`tabula:${namespace}`)
-		this.tabId = tabId
+		this.identity = { tabId, instanceId }
 		this.bc.onmessage = (e: MessageEvent) => {
-			const msg = e.data as Message
-			if (!msg?.type || !msg.id) return
-			if (msg.from === this.tabId) return
-			if (msg.to && msg.to !== this.tabId) return
+			const result = validateInboundMessage(e.data)
+			if (result.kind === 'invalid' || result.kind === 'unknown') return
+			if (result.kind === 'incompatible') {
+				if (!this.matchesTarget(result.to)) return
+				if (
+					result.peer.tabId === this.identity.tabId &&
+					result.peer.instanceId === this.identity.instanceId
+				) {
+					return
+				}
+				const firstReport = this.reportIncompatible(result.peer, result.remote)
+				if (firstReport && result.type !== 'protocol:reject') {
+					this.send(
+						'protocol:reject',
+						{
+							local: LOCAL_PROTOCOL,
+							remote: result.remote,
+							recovery: 'Save work and reload all application tabs.',
+						},
+						result.peer,
+					)
+				}
+				return
+			}
+			const msg = result.message
+			if (!this.matchesTarget(msg.to)) return
+			if (
+				msg.from.tabId === this.identity.tabId &&
+				msg.from.instanceId === this.identity.instanceId
+			) {
+				return
+			}
+			if (msg.type === 'protocol:reject') return
 			if (this.dedup.isDuplicate(msg.id)) return
 			for (const h of this.handlers) h(msg)
 		}
 	}
 
-	send<T>(type: MessageType, payload: T, to?: string): Message<T> {
+	send<T>(type: MessageType, payload: T, to?: string | MessageTarget): Message<T> {
 		const msg: Message<T> = {
+			protocol: LOCAL_PROTOCOL,
 			type,
-			from: this.tabId,
-			to,
+			from: this.identity,
+			...(to ? { to: typeof to === 'string' ? { tabId: to } : to } : {}),
 			payload,
-			id: `${this.tabId}:${msgNonce}:${++msgCounter}`,
-			ts: Date.now(),
+			id: `${this.identity.instanceId}:${++this.messageCounter}`,
+			sentAt: Date.now(),
 		}
 		if (!this.closed) this.bc.postMessage(msg)
 		return msg
@@ -253,10 +309,48 @@ type MsgHandler = (msg: Message) => void
 		return () => this.handlers.delete(handler)
 	}
 
+	onProtocolIncompatible(handler: (event: ProtocolIncompatibleEvent) => void): () => void {
+		this.incompatibilityHandlers.add(handler)
+		return () => this.incompatibilityHandlers.delete(handler)
+	}
+
 	close(): void {
 		this.closed = true
 		this.handlers.clear()
+		this.incompatibilityHandlers.clear()
 		this.bc.close()
+	}
+
+	private matchesTarget(target?: MessageTarget): boolean {
+		return (
+			!target ||
+			(target.tabId === this.identity.tabId &&
+				(target.instanceId === undefined || target.instanceId === this.identity.instanceId))
+		)
+	}
+
+	private reportIncompatible(
+		peer: MessageIdentity,
+		remote: ProtocolIncompatibleEvent['remote'],
+	): boolean {
+		const key = `${peer.instanceId}\0${remote.major}\0${remote.minRevision}\0${remote.revision}`
+		if (this.incompatibilities.has(key)) return false
+		if (this.incompatibilities.size >= 128) {
+			if (!this.warnedAtCapacity) {
+				this.warnedAtCapacity = true
+				console.warn('Tabula protocol incompatibility reporting reached its 128-peer limit.')
+			}
+			return false
+		}
+		this.incompatibilities.set(key, Date.now())
+		const event: ProtocolIncompatibleEvent = {
+			peer,
+			local: LOCAL_PROTOCOL,
+			remote,
+			recovery: 'Save work and reload all application tabs.',
+		}
+		for (const handler of this.incompatibilityHandlers) handler(event)
+		return true
 	}
 }
 
@@ -278,16 +372,18 @@ type MsgHandler = (msg: Message) => void
 		for (let i = 0; i < localStorage.length; i++) {
 			const key = localStorage.key(i)
 			if (key?.startsWith(this.prefix)) {
-				this.knownViews.add(key.slice(this.prefix.length))
+				const view = key.slice(this.prefix.length)
+				if (isValidName(view)) this.knownViews.add(view)
 			}
 		}
 	}
 
 	get(view: string): ViewRegistryEntry | null {
+		if (!isValidName(view)) return null
 		const raw = localStorage.getItem(this.prefix + view)
 		if (!raw) return null
 		try {
-			return JSON.parse(raw) as ViewRegistryEntry
+			return validateStoredViewRegistryEntry(JSON.parse(raw))
 		} catch {
 			return null
 		}
@@ -305,7 +401,7 @@ type MsgHandler = (msg: Message) => void
 
 	list(): Record<string, ViewRegistryEntry> {
 		this.ensureScanned()
-		const out: Record<string, ViewRegistryEntry> = {}
+		const out = Object.create(null) as Record<string, ViewRegistryEntry>
 		for (const view of this.knownViews) {
 			const entry = this.get(view)
 			if (entry) {
@@ -336,13 +432,15 @@ type MsgHandler = (msg: Message) => void
 		this.handler = (e: StorageEvent) => {
 			if (!e.key?.startsWith(this.prefix)) return
 			const view = e.key.slice(this.prefix.length)
+			if (!isValidName(view)) return
 			let entry: ViewRegistryEntry | null = null
 			if (e.newValue) {
 				try {
-					entry = JSON.parse(e.newValue) as ViewRegistryEntry
+					entry = validateStoredViewRegistryEntry(JSON.parse(e.newValue))
 				} catch {
 					/* ignore */
 				}
+				if (!entry) return
 				this.knownViews.add(view)
 			} else {
 				this.knownViews.delete(view)
@@ -387,6 +485,7 @@ interface AnnouncePayload {
 	private visibilityHandler: (() => void) | null = null
 	private createdAt: number
 	private presencePrefix: string
+	private warnedAtCapacity = false
 
 	constructor(
 		channel: Channel,
@@ -456,28 +555,37 @@ interface AnnouncePayload {
 	handleMessage(msg: Message): void {
 		if (msg.type === 'tab:announce') {
 			const payload = msg.payload as AnnouncePayload
-			const existing = this.tabMap.get(msg.from)
+			const senderTabId = msg.from.tabId
+			const existing = this.tabMap.get(senderTabId)
+			if (!existing && this.tabMap.size >= MAX_PRESENCE_PEERS) {
+				if (!this.warnedAtCapacity) {
+					this.warnedAtCapacity = true
+					console.warn('Tabula presence reached its 256-peer limit; new peers are ignored.')
+				}
+				return
+			}
 			const tab: TabMeta = {
-				id: msg.from,
+				id: senderTabId,
 				view: payload.view,
 				visible: payload.visible,
 				firstSeenAt: existing?.firstSeenAt ?? payload.createdAt ?? Date.now(),
 				lastSeenAt: Date.now(),
 			}
-			this.tabMap.set(msg.from, tab)
+			this.tabMap.set(senderTabId, tab)
 			if (!existing) this.onJoin(tab)
 			if (!existing) this.announce()
 		} else if (msg.type === 'tab:heartbeat') {
-			const existing = this.tabMap.get(msg.from)
+			const existing = this.tabMap.get(msg.from.tabId)
 			if (existing) {
 				existing.lastSeenAt = Date.now()
 			}
 			// If unknown, prune() will discover them via localStorage if alive
 		} else if (msg.type === 'tab:leave') {
-			const tab = this.tabMap.get(msg.from)
+			const senderTabId = msg.from.tabId
+			const tab = this.tabMap.get(senderTabId)
 			if (tab) {
-				this.tabMap.delete(msg.from)
-				this.removePresenceEntry(msg.from)
+				this.tabMap.delete(senderTabId)
+				this.removePresenceEntry(senderTabId)
 				this.onLeave(tab)
 			}
 		}
@@ -563,7 +671,8 @@ interface AnnouncePayload {
 			try {
 				const raw = localStorage.getItem(this.presencePrefix + id)
 				if (raw) {
-					const entry = JSON.parse(raw)
+					const entry = validateStoredPresence(JSON.parse(raw))
+					if (!entry) continue
 					if (entry.lastSeen > lastActivity) {
 						lastActivity = entry.lastSeen
 						// Update in-memory from localStorage
@@ -646,6 +755,9 @@ interface AnnouncePayload {
 	}
 
 	set<K extends keyof S & string>(key: K, value: S[K]): void {
+		if (!isValidStateKey(key)) {
+			throw new TypeError('State keys must be non-empty, safe strings of at most 256 UTF-8 bytes.')
+		}
 		const version = (this.versions.get(key) ?? 0) + 1
 		this.versions.set(key, version)
 		const entry: StateEntry = { value, ts: Date.now(), tabId: this.tabId, version }
@@ -660,6 +772,9 @@ interface AnnouncePayload {
 	}
 
 	delete<K extends keyof S & string>(key: K): void {
+		if (!isValidStateKey(key)) {
+			throw new TypeError('State keys must be non-empty, safe strings of at most 256 UTF-8 bytes.')
+		}
 		this.entries.delete(key)
 		this.channel.send('state:delete', { key })
 		this.notify(key, undefined)
@@ -1063,6 +1178,7 @@ class Coordinator<S extends object> {
 		)
 
 		// message routing
+		this.channel.onProtocolIncompatible((event) => this.emit('protocol:incompatible', event))
 		this.channel.onMessage((msg) => {
 			this.presence.handleMessage(msg)
 			this.state.handleMessage(msg)
@@ -1305,9 +1421,9 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 	namespace: string,
 	options: WorkspaceOptions = {},
 ): Workspace<S> {
-	if (!namespace) {
+	if (!isValidName(namespace)) {
 		throw new Error(
-			'createWorkspace() requires a namespace string as the first argument. ' +
+			'createWorkspace() requires a non-empty namespace of at most 128 UTF-8 bytes. ' +
 				"This identifies your workspace across tabs — e.g. createWorkspace('my-app').",
 		)
 	}
