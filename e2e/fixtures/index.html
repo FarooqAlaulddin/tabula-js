@@ -12,6 +12,14 @@ const ns = params.get('ns') || 'e2e-default'
 const heartbeat = Number(params.get('heartbeat')) || 200
 const timeout = Number(params.get('timeout')) || 1000
 
+window.__tabulaModule = { createWorkspace }
+window.__focusCallCount = 0
+const originalFocus = window.focus.bind(window)
+window.focus = () => {
+	window.__focusCallCount++
+	originalFocus()
+}
+
 const app = createWorkspace(ns, { heartbeat, timeout })
 
 // expose for Playwright
@@ -23,15 +31,24 @@ app.on('tab:leave', (tab) => window.__tabulaEvents.push({ type: 'tab:leave', tab
 app.on('leader:change', (e) => window.__tabulaEvents.push({ type: 'leader:change', ...e }))
 app.on('view:claimed', (e) => window.__tabulaEvents.push({ type: 'view:claimed', ...e }))
 app.on('view:vacant', (e) => window.__tabulaEvents.push({ type: 'view:vacant', ...e }))
+app.on('view:conflict', (e) => window.__tabulaEvents.push({ type: 'view:conflict', ...e }))
+
+window.__leaderLifecycle = { setupCount: 0, cleanupCount: 0 }
 
 // onLeader: increment notification counter every 1s (mirrors demo behaviour)
 app.onLeader(() => {
+	window.__leaderLifecycle.setupCount++
+	window.__tabulaEvents.push({ type: 'leader:setup' })
 	let count = app.state.get('notificationCount') ?? 0
 	const iv = setInterval(() => {
 		count++
 		app.state.set('notificationCount', count)
 	}, 1000)
-	return () => clearInterval(iv)
+	return () => {
+		clearInterval(iv)
+		window.__leaderLifecycle.cleanupCount++
+		window.__tabulaEvents.push({ type: 'leader:cleanup' })
+	}
 })
 
 app.state.on('notificationCount', () => {

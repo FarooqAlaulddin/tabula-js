@@ -58,7 +58,7 @@ for (const file of files) {
 	]) {
 		if (!source.includes(heading)) errors.push(`${file}: missing ${heading}`)
 	}
-	if (!source.match(/^- \[ \] /m)) errors.push(`${file}: no checkable acceptance criteria`)
+	if (!source.match(/^- \[[ xX]\] /m)) errors.push(`${file}: no checkable acceptance criteria`)
 
 	tasks.set(id, { file, title, phase: Number(phase), status, owner, dependencies })
 }

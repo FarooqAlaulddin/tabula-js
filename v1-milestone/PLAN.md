@@ -181,7 +181,7 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 |----|-------|-------|--------|
 | P0-001 | Choose the npm package names | human | todo |
 | P0-002 | Rename packages and all references | agent | todo |
-| P0-003 | Correct and commit the pending e2e work | agent | todo |
+| P0-003 | Correct and commit the pending e2e work | agent | done |
 | P0-004 | Complete package metadata and declared prerequisites | agent | todo |
 | P1-000 | Freeze the behavioral invariants and protocol design | agent | todo |
 | P1-005 | Add protocol versioning, validation, and deployment compatibility | agent | todo |

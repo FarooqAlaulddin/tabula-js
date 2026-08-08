@@ -8,7 +8,7 @@
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
 		"clean": "pnpm -r clean",
-		"test:e2e": "pnpm build && playwright test --config e2e/playwright.config.ts",
+		"test:e2e": "pnpm build && pnpm exec playwright test --config e2e/playwright.config.ts",
 		"demo": "pnpm build && vite --config demo/vite.config.ts",
 		"example:excalidraw": "pnpm build && pnpm --filter example-excalidraw dev"
 	},

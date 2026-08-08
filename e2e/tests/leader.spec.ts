@@ -121,4 +121,44 @@ test.describe('Leader Election', () => {
 		)
 		expect(countAfter).toBeGreaterThan(countBefore)
 	})
+
+	test('onLeader cleanup runs when leadership is lost', async ({ context }) => {
+		const ns = uniqueNs()
+		const pageA = await context.newPage()
+		const pageB = await context.newPage()
+
+		await openTab(pageA, ns)
+		await openTab(pageB, ns)
+		await waitForTabCount(pageA, 2)
+		await waitForTabCount(pageB, 2)
+
+		// Identify current leader and follower
+		const aIsLeader = await isLeader(pageA)
+		const leader = aIsLeader ? pageA : pageB
+		const follower = aIsLeader ? pageB : pageA
+
+		await leader.waitForFunction(() => (window as any).__leaderLifecycle.setupCount === 1)
+		expect(await leader.evaluate(() => ({ ...(window as any).__leaderLifecycle }))).toEqual({
+			setupCount: 1,
+			cleanupCount: 0,
+		})
+
+		// Destroy the leader but keep its page open so cleanup remains directly observable.
+		await destroyWorkspace(leader)
+		await leader.waitForFunction(() => (window as any).__leaderLifecycle.cleanupCount === 1)
+		expect(await leader.evaluate(() => ({ ...(window as any).__leaderLifecycle }))).toEqual({
+			setupCount: 1,
+			cleanupCount: 1,
+		})
+
+		// The follower independently acquires leadership and runs its own setup.
+		await follower.waitForFunction(() => (window as any).__tabula.isLeader() === true, {
+			timeout: 10000,
+		})
+		await follower.waitForFunction(() => (window as any).__leaderLifecycle.setupCount === 1)
+		expect(await follower.evaluate(() => ({ ...(window as any).__leaderLifecycle }))).toEqual({
+			setupCount: 1,
+			cleanupCount: 0,
+		})
+	})
 })

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
 	claimView,
 	destroyWorkspace,
+	getEvents,
 	getViews,
 	hasView,
 	openTab,
@@ -142,5 +143,67 @@ test.describe('Views', () => {
 			return owner ? owner.id : null
 		}, viewName)
 		expect(viewOwner).toBe(claimTabId)
+	})
+
+	test('view:conflict fires when two tabs try to claim same view', async ({ context }) => {
+		const ns = uniqueNs()
+		const pageA = await context.newPage()
+		const pageB = await context.newPage()
+
+		await openTab(pageA, ns)
+		await openTab(pageB, ns)
+		await waitForTabCount(pageA, 2)
+		await waitForTabCount(pageB, 2)
+
+		// A claims 'editor' first
+		await claimView(pageA, 'editor')
+		await pageB.waitForFunction(() => (window as any).__tabula.views.has('editor'), {
+			timeout: 5000,
+		})
+
+		// B tries to claim 'editor' — the internal claim returns false and fires view:conflict
+		await pageB.evaluate(() => {
+			;(window as any).__tabula.claim('editor')
+		})
+
+		// Wait for the view:conflict event on B
+		await waitForEvent(pageB, 'view:conflict')
+		const events = await getEvents(pageB)
+		const conflictEvents = events.filter((e) => e.type === 'view:conflict')
+		expect(conflictEvents.length).toBeGreaterThanOrEqual(1)
+
+		// A should still hold the view
+		expect(await hasView(pageA, 'editor')).toBe(true)
+		const views = await getViews(pageA)
+		const editorTabId = (views as any).editor?.id
+		const aTabId = await pageA.evaluate(() => (window as any).__tabula.tabs.current().id)
+		expect(editorTabId).toBe(aTabId)
+	})
+
+	test('focus() requests window focus on the view holder', async ({ context }) => {
+		const ns = uniqueNs()
+		const pageA = await context.newPage()
+		const pageB = await context.newPage()
+
+		await openTab(pageA, ns)
+		await openTab(pageB, ns)
+		await waitForTabCount(pageA, 2)
+		await waitForTabCount(pageB, 2)
+
+		// A claims 'editor'
+		await claimView(pageA, 'editor')
+		await pageB.waitForFunction(() => (window as any).__tabula.views.has('editor'), {
+			timeout: 5000,
+		})
+
+		expect(await pageA.evaluate(() => (window as any).__focusCallCount)).toBe(0)
+		expect(await pageB.evaluate(() => (window as any).__focusCallCount)).toBe(0)
+
+		// B sends the request; only A, the holder, should call window.focus().
+		await pageB.evaluate(() => (window as any).__tabula.focus('editor'))
+		await pageA.waitForFunction(() => (window as any).__focusCallCount === 1)
+
+		expect(await pageA.evaluate(() => (window as any).__focusCallCount)).toBe(1)
+		expect(await pageB.evaluate(() => (window as any).__focusCallCount)).toBe(0)
 	})
 })

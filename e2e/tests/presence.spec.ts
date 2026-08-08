@@ -2,9 +2,11 @@ import { expect, test } from '@playwright/test'
 import {
 	destroyWorkspace,
 	getEvents,
+	getState,
 	getTabCount,
 	getTabId,
 	openTab,
+	setState,
 	uniqueNs,
 	waitForEvent,
 	waitForTabCount,
@@ -112,5 +114,48 @@ test.describe('Presence & Tab Discovery', () => {
 		)
 		expect(tabIdsFromA).toContain(idA)
 		expect(tabIdsFromA).toContain(idC)
+	})
+
+	test('destroy and rejoin — tab can create a new workspace in the same page', async ({
+		context,
+	}) => {
+		const ns = uniqueNs()
+		const pageA = await context.newPage()
+		const pageB = await context.newPage()
+
+		await openTab(pageA, ns)
+		await openTab(pageB, ns)
+		await waitForTabCount(pageA, 2)
+		await waitForTabCount(pageB, 2)
+
+		// Set some state
+		await setState(pageA, 'color', 'blue')
+		await pageB.waitForFunction(() => (window as any).__tabula.state.get('color') === 'blue', {
+			timeout: 5000,
+		})
+
+		// Destroy workspace on A (but don't close the page)
+		await destroyWorkspace(pageA)
+
+		// B should detect A leaving
+		await waitForTabCount(pageB, 1, 10000)
+
+		// Create a fresh workspace in the same document without navigating or reloading.
+		await pageA.evaluate(async (namespace) => {
+			const { createWorkspace } = (window as any).__tabulaModule
+			const nextWorkspace = createWorkspace(namespace, { heartbeat: 200, timeout: 1000 })
+			;(window as any).__tabula = nextWorkspace
+			await nextWorkspace.ready
+		}, ns)
+
+		// A should rejoin and both tabs should discover each other again
+		await waitForTabCount(pageA, 2)
+		await waitForTabCount(pageB, 2)
+
+		// State should sync from B to the rejoined A
+		await pageA.waitForFunction(() => (window as any).__tabula.state.get('color') === 'blue', {
+			timeout: 5000,
+		})
+		expect(await getState(pageA, 'color')).toBe('blue')
 	})
 })

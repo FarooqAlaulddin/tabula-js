@@ -2,7 +2,7 @@
 id: P0-003
 title: Correct and commit the pending e2e work
 phase: 0
-status: todo
+status: done
 depends_on: []
 owner: agent
 scope: current 5-file diff + fixture instrumentation needed to make assertions direct
@@ -31,12 +31,12 @@ resolve tooling outside the pnpm lockfile.
 
 ## Acceptance criteria
 
-- [ ] Every new test directly observes the behavior named in its title.
-- [ ] No dead code, unused evaluation callback, or comment describing an assertion that is absent.
-- [ ] `pnpm test:e2e` passes with the lockfile-pinned Playwright executable.
-- [ ] Unit, typecheck, and lint remain green.
-- [ ] The five-file starting diff plus justified fixture changes are committed and pushed.
-- [ ] Unrelated working-tree changes remain untouched and are listed in Outcome if present.
+- [x] Every new test directly observes the behavior named in its title.
+- [x] No dead code, unused evaluation callback, or comment describing an assertion that is absent.
+- [x] `pnpm test:e2e` passes with the lockfile-pinned Playwright executable.
+- [x] Unit, typecheck, and lint remain green.
+- [x] The five-file starting diff plus justified fixture changes are committed and pushed.
+- [x] Unrelated working-tree changes remain untouched and are listed in Outcome if present.
 
 ## Files
 
@@ -46,4 +46,13 @@ fixture/helper files strictly required for direct instrumentation.
 
 ## Outcome
 
-(pending)
+- Changed the e2e script to use the pnpm-locked Playwright executable.
+- Added direct fixture instrumentation for leader setup/cleanup and window focus.
+- Reworked the pending tests to directly prove leader cleanup, same-document
+  workspace recreation, view conflicts, and focus delivery.
+- Installed the pinned Chromium runtime locally and verified:
+  `pnpm lint`, `pnpm typecheck`, `pnpm test` (173 tests), and
+  `pnpm test:e2e` (26 tests, including the production build).
+- Corrected the milestone validator so completed acceptance checkboxes remain valid.
+- Committed and pushed on `codex/v1-milestone-execution` as the P0-003 task commit.
+- No unrelated working-tree changes were present when the task was completed.
