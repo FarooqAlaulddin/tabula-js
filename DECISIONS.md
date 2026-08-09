@@ -283,3 +283,18 @@ app.state.on('*', () => {
 - The old `session` option and startup epoch sweep were removed. A newly loaded tab
   must never delete another live tab's registry projection merely because its document
   session differs.
+
+## 2026-08-08 — Web Locks leadership authority
+
+- Browser leadership is the interval in which a workspace holds the exclusive lock
+  `tabula-js:v1:<encoded-workspace-namespace>:leader`. Presence age and visibility do
+  not authorize work, and lock request ordering is browser-controlled.
+- Each acquisition increments a localStorage generation while inside the lock. Holder
+  announcements and query replies carry the generation plus tab/document identity;
+  lower, conflicting, and unfenced projections cannot replace a newer projection.
+- Queued requests use an abort signal. Held requests use a separate release promise so
+  voluntary cleanup completes before lock release and destroy remains idempotent.
+- Frozen holders are not timed out or preempted. Abrupt context termination relies on
+  the browser releasing the lock and cannot promise application cleanup.
+- The testing cluster retains oldest-created selection solely for deterministic tests;
+  it is explicitly not a simulation of browser request order.

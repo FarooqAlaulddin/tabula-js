@@ -2,7 +2,7 @@
 
 **Coordinate browser tabs as views of a single workspace.**
 
-Tabula lets you build web apps that treat multiple tabs as one surface. Shared state, presence tracking, leader election, and named views — all through the BroadcastChannel API with zero dependencies.
+Tabula lets you build web apps that treat multiple tabs as one surface. Shared state, presence tracking, leader election, and named views through modern browser coordination APIs, with zero dependencies.
 
 ---
 
@@ -129,7 +129,10 @@ app.on('tab:leave', (tab) => { })
 
 ### Leader election
 
-The oldest tab is the leader. No voting, no split-brain — it falls out of presence tracking for free. When the leader closes, the next oldest tab takes over.
+One tab holds an exclusive, namespace-scoped Web Lock for its complete leader interval.
+The browser controls contender ordering; Tabula does not promise oldest-tab or FIFO
+selection. Presence and `tabs.leader()` expose the latest fenced holder projection,
+but only the held lock authorizes leader work.
 
 ```ts
 app.onLeader(() => {
@@ -141,6 +144,11 @@ app.onLeader(() => {
 app.isLeader()  // boolean
 app.on('leader:change', ({ tab, isMe }) => { })
 ```
+
+`onLeader` setup runs only while that tab holds the lock, and voluntary release runs its
+cleanup before the lock is released. A frozen holder may retain its lock, so Tabula does
+not steal leadership after a timeout. Crashes cannot run JavaScript cleanup, and
+exactly-once effects still require server-side idempotency or locking.
 
 ### Lifecycle
 
@@ -213,9 +221,12 @@ const tab2 = cluster.createTab()
 
 tab1.state.set('count', 1)
 expect(tab2.state.get('count')).toBe(1)
-expect(tab1.isLeader()).toBe(true)   // oldest tab is leader
+expect(tab1.isLeader()).toBe(true)   // deterministic oldest-created test simulation
 expect(tab2.isLeader()).toBe(false)
 ```
+
+The test cluster deliberately chooses the oldest-created mock tab. Browser workspaces
+use Web Locks, whose request ordering is controlled by the browser.
 
 ## Real-world example
 
@@ -235,10 +246,11 @@ Features demonstrated:
 
 ## How it works
 
-Tabula uses two browser APIs for coordination:
+Tabula uses three browser APIs for coordination:
 
 - **BroadcastChannel** — real-time messaging between tabs (namespaced per workspace)
 - **localStorage** — durable view registry, presence heartbeats, and pending-open data for new tabs
+- **Web Locks** — exclusive leadership authority
 
 No WebSocket. No server. No polling. Everything happens client-side within the same origin.
 
@@ -260,7 +272,7 @@ identity:probe · identity:claim
 tab:announce · tab:heartbeat · tab:leave
 state:sync-request · state:sync · state:set · state:delete
 view:claim · view:claimed · view:release · view:conflict · view:focus
-leader:change
+leader:query · leader:change
 protocol:reject
 ```
 

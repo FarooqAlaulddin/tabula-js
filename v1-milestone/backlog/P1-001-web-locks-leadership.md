@@ -2,7 +2,7 @@
 id: P1-001
 title: Rebuild leadership on Web Locks
 phase: 1
-status: todo
+status: done
 depends_on: [P1-006]
 owner: agent
 scope: leader authority + identity projection + unit/browser tests
@@ -36,13 +36,13 @@ generation, projection rules, and frozen-holder boundary are authoritative.
 
 ## Acceptance criteria
 
-- [ ] Browser instrumentation proves no overlap between active leader callback intervals across 8 contending tabs.
-- [ ] Close, crash, destroy-while-queued, destroy-while-held, refresh, and late-join transfer/discovery tests pass.
-- [ ] Cleanup is directly observed exactly once on voluntary demotion/destroy; replacement setup is separately observed.
-- [ ] Stale/delayed leader messages cannot overwrite a newer lock-holder generation.
-- [ ] A frozen holder's behavior is tested/documented without falsely promising failover while the lock remains held.
-- [ ] Missing Web Locks/insecure context errors state the prerequisite and recovery.
-- [ ] Core and testing-subpath leader APIs retain the CONTRACT-selected observable shape.
+- [x] Browser instrumentation proves no overlap between active leader callback intervals across 8 contending tabs.
+- [x] Close, crash, destroy-while-queued, destroy-while-held, refresh, and late-join transfer/discovery tests pass.
+- [x] Cleanup is directly observed exactly once on voluntary demotion/destroy; replacement setup is separately observed.
+- [x] Stale/delayed leader messages cannot overwrite a newer lock-holder generation.
+- [x] A frozen holder's behavior is tested/documented without falsely promising failover while the lock remains held.
+- [x] Missing Web Locks/insecure context errors state the prerequisite and recovery.
+- [x] Core and testing-subpath leader APIs retain the CONTRACT-selected observable shape.
 
 ## Files
 
@@ -51,4 +51,35 @@ README/package docs, `docs/CONTRACT.md`, and `DECISIONS.md`.
 
 ## Outcome
 
-(pending)
+Replaced presence-derived ordering with one held exclusive Web Lock named exactly
+`tabula-js:v1:<encoded-workspace-namespace>:leader`. Queued acquisition has an abort
+controller; held acquisition has an independent release promise. Coordinator teardown,
+identity repair, and bfcache suspension stop leader callbacks before releasing the lock.
+
+Each acquisition increments a validated localStorage generation while inside the lock
+and publishes `{generation, tabId, instanceId}`. Added `leader:query` for late discovery;
+fenced projections reject lower generations, same-generation conflicts, and legacy
+unfenced authority. Corrupt generation records fail acquisition without resetting the
+record or running leader work.
+
+Made `onLeader` setup/cleanup state explicit so each setup and voluntary cleanup runs
+at most once per held interval. Callback errors cannot strand coordinator teardown.
+The testing adapter remains deterministically oldest-created and is now documented as
+different from browser-controlled Web Lock ordering.
+
+Evidence:
+
+- `pnpm test`: 228 tests passed, including seven direct Web Lock authority/fencing tests
+  and 36 protocol validation tests.
+- `pnpm typecheck`, `pnpm lint`, and `pnpm build`: passed.
+- Full Chromium suite: 34 tests passed. Browser instrumentation observed zero overlap
+  across eight callback intervals and covered abrupt top-level close, queued destroy,
+  held destroy, terminated execution context, refresh, late join, and transfer.
+- Chromium lifecycle instrumentation confirmed a frozen holder retained one held lock
+  with one queued contender and no false failover until voluntary release.
+- Existing capability tests cover actionable insecure-context and missing-Web-Locks
+  failures before resource attachment.
+
+Expanded the listed file scope to the protocol validator/tests, runtime error wording,
+shared e2e fixture, and milestone index; these changes carry and verify the fenced
+leader projection and synchronize the authoritative plan status.

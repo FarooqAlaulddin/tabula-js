@@ -2,7 +2,7 @@
 
 **Coordinate browser tabs as views of a single workspace.**
 
-Tabula lets you build web apps that treat multiple tabs as one surface. Shared state, presence tracking, leader election, and named views — all through the BroadcastChannel API with zero dependencies.
+Tabula lets you build web apps that treat multiple tabs as one surface. Shared state, presence tracking, leader election, and named views through modern browser coordination APIs, with zero dependencies.
 
 ---
 
@@ -184,7 +184,10 @@ Presence is still a liveness estimate. Browser scheduling, crashes, and suspensi
 
 ### Leader election
 
-The oldest tab is the leader. There is no voting protocol: leadership is derived from presence tracking, so it needs no extra machinery and recalculates automatically on every join and leave.
+One tab holds an exclusive, namespace-scoped Web Lock for its complete leader interval.
+The browser controls contender ordering; Tabula does not promise oldest-tab or FIFO
+selection. Presence and `tabs.leader()` expose the latest fenced holder projection,
+but only the held lock authorizes leader work.
 
 ```ts
 app.onLeader(() => {
@@ -197,7 +200,11 @@ app.isLeader()  // boolean
 app.on('leader:change', ({ tab, isMe }) => { })
 ```
 
-Because leadership rides on heartbeats, handoff is not instantaneous in every case. A graceful close hands over immediately; a crashed or suspended leader is only detected after the presence timeout (default 5 s), and around suspend/wake edges two tabs can briefly disagree about who leads. Write leader work to be **idempotent and cheap to restart** — reconnect a socket, restart a poll timer — not exactly-once. For that class of work (which is what leader election is for), a short gap or a redundant restart is harmless. Correctness-critical operations still need server-side idempotency or locking.
+`onLeader` setup runs only while that tab holds the lock, and voluntary release runs its
+cleanup before the lock is released. A frozen holder may retain its lock, so Tabula does
+not steal leadership after a timeout. Write leader work to be **idempotent and cheap to
+restart**. Crashes cannot run JavaScript cleanup, and exactly-once effects still require
+server-side idempotency or locking.
 
 ### Lifecycle
 
@@ -227,7 +234,7 @@ Tabula makes deliberate tradeoffs. Know them before you depend on it:
 
 | Property | What Tabula does | What that means for you |
 |----------|------------------|-------------------------|
-| Leadership | Heartbeat-based, oldest tab wins | Handoff after a crash takes up to `timeout`; make leader work restartable, not exactly-once. |
+| Leadership | One exclusive Web Lock holder | Browser-controlled ordering; frozen holders are not replaced, and exactly-once effects still need server authority. |
 | State | In-memory, last-write-wins | No durability, no merging. Persist what matters yourself; don't build collaborative text editing on it. |
 | New-tab sync | Requests state, waits for first response or 150 ms | If every other tab is frozen or busy past the window, the new tab starts empty and converges as messages arrive. `await app.ready` covers this window. |
 | Focus & popups | `open()` and `focus()` go through browser policy | Call `open()` from a user gesture; treat `focus()` as a request, not a guarantee. |
@@ -322,14 +329,17 @@ const tab2 = cluster.createTab()
 
 tab1.state.set('count', 1)
 expect(tab2.state.get('count')).toBe(1)
-expect(tab1.isLeader()).toBe(true)   // oldest tab is leader
+expect(tab1.isLeader()).toBe(true)   // deterministic oldest-created test simulation
 expect(tab2.isLeader()).toBe(false)
 
 tab2.claim('preview')
 expect(tab1.views.has('preview')).toBe(true)
 ```
 
-The cluster simulates state, presence, leadership, view claims, and events synchronously in memory. Use browser-level tests as well when behavior depends on real popup policies, focus, storage events, or browser scheduling.
+The cluster simulates state, presence, leadership, view claims, and events synchronously
+in memory. It chooses the oldest-created mock tab deterministically; real browsers choose
+Web Lock request ordering. Use browser-level tests as well when behavior depends on real
+locks, popup policies, focus, storage events, or browser scheduling.
 
 ## Real-world example
 
@@ -349,10 +359,11 @@ Features demonstrated:
 
 ## How it works
 
-Tabula uses two browser APIs for coordination:
+Tabula uses three browser APIs for coordination:
 
 - **BroadcastChannel** — real-time messaging between tabs (namespaced per workspace)
 - **localStorage** — durable view registry, presence heartbeats, and pending-open data for new tabs
+- **Web Locks** — exclusive leadership authority
 
 No WebSocket. No server. No polling. Everything happens client-side within the same origin.
 
@@ -374,7 +385,7 @@ identity:probe · identity:claim
 tab:announce · tab:heartbeat · tab:leave
 state:sync-request · state:sync · state:set · state:delete
 view:claim · view:claimed · view:release · view:conflict · view:focus
-leader:change
+leader:query · leader:change
 protocol:reject
 ```
 

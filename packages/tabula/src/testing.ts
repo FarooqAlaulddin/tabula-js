@@ -379,7 +379,7 @@ export function createTestCluster<S extends object = Record<string, unknown>>(
 
 	function electLeader(): void {
 		if (tabs.size === 0) return
-		// leader = first tab (oldest)
+		// Deterministic test simulation only; browsers use Web Lock request ordering.
 		const sorted = Array.from(tabs.values()).sort(
 			(a, b) => a.tabs.current().firstSeenAt - b.tabs.current().firstSeenAt,
 		)

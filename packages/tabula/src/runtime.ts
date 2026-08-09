@@ -55,7 +55,7 @@ export class WorkspaceDestroyedError extends Error {
 
 export class WorkspaceFailedError extends Error {
 	constructor(cause?: unknown) {
-		super('This Tabula workspace failed during initialization.', { cause })
+		super('This Tabula workspace failed because coordination could not continue.', { cause })
 		this.name = 'WorkspaceFailedError'
 	}
 }

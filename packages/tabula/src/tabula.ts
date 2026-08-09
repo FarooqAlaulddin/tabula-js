@@ -19,6 +19,7 @@ import {
 	validateStoredViewRegistryEntry,
 } from './protocol'
 import {
+	StorageCorruptionError,
 	StorageOperationError,
 	WorkspaceDestroyedError,
 	WorkspaceFailedError,
@@ -764,40 +765,181 @@ interface AnnouncePayload {
 
 // ── Layer 2: Leader ───────────────────────────────────────────────────────
 
-/** @internal */ export class Leader {
-	private presence: Presence
-	private currentLeaderId: string | null = null
-	private onChange: (leaderId: string) => void
+interface LeaderProjection {
+	generation: number
+	tabId: string
+	instanceId: string
+}
 
-	constructor(presence: Presence, onChange: (leaderId: string) => void) {
+/** @internal */ export class Leader {
+	private readonly lockName: string
+	private readonly generationKey: string
+	private readonly channel: Channel
+	private presence: Presence
+	private projection: LeaderProjection | null = null
+	private readonly onChange: (leaderId: string) => void
+	private readonly onAuthorityChange: (held: boolean) => void
+	private readonly onError: (error: unknown) => void
+	private active = false
+	private held = false
+	private runVersion = 0
+	private acquisitionAbort: AbortController | null = null
+	private releaseHeld: (() => void) | null = null
+
+	constructor(
+		namespace: string,
+		channel: Channel,
+		presence: Presence,
+		onChange: (leaderId: string) => void,
+		onAuthorityChange: (held: boolean) => void = () => undefined,
+		onError: (error: unknown) => void = () => undefined,
+	) {
+		const encodedNamespace = encodeURIComponent(namespace)
+		this.lockName = `tabula-js:v1:${encodedNamespace}:leader`
+		this.generationKey = `tabula:${encodedNamespace}:leader-generation`
+		this.channel = channel
 		this.presence = presence
 		this.onChange = onChange
+		this.onAuthorityChange = onAuthorityChange
+		this.onError = onError
 	}
 
-	recalculate(): void {
-		const tabs = this.presence.getAllTabs()
-		if (tabs.length === 0) return
-		// Leader = oldest tab by createdAt, tiebreak by tabId.
-		// Visibility does NOT affect election — a hidden tab that's alive
-		// is still a valid leader. Only pruning removes dead tabs.
-		tabs.sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.id.localeCompare(b.id))
-		const newLeader = tabs[0]
-		if (newLeader.id !== this.currentLeaderId) {
-			this.currentLeaderId = newLeader.id
-			this.onChange(newLeader.id)
-		}
+	start(): void {
+		if (this.active) return
+		this.active = true
+		const runVersion = ++this.runVersion
+		const controller = new AbortController()
+		this.acquisitionAbort = controller
+		this.channel.send<null>('leader:query', null)
+
+		void navigator.locks
+			.request(this.lockName, { mode: 'exclusive', signal: controller.signal }, async () => {
+				if (!this.active || runVersion !== this.runVersion) return
+				const generation = this.incrementGeneration()
+				const identity = this.channel.getIdentity()
+				const projection = { generation, tabId: identity.tabId, instanceId: identity.instanceId }
+				this.held = true
+
+				try {
+					this.acceptProjection(projection)
+					this.announce(projection)
+					this.onAuthorityChange(true)
+					await new Promise<void>((resolve) => {
+						this.releaseHeld = resolve
+					})
+				} finally {
+					this.releaseHeld = null
+					if (this.held) {
+						this.held = false
+						this.onAuthorityChange(false)
+					}
+				}
+			})
+			.catch((error: unknown) => {
+				if (runVersion !== this.runVersion || controller.signal.aborted) return
+				this.onError(error)
+			})
 	}
 
 	getLeaderId(): string | null {
-		return this.currentLeaderId
+		return this.projection?.tabId ?? null
 	}
 
 	isLeader(): boolean {
-		return this.currentLeaderId === this.presence.tabId
+		return this.held
+	}
+
+	handleMessage(msg: Message): void {
+		if (msg.type === 'leader:query') {
+			if (this.held && this.projection) this.announce(this.projection, msg.from)
+			return
+		}
+		if (msg.type !== 'leader:change') return
+		const payload = msg.payload as Partial<LeaderProjection>
+		if (
+			typeof payload.generation !== 'number' ||
+			typeof payload.tabId !== 'string' ||
+			typeof payload.instanceId !== 'string'
+		) {
+			return
+		}
+		this.acceptProjection({
+			generation: payload.generation,
+			tabId: payload.tabId,
+			instanceId: payload.instanceId,
+		})
+	}
+
+	refreshProjection(): void {
+		if (this.projection && this.presence.getTab(this.projection.tabId)) {
+			this.onChange(this.projection.tabId)
+		}
+	}
+
+	stop(): void {
+		if (!this.active && !this.held) return
+		this.active = false
+		this.runVersion++
+		this.acquisitionAbort?.abort()
+		this.acquisitionAbort = null
+		if (this.held) {
+			this.held = false
+			try {
+				this.onAuthorityChange(false)
+			} finally {
+				this.releaseHeld?.()
+			}
+			return
+		}
+		this.releaseHeld?.()
 	}
 
 	reset(): void {
-		this.currentLeaderId = null
+		this.stop()
+		this.projection = null
+	}
+
+	private incrementGeneration(): number {
+		const raw = storageGet(localStorage, 'localStorage', this.generationKey)
+		let current = 0
+		if (raw !== null) {
+			if (!/^(0|[1-9]\d*)$/.test(raw)) {
+				throw new StorageCorruptionError(this.generationKey)
+			}
+			current = Number(raw)
+			if (!Number.isSafeInteger(current) || current < 0 || current >= Number.MAX_SAFE_INTEGER) {
+				throw new StorageCorruptionError(this.generationKey)
+			}
+		}
+		const next = current + 1
+		storageSet(localStorage, 'localStorage', this.generationKey, String(next))
+		return next
+	}
+
+	private announce(projection: LeaderProjection, to?: MessageIdentity): void {
+		this.channel.send('leader:change', projection, to)
+	}
+
+	private acceptProjection(incoming: LeaderProjection): void {
+		const current = this.projection
+		if (current) {
+			if (incoming.generation < current.generation) return
+			if (
+				incoming.generation === current.generation &&
+				(incoming.tabId !== current.tabId || incoming.instanceId !== current.instanceId)
+			) {
+				return
+			}
+			if (
+				incoming.generation === current.generation &&
+				incoming.tabId === current.tabId &&
+				incoming.instanceId === current.instanceId
+			) {
+				return
+			}
+		}
+		this.projection = incoming
+		this.refreshProjection()
 	}
 }
 
@@ -1208,6 +1350,7 @@ class Coordinator<S extends object> {
 	private leaderSetups: Array<{
 		setup: () => (() => void) | undefined
 		cleanup: (() => void) | undefined
+		active: boolean
 	}> = []
 
 	private pagehideHandler: (event: PageTransitionEvent) => void
@@ -1262,22 +1405,30 @@ class Coordinator<S extends object> {
 			this.options.timeout,
 			(tab) => {
 				this.emit('tab:join', tab)
-				this.leader.recalculate()
+				this.leader.refreshProjection()
 			},
 			(tab) => {
 				this.emit('tab:leave', tab)
 				this.views.cleanupForTab(tab.id)
-				this.leader.recalculate()
 			},
 			this.namespace,
 		)
 
-		this.leader = new Leader(this.presence, (leaderId) => {
-			const tab = this.presence.getTab(leaderId)
-			if (!tab) return
-			this.emit('leader:change', { tab, isMe: leaderId === this.tabId })
-			this.runLeaderCallbacks()
-		})
+		this.leader = new Leader(
+			this.namespace,
+			this.channel,
+			this.presence,
+			(leaderId) => {
+				const tab = this.presence.getTab(leaderId)
+				if (!tab) return
+				this.emit('leader:change', { tab, isMe: leaderId === this.tabId })
+			},
+			(held) => {
+				if (held) this.runLeaderCallbacks()
+				else this.stopLeaderCallbacks()
+			},
+			(error) => this.fail(error),
+		)
 
 		this.state = new State<S>(this.channel, this.tabId)
 
@@ -1295,6 +1446,7 @@ class Coordinator<S extends object> {
 			if (msg.type === 'identity:probe' || msg.type === 'identity:claim') return
 			if (msg.from.tabId === this.tabId && msg.from.instanceId !== this.instanceId) return
 			this.presence.handleMessage(msg)
+			this.leader.handleMessage(msg)
 			this.state.handleMessage(msg)
 			this.views.handleMessage(msg)
 		})
@@ -1319,13 +1471,13 @@ class Coordinator<S extends object> {
 		this.ensureRunning(signal)
 
 		this.presence.start()
+		this.leader.start()
 		const knownFromRegistry = Object.values(this.registry.list())
 		const expectedTabs = new Set(knownFromRegistry.map((e) => e.tabId))
 		expectedTabs.delete(this.tabId)
 		await this.waitForTabs(expectedTabs, this.remainingBudget(deadline, 150), signal)
 		this.ensureRunning(signal)
 
-		this.leader.recalculate()
 		await this.syncState(this.remainingBudget(deadline, 150), signal)
 		this.ensureRunning(signal)
 
@@ -1486,6 +1638,7 @@ class Coordinator<S extends object> {
 		if (!this.identityRepairRequested || this.isTerminal()) return
 		this.lifecycle = 'initializing'
 		this.stopLeaderCallbacks()
+		this.leader.stop()
 		const self = this.presence.getSelf()
 		if (self.view) this.views.release(self.view)
 		this.presence.broadcastLeave()
@@ -1502,6 +1655,7 @@ class Coordinator<S extends object> {
 		this.setSync('pending', [])
 		this.stopLeaderCallbacks()
 		if (this.domainsAttached) {
+			this.leader.stop()
 			this.presence.stop()
 			this.views.stop()
 		}
@@ -1591,16 +1745,16 @@ class Coordinator<S extends object> {
 
 	addLeaderSetup(setup: () => (() => void) | undefined): () => void {
 		this.assertActive()
-		const entry = { setup, cleanup: undefined as (() => void) | undefined }
+		const entry = { setup, cleanup: undefined as (() => void) | undefined, active: false }
 		this.leaderSetups.push(entry)
 
 		// if already leader, run immediately
 		if (this.lifecycle === 'ready' && this.leader.isLeader()) {
-			entry.cleanup = setup() ?? undefined
+			this.activateLeaderSetup(entry)
 		}
 
 		return () => {
-			if (entry.cleanup) entry.cleanup()
+			this.deactivateLeaderSetup(entry)
 			const idx = this.leaderSetups.indexOf(entry)
 			if (idx >= 0) this.leaderSetups.splice(idx, 1)
 		}
@@ -1610,22 +1764,36 @@ class Coordinator<S extends object> {
 		if (this.lifecycle !== 'ready') return
 		for (const entry of this.leaderSetups) {
 			if (this.leader.isLeader()) {
-				if (!entry.cleanup) {
-					entry.cleanup = entry.setup() ?? undefined
-				}
+				this.activateLeaderSetup(entry)
 			} else {
-				if (entry.cleanup) {
-					entry.cleanup()
-					entry.cleanup = undefined
-				}
+				this.deactivateLeaderSetup(entry)
 			}
 		}
 	}
 
 	private stopLeaderCallbacks(): void {
-		for (const entry of this.leaderSetups) {
-			entry.cleanup?.()
-			entry.cleanup = undefined
+		for (const entry of this.leaderSetups) this.deactivateLeaderSetup(entry)
+	}
+
+	private activateLeaderSetup(entry: (typeof this.leaderSetups)[number]): void {
+		if (entry.active) return
+		entry.active = true
+		try {
+			entry.cleanup = entry.setup() ?? undefined
+		} catch (error) {
+			console.error('Tabula onLeader setup threw an error.', error)
+		}
+	}
+
+	private deactivateLeaderSetup(entry: (typeof this.leaderSetups)[number]): void {
+		if (!entry.active) return
+		entry.active = false
+		const cleanup = entry.cleanup
+		entry.cleanup = undefined
+		try {
+			cleanup?.()
+		} catch (error) {
+			console.error('Tabula onLeader cleanup threw an error.', error)
 		}
 	}
 
@@ -1705,6 +1873,7 @@ class Coordinator<S extends object> {
 		this.initAbort?.abort()
 		this.initAbort = null
 		this.stopLeaderCallbacks()
+		this.leader.stop()
 		this.leaderSetups = []
 		if (this.domainsAttached) {
 			try {
@@ -1988,7 +2157,7 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 
 		isLeader() {
 			coord.assertActive()
-			return coord.getLeader().isLeader()
+			return coord.isReady() && coord.getLeader().isLeader()
 		},
 
 		on(event: string, cb: (payload: unknown) => void) {

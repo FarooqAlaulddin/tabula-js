@@ -35,11 +35,15 @@ app.on('view:conflict', (e) => window.__tabulaEvents.push({ type: 'view:conflict
 app.on('sync:status', (status) => window.__tabulaEvents.push({ type: 'sync:status', ...status }))
 
 window.__leaderLifecycle = { setupCount: 0, cleanupCount: 0 }
+const leaderAudit = new BroadcastChannel(`tabula-e2e-leader-audit:${ns}`)
 
 // onLeader: increment notification counter every 1s (mirrors demo behaviour)
 app.onLeader(() => {
 	window.__leaderLifecycle.setupCount++
 	window.__tabulaEvents.push({ type: 'leader:setup' })
+	const tabId = app.tabs.current().id
+	const auditId = `${tabId}:${window.__leaderLifecycle.setupCount}`
+	leaderAudit.postMessage({ type: 'start', auditId, tabId, at: Date.now() })
 	let count = app.state.get('notificationCount') ?? 0
 	const iv = setInterval(() => {
 		count++
@@ -49,6 +53,7 @@ app.onLeader(() => {
 		clearInterval(iv)
 		window.__leaderLifecycle.cleanupCount++
 		window.__tabulaEvents.push({ type: 'leader:cleanup' })
+		leaderAudit.postMessage({ type: 'end', auditId, tabId, at: Date.now() })
 	}
 })
 

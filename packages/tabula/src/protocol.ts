@@ -28,6 +28,7 @@ export type MessageType =
 	| 'view:release'
 	| 'view:conflict'
 	| 'view:focus'
+	| 'leader:query'
 	| 'leader:change'
 	| 'protocol:reject'
 
@@ -46,6 +47,7 @@ const MESSAGE_TYPES = new Set<MessageType>([
 	'view:release',
 	'view:conflict',
 	'view:focus',
+	'leader:query',
 	'leader:change',
 	'protocol:reject',
 ])
@@ -334,8 +336,18 @@ function validatePayload(type: MessageType, payload: unknown): boolean {
 				isValidId(payload.existingTabId) &&
 				isValidId(payload.incomingTabId)
 			)
+		case 'leader:query':
+			return payload === null
 		case 'leader:change':
-			return isRecord(payload) && hasSafeOwnKeys(payload) && isValidId(payload.tabId)
+			return (
+				isRecord(payload) &&
+				hasSafeOwnKeys(payload) &&
+				isValidId(payload.tabId) &&
+				((payload.generation === undefined && payload.instanceId === undefined) ||
+					(Number.isSafeInteger(payload.generation) &&
+						(payload.generation as number) > 0 &&
+						isValidId(payload.instanceId)))
+			)
 		case 'protocol:reject':
 			return (
 				isRecord(payload) &&

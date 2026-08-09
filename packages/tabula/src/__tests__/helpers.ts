@@ -144,8 +144,89 @@ export function installMockDocument(initialVisibility = 'visible'): {
 
 // ── Mock window ───────────────────────────────────────────────────────────
 
+interface QueuedLockRequest {
+	name: string
+	signal?: AbortSignal
+	callback: (lock: Lock) => unknown
+	resolve: (value: unknown) => void
+	reject: (reason: unknown) => void
+	granted: boolean
+}
+
+export class MockLockManager {
+	private queues = new Map<string, QueuedLockRequest[]>()
+	private held = new Set<string>()
+	readonly requestedNames: string[] = []
+	activeCount = 0
+	maxActiveCount = 0
+
+	request(name: string, options: LockOptions, callback: (lock: Lock) => unknown): Promise<unknown> {
+		this.requestedNames.push(name)
+		return new Promise((resolve, reject) => {
+			const request: QueuedLockRequest = {
+				name,
+				signal: options.signal,
+				callback,
+				resolve,
+				reject,
+				granted: false,
+			}
+			if (request.signal?.aborted) {
+				reject(new DOMException('The lock request was aborted.', 'AbortError'))
+				return
+			}
+			const queue = this.queues.get(name) ?? []
+			queue.push(request)
+			this.queues.set(name, queue)
+			request.signal?.addEventListener(
+				'abort',
+				() => {
+					if (request.granted) return
+					const index = queue.indexOf(request)
+					if (index >= 0) queue.splice(index, 1)
+					reject(new DOMException('The lock request was aborted.', 'AbortError'))
+				},
+				{ once: true },
+			)
+			this.pump(name)
+		})
+	}
+
+	isHeld(name: string): boolean {
+		return this.held.has(name)
+	}
+
+	queuedCount(name: string): number {
+		return this.queues.get(name)?.length ?? 0
+	}
+
+	private pump(name: string): void {
+		if (this.held.has(name)) return
+		const queue = this.queues.get(name)
+		const request = queue?.shift()
+		if (!request) return
+		if (request.signal?.aborted) {
+			this.pump(name)
+			return
+		}
+		request.granted = true
+		this.held.add(name)
+		this.activeCount++
+		this.maxActiveCount = Math.max(this.maxActiveCount, this.activeCount)
+		void Promise.resolve()
+			.then(() => request.callback({ name, mode: 'exclusive' } as Lock))
+			.then(request.resolve, request.reject)
+			.finally(() => {
+				this.activeCount--
+				this.held.delete(name)
+				this.pump(name)
+			})
+	}
+}
+
 export function installMockWindow(): {
 	getHandlers: (event: string) => Array<(...args: unknown[]) => void>
+	locks: MockLockManager
 	restore: () => void
 } {
 	const handlers = new Map<string, Array<(...args: unknown[]) => void>>()
@@ -173,16 +254,18 @@ export function installMockWindow(): {
 	}
 	mockWin.self = mockWin
 	mockWin.top = mockWin
+	const locks = new MockLockManager()
 
 	Object.defineProperty(globalThis, 'window', { value: mockWin, writable: true })
 	Object.defineProperty(globalThis, 'isSecureContext', { value: true, configurable: true })
 	Object.defineProperty(globalThis, 'navigator', {
-		value: { locks: { request: vi.fn() } },
+		value: { locks },
 		configurable: true,
 	})
 
 	return {
 		getHandlers: (event: string) => handlers.get(event) ?? [],
+		locks,
 		restore: () => {
 			Object.defineProperty(globalThis, 'window', { value: origWindow, writable: true })
 			if (secureContextDescriptor) {

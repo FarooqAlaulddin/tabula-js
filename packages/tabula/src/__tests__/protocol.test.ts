@@ -39,7 +39,9 @@ describe('protocol validation', () => {
 		['view:release', { name: 'editor' }],
 		['view:conflict', { name: 'editor', existingTabId: 'tab-a', incomingTabId: 'tab-b' }],
 		['view:focus', { name: 'editor' }],
+		['leader:query', null],
 		['leader:change', { tabId: 'remote-tab' }],
+		['leader:change', { generation: 2, tabId: 'remote-tab', instanceId: 'remote-instance' }],
 	])('accepts a valid %s payload', (type, payload) => {
 		expect(validateInboundMessage(envelope(type, payload)).kind).toBe('valid')
 	})
@@ -88,6 +90,22 @@ describe('protocol validation', () => {
 				}),
 			).kind,
 		).toBe('incompatible')
+	})
+
+	it('rejects malformed fenced leader projections', () => {
+		expect(
+			validateInboundMessage(
+				envelope('leader:change', {
+					generation: 0,
+					tabId: 'remote-tab',
+					instanceId: 'remote-instance',
+				}),
+			).kind,
+		).toBe('invalid')
+		expect(
+			validateInboundMessage(envelope('leader:change', { generation: 1, tabId: 'remote-tab' }))
+				.kind,
+		).toBe('invalid')
 	})
 
 	it.each(['__proto__', 'prototype', 'constructor'])(
