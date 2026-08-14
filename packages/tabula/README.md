@@ -382,7 +382,7 @@ Tabula 1.0 targets desktop applications running in top-level, same-origin browse
 contexts. Every participating page must provide:
 
 - a secure context with the Web Locks API;
-- `BroadcastChannel` and `crypto.randomUUID()`;
+- `BroadcastChannel`, `crypto.randomUUID()`, and `structuredClone()`;
 - usable `localStorage` and `sessionStorage`; and
 - the same origin and workspace namespace as the tabs it coordinates.
 

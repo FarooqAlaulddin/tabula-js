@@ -276,7 +276,7 @@ you need.
 Tabula complements the last two in some applications: a server or CRDT owns durable
 application data, while Tabula coordinates ephemeral UI surfaces on one device. It is
 not a replacement for either. Detailed lifecycle and support boundaries are in the
-[behavioral contract](./docs/CONTRACT.md).
+[browser behavior and support guide](./docs/BEHAVIOR.md).
 
 ## Adopting Tabula
 
@@ -543,14 +543,14 @@ Tabula 1.0 targets desktop applications running in top-level, same-origin browse
 contexts. Every participating page must provide:
 
 - a secure context with the Web Locks API;
-- `BroadcastChannel` and `crypto.randomUUID()`;
+- `BroadcastChannel`, `crypto.randomUUID()`, and `structuredClone()`;
 - usable `localStorage` and `sessionStorage`; and
 - the same origin and workspace namespace as the tabs it coordinates.
 
 Iframes are not supported. Storage-blocked or capability-limited contexts cannot
 join a workspace. Tabula does not provide storage, Web Locks, or BroadcastChannel
 polyfills. The current tested engine baselines and pending Safari verification are
-recorded in the [behavioral contract](./docs/CONTRACT.md#9-capabilities-storage-and-support-floors).
+recorded in the [browser behavior and support guide](./docs/BEHAVIOR.md).
 
 ## Security
 

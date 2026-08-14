@@ -2,7 +2,7 @@
 id: P2-003
 title: Publish the browser behavior and support contract
 phase: 2
-status: todo
+status: done
 depends_on: [P1-003]
 owner: agent
 scope: behavior/support docs sourced from evidence
@@ -33,11 +33,11 @@ browser documentation. Keep normative guarantees aligned with `docs/CONTRACT.md`
 
 ## Acceptance criteria
 
-- [ ] Every material claim is tagged tested, manually verified, or externally cited.
-- [ ] No Linux WebKit result is described as Safari proof.
-- [ ] No behavior is described as immediate where the contract is eventual or timeout-based.
-- [ ] Browser/support table names required APIs, secure context, tested engines, and manual Safari status.
-- [ ] Root README links the detail instead of duplicating divergent promises.
+- [x] Every material claim is tagged tested, manually verified, or externally cited.
+- [x] No Linux WebKit result is described as Safari proof.
+- [x] No behavior is described as immediate where the contract is eventual or timeout-based.
+- [x] Browser/support table names required APIs, secure context, tested engines, and manual Safari status.
+- [x] Root README links the detail instead of duplicating divergent promises.
 
 ## Files
 
@@ -46,4 +46,15 @@ and FEATURE-COMPLETE evidence.
 
 ## Outcome
 
-(pending)
+- Added `docs/BEHAVIOR.md` with evidence-tagged lifecycle, scheduling, storage,
+  window/focus, deployment, support, and state-boundary guidance.
+- Distinguished the three-engine automated matrix from pending Safari/macOS, real
+  discard, sleep/wake, private-mode, quota, restart, and cross-window manual checks.
+- Updated the final matrix evidence to 162/162 across Chromium, Firefox, and WebKit,
+  repeated three times without retries; Linux WebKit is explicitly not Safari proof.
+- Found and documented the `structuredClone()` runtime prerequisite, then expanded
+  admission tests across iframe, crypto, cloning, transport, and both storage APIs.
+- Linked root positioning, CONTRACT, and affected feature-completeness rows to the
+  operational guide instead of repeating unsupported promises.
+- Verified 248 unit tests, lint, typechecking, production builds, milestone validation,
+  local Markdown link targets, and a clean diff check.

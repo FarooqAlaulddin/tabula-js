@@ -1,11 +1,11 @@
 # Tabula 1.0 Behavioral Contract
 
-Status: normative design target for the `1.0.0` milestone.
+Status: normative contract for the `1.0.0` milestone.
 
-This document defines the behavior that the Phase 1 implementation must provide.
-Until those tasks are complete, it intentionally describes some behavior that the
-`0.1.0` source baseline does not yet implement. `DECISIONS.md` preserves historical
-design notes; this contract takes precedence wherever they differ.
+This document defines the behavior the 1.0 implementation must preserve.
+`DECISIONS.md` preserves historical design notes; this contract takes precedence
+wherever they differ. See [browser behavior and support](./BEHAVIOR.md) for the
+evidence-backed operational guide and pending manual checks.
 
 The words MUST, MUST NOT, SHOULD, and MAY are used as normative requirements.
 
@@ -540,9 +540,9 @@ storms or unsafe best guesses.
 ## 9. Capabilities, storage, and support floors
 
 Creation requires a top-level secure context, Web Locks, BroadcastChannel,
-`crypto.randomUUID()`, and successful read/write/remove probes for localStorage and
-sessionStorage. Missing or blocked baseline capabilities throw `CapabilityError`
-synchronously before transport, listeners, or locks are attached.
+`crypto.randomUUID()`, `structuredClone()`, and successful read/write/remove probes
+for localStorage and sessionStorage. Missing or blocked baseline capabilities throw
+`CapabilityError` synchronously before transport, listeners, or locks are attached.
 
 Corrupt non-authoritative projections are quarantined/removed and produce one bounded
 diagnostic. Corrupt leader/view generation records fail that feature acquisition with
@@ -559,19 +559,19 @@ ignoring storage errors, because both make guarantees depend on hidden browser s
 Rationale: capability failures are actionable only when they happen before partial
 startup or atomically at the operation that lost its prerequisite.
 
-The automated P1-004 matrix established these tested baselines on 2026-08-14. They
-are evidence floors, not claims that older versions fail. Runtime admission remains
-capability-based so an untested engine with the required semantics is not silently
-treated as proven.
+The final P1-003/P1-004 matrix established these tested baselines on 2026-08-14.
+They are evidence floors, not claims that older versions fail. Runtime admission
+remains capability-based so an untested engine with the required semantics is not
+silently treated as proven.
 
 | Project | Tested engine | Result | Scope |
 |---------|---------------|--------|-------|
-| Chromium | Chrome for Testing 145.0.7632.6 (Playwright build 1208) | 49/49 passed | Portable suite plus Chromium lifecycle controls |
-| Firefox | Firefox 146.0.1 (Playwright build 1509) | 47/47 passed | Portable suite |
-| WebKit | Playwright WebKit 26.0 (build 2248) | 47/47 passed | Portable suite; not Safari proof |
+| Chromium | Chrome for Testing 145.0.7632.6 (Playwright build 1208) | 56/56 passed | Portable suite plus Chromium lifecycle controls |
+| Firefox | Firefox 146.0.1 (Playwright build 1509) | 53/53 passed | Portable suite |
+| WebKit | Playwright WebKit 26.0 (build 2248) | 53/53 passed | Portable suite; not Safari proof |
 | Safari on macOS | Pending | See [manual checklist](./SAFARI-CHECKLIST.md) | Required before the 1.0 release candidate |
 
-The matrix was repeated three consecutive times with retries disabled: 143/143 each
+The expanded matrix was repeated three consecutive times with retries disabled: 162/162 each
 run. Normative immediacy is limited to local reads after an accepted local commit,
 local validation errors, and Web Lock exclusion while held. Presence, projections,
 state repair, vacancy, and termination detection are eventual. Browser focus,

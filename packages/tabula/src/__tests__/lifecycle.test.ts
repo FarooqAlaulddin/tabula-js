@@ -44,6 +44,7 @@ describe('workspace lifecycle and capabilities', () => {
 	afterEach(() => {
 		vi.useRealTimers()
 		vi.restoreAllMocks()
+		vi.unstubAllGlobals()
 		windowMock.restore()
 		documentMock.restore()
 		bcMock.restore()
@@ -436,9 +437,18 @@ describe('workspace lifecycle and capabilities', () => {
 
 	it.each([
 		[
+			'top-level context',
+			() => {
+				;(window as unknown as { top: unknown }).top = {}
+			},
+		],
+		[
 			'secure context',
 			() => Object.defineProperty(globalThis, 'isSecureContext', { value: false }),
 		],
+		['crypto.randomUUID()', () => vi.stubGlobal('crypto', {})],
+		['structuredClone()', () => vi.stubGlobal('structuredClone', undefined)],
+		['BroadcastChannel', () => vi.stubGlobal('BroadcastChannel', undefined)],
 		[
 			'Web Locks',
 			() => Object.defineProperty(globalThis, 'navigator', { value: { locks: undefined } }),
@@ -450,13 +460,16 @@ describe('workspace lifecycle and capabilities', () => {
 		expect(windowMock.getHandlers('pagehide')).toHaveLength(0)
 	})
 
-	it('fails synchronously when storage probing is blocked', () => {
-		vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
-			throw new DOMException('blocked', 'SecurityError')
-		})
-		expect(() => createWorkspace('blocked-storage')).toThrow(CapabilityError)
-		expect(bcMock.instances).toHaveLength(0)
-	})
+	it.each(['localStorage', 'sessionStorage'] as const)(
+		'fails synchronously when %s probing is blocked',
+		(storageName) => {
+			vi.spyOn(globalThis[storageName], 'setItem').mockImplementation(() => {
+				throw new DOMException('blocked', 'SecurityError')
+			})
+			expect(() => createWorkspace('blocked-storage')).toThrow(CapabilityError)
+			expect(bcMock.instances).toHaveLength(0)
+		},
+	)
 
 	it('enters failed when asynchronous initialization loses storage', async () => {
 		const workspace = createWorkspace('async-storage-failure')
