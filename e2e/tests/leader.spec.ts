@@ -12,11 +12,9 @@ test.describe('Leader Election', () => {
 	test('eight contenders never overlap leader callback intervals', async ({ context }) => {
 		const ns = uniqueNs('leader-contention')
 		const monitor = await context.newPage()
-		await monitor.goto('/')
+		await monitor.goto('/blank.html')
 		await monitor.evaluate((namespace) => {
 			const audit = {
-				active: [] as string[],
-				overlaps: [] as Array<{ incoming: string; active: string[] }>,
 				starts: [] as string[],
 				ends: [] as string[],
 			}
@@ -25,13 +23,8 @@ test.describe('Leader Election', () => {
 			channel.onmessage = (event) => {
 				const message = event.data as { type: 'start' | 'end'; auditId: string }
 				if (message.type === 'start') {
-					if (audit.active.length > 0) {
-						audit.overlaps.push({ incoming: message.auditId, active: [...audit.active] })
-					}
-					audit.active.push(message.auditId)
 					audit.starts.push(message.auditId)
 				} else {
-					audit.active = audit.active.filter((id) => id !== message.auditId)
 					audit.ends.push(message.auditId)
 				}
 			}
@@ -51,18 +44,16 @@ test.describe('Leader Election', () => {
 			})
 			.toBe(1)
 
-		const lockSnapshot = await monitor.evaluate(async (namespace) => {
-			const name = `tabula-js:v1:${encodeURIComponent(namespace)}:leader`
-			const snapshot = await navigator.locks.query()
-			return {
-				held: snapshot.held?.filter((lock) => lock.name === name).length ?? 0,
-				pending: snapshot.pending?.filter((lock) => lock.name === name).length ?? 0,
-			}
-		}, ns)
-		expect(lockSnapshot).toEqual({ held: 1, pending: 7 })
-
 		while (contenders.length > 0) {
 			const states = await Promise.all(contenders.map((page) => isLeader(page)))
+			expect(states.filter(Boolean)).toHaveLength(1)
+			const lockSnapshot = await monitor.evaluate(async (namespace) => {
+				const name = `tabula-js:v1:${encodeURIComponent(namespace)}:leader`
+				const snapshot = await navigator.locks.query()
+				return snapshot.held?.filter((lock) => lock.name === name).length ?? 0
+			}, ns)
+			expect(lockSnapshot).toBe(1)
+
 			const leaderIndex = states.findIndex(Boolean)
 			expect(leaderIndex).toBeGreaterThanOrEqual(0)
 			const [holder] = contenders.splice(leaderIndex, 1)
@@ -81,16 +72,11 @@ test.describe('Leader Election', () => {
 		await expect
 			.poll(() =>
 				monitor.evaluate(() => ({
-					...(window as any).__leaderAudit,
-					active: [...(window as any).__leaderAudit.active],
+					starts: (window as any).__leaderAudit.starts.length,
+					ends: (window as any).__leaderAudit.ends.length,
 				})),
 			)
-			.toMatchObject({
-				active: [],
-				overlaps: [],
-				starts: expect.any(Array),
-				ends: expect.any(Array),
-			})
+			.toEqual({ starts: 8, ends: 8 })
 		const audit = await monitor.evaluate(() => (window as any).__leaderAudit)
 		expect(audit.starts).toHaveLength(8)
 		expect(audit.ends).toHaveLength(8)

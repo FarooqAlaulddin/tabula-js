@@ -3,12 +3,12 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
 	testDir: './tests',
 	timeout: 30000,
-	retries: process.env.CI ? 2 : 0,
+	retries: 0,
 	outputDir: 'test-results',
 	reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'line',
 	use: {
 		baseURL: 'http://localhost:5199',
-		trace: 'on-first-retry',
+		trace: 'retain-on-failure',
 		screenshot: 'only-on-failure',
 	},
 	projects: [

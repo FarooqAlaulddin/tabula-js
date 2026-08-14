@@ -258,26 +258,57 @@ test.describe('Shared State', () => {
 		).toEqual(expect.arrayContaining(['sync:status:repairing', 'sync:status:complete']))
 	})
 
-	test('a busy responder repairs the requester after its event loop resumes', async ({
+	test('a delayed responder repairs the requester after request delivery resumes', async ({
 		context,
 	}) => {
-		const ns = uniqueNs('state-busy-repair')
+		const ns = uniqueNs('state-delayed-responder')
 		const pageA = await context.newPage()
+		await pageA.addInitScript(() => {
+			const NativeBroadcastChannel = window.BroadcastChannel
+			;(window as any).__queuedSyncRequests = []
+			window.BroadcastChannel = class ControlledBroadcastChannel {
+				private readonly inner: BroadcastChannel
+				private handler: ((event: MessageEvent) => void) | null = null
+
+				constructor(name: string) {
+					this.inner = new NativeBroadcastChannel(name)
+					this.inner.onmessage = (event) => {
+						if (event.data?.type === 'state:sync-request') {
+							;(window as any).__queuedSyncRequests.push(() => this.handler?.(event))
+							return
+						}
+						this.handler?.(event)
+					}
+				}
+
+				set onmessage(handler: ((event: MessageEvent) => void) | null) {
+					this.handler = handler
+				}
+
+				get onmessage(): ((event: MessageEvent) => void) | null {
+					return this.handler
+				}
+
+				postMessage(message: unknown): void {
+					this.inner.postMessage(message)
+				}
+
+				close(): void {
+					this.inner.close()
+				}
+			} as unknown as typeof BroadcastChannel
+		})
 		await openTab(pageA, ns)
 		await setState(pageA, 'busy-value', 42)
-
-		const busy = pageA.evaluate(() => {
-			const until = performance.now() + 600
-			while (performance.now() < until) {
-				// Deliberately block this responder beyond the requester's ready budget.
-			}
-		})
 		const pageB = await context.newPage()
 		await pageB.goto(`/?ns=${ns}&heartbeat=200&timeout=1000&readyTimeout=200`)
 		await pageB.waitForFunction(() => document.getElementById('status')?.textContent === 'ready')
 		expect(await pageB.evaluate(() => (window as any).__tabula.status().sync)).toBe('repairing')
 
-		await busy
+		await pageA.evaluate(() => {
+			const queued = (window as any).__queuedSyncRequests.splice(0)
+			for (const deliver of queued) deliver()
+		})
 		await pageB.waitForFunction(
 			() =>
 				(window as any).__tabula.status().sync === 'complete' &&
