@@ -90,6 +90,23 @@ describe('createMockWorkspace', () => {
 })
 
 describe('createTestCluster', () => {
+	it('returns to an empty steady state after 1,000 claim and lifecycle cycles', async () => {
+		const cluster = createTestCluster<TestState>('stress')
+		for (let index = 0; index < 1_000; index++) {
+			const tab = cluster.createTab()
+			const result = await tab.claim('writer')
+			expect(result.status).toBe('claimed')
+			if (result.status === 'claimed') result.handle.release()
+			expect(tab.views.list()).toEqual({})
+			tab.destroy()
+			expect(tab.status().lifecycle).toBe('destroyed')
+		}
+
+		const probe = cluster.createTab()
+		expect(probe.tabs.list()).toHaveLength(1)
+		expect(probe.views.list()).toEqual({})
+	})
+
 	it('creates multiple tabs that share state', () => {
 		const cluster = createTestCluster<TestState>('test')
 		const tabA = cluster.createTab()

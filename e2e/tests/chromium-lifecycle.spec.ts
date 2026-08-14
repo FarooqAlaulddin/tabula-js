@@ -9,6 +9,30 @@ import {
 } from '../helpers/tabula-page'
 
 test.describe('Chromium lifecycle controls', () => {
+	test('a frozen follower resumes without callbacks or identity churn', async ({ context }) => {
+		const ns = uniqueNs('follower-frozen')
+		const pageA = await context.newPage()
+		const pageB = await context.newPage()
+		await Promise.all([openTab(pageA, ns), openTab(pageB, ns)])
+		await expect.poll(async () => [await isLeader(pageA), await isLeader(pageB)]).toContain(true)
+		const aIsLeader = await isLeader(pageA)
+		const holder = aIsLeader ? pageA : pageB
+		const follower = aIsLeader ? pageB : pageA
+		const followerId = await follower.evaluate(() => (window as any).__tabula.tabs.current().id)
+		expect(await follower.evaluate(() => (window as any).__leaderLifecycle.setupCount)).toBe(0)
+
+		const session = await context.newCDPSession(follower)
+		await session.send('Page.setWebLifecycleState', { state: 'frozen' })
+		await holder.waitForTimeout(1200)
+		expect(await isLeader(holder)).toBe(true)
+		await session.send('Page.setWebLifecycleState', { state: 'active' })
+		await follower.waitForFunction(() => (window as any).__tabula.status().lifecycle === 'ready')
+		expect(await follower.evaluate(() => (window as any).__tabula.tabs.current().id)).toBe(
+			followerId,
+		)
+		expect(await follower.evaluate(() => (window as any).__leaderLifecycle.setupCount)).toBe(0)
+	})
+
 	test('a frozen leader is not replaced while its lock remains held', async ({ context }) => {
 		const ns = uniqueNs('leader-frozen')
 		const pageA = await context.newPage()

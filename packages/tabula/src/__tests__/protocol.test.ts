@@ -50,6 +50,17 @@ const stateTombstone = {
 const viewToken = { generation: 2, claimId: 'view-claim-2' }
 
 describe('protocol validation', () => {
+	it('validates 10,000 bounded messages without retaining input state', () => {
+		let valid = 0
+		for (let index = 0; index < 10_000; index++) {
+			const result = validateInboundMessage(
+				envelope('tab:heartbeat', null, { id: `stress-instance:${index}` }),
+			)
+			if (result.kind === 'valid') valid++
+		}
+		expect(valid).toBe(10_000)
+	})
+
 	it.each([
 		['identity:probe', { startedAt: 1 }],
 		['identity:claim', { startedAt: 1 }],

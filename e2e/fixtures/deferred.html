@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head><title>Tabula deferred lifecycle fixture</title></head>
+<body>
+<div id="status">idle</div>
+<script type="module">
+import { createWorkspace } from '@farooqalaulddin/tabula-js'
+
+window.__createAndDestroy = async (namespace) => {
+	const workspace = createWorkspace(namespace, { readyTimeout: 1000 })
+	workspace.state.set('queued', 'must-not-commit')
+	workspace.destroy()
+	let readyError = null
+	try {
+		await workspace.ready
+	} catch (error) {
+		readyError = { name: error.name, message: error.message }
+	}
+	let mutationError = null
+	try {
+		workspace.state.set('after-destroy', true)
+	} catch (error) {
+		mutationError = { name: error.name, message: error.message }
+	}
+	window.__destroyResult = {
+		lifecycle: workspace.status().lifecycle,
+		queued: workspace.state,
+		readyError,
+		mutationError,
+	}
+	document.getElementById('status').textContent = 'done'
+}
+</script>
+</body>
+</html>

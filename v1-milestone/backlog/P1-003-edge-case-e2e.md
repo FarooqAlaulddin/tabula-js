@@ -2,7 +2,7 @@
 id: P1-003
 title: Prove adversarial lifecycle and concurrency behavior
 phase: 1
-status: todo
+status: done
 depends_on: [P1-004]
 owner: agent
 scope: portable adversarial suite + Chromium lifecycle suite + manual evidence harness
@@ -58,4 +58,28 @@ FEATURE-COMPLETE evidence links, and this Outcome.
 
 ## Outcome
 
-(pending)
+- Added six portable adversarial scenarios in `e2e/tests/adversarial.spec.ts`:
+  destroy-before-ready terminality, an eight-tab join/claim/leave storm, simultaneous
+  leader/view-owner termination, a four-tab refresh storm, suspension beyond presence
+  timeout with repair, and deduplicated unsupported-protocol recovery.
+- Existing portable tests provide more than ten distinct adversity cases when combined
+  with delayed/reordered state and sync, opener identity repair, queued-lock destroy,
+  abrupt process/holder termination, stale view handles, refresh re-claim, and bfcache.
+  All assertions observe lifecycle state, operation values, local authority flags,
+  Web Lock snapshots, or fenced owners directly rather than inferring correctness from
+  message arrival order.
+- Expanded `chromium-lifecycle.spec.ts` to cover follower freeze/resume alongside the
+  existing leader and view-owner freeze cases. Portable bfcache and reload scenarios
+  remain in the three-engine suite.
+- Added deterministic in-memory stress: 10,000 validated protocol messages and 1,000
+  claim/release/destroy cycles returning to an empty cluster steady state. Existing
+  unit gates separately prove dedup, incompatibility, presence, state/tombstone, sync,
+  and pending-intent caps.
+- Added the dated, reproducible `docs/ADVERSARIAL-CHECKLIST.md` for sleep/wake,
+  memory-saver discard, private browsing, storage blocking/quota/corruption, browser
+  restart, multiple windows/monitors, popup policy, and focus policy. Manual execution
+  is explicitly pending and feeds the later burn-in/RC gates.
+- Linked affected browser evidence cells in `FEATURE-COMPLETE.md` without prematurely
+  marking release rows complete.
+- Verification on 2026-08-14: lint, typecheck, and 243/243 unit tests passed. Three
+  consecutive full Playwright matrix runs passed 162/162 with retries disabled.

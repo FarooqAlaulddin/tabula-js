@@ -35,6 +35,9 @@ app.on('view:claimed', (e) => window.__tabulaEvents.push({ type: 'view:claimed',
 app.on('view:vacant', (e) => window.__tabulaEvents.push({ type: 'view:vacant', ...e }))
 app.on('view:conflict', (e) => window.__tabulaEvents.push({ type: 'view:conflict', ...e }))
 app.on('sync:status', (status) => window.__tabulaEvents.push({ type: 'sync:status', ...status }))
+app.on('protocol:incompatible', (event) =>
+	window.__tabulaEvents.push({ type: 'protocol:incompatible', ...event }),
+)
 
 window.__leaderLifecycle = { setupCount: 0, cleanupCount: 0 }
 const leaderAudit = new BroadcastChannel(`tabula-e2e-leader-audit:${ns}`)
