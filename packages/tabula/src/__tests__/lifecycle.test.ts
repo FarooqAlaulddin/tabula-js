@@ -6,12 +6,19 @@ import {
 	WorkspaceFailedError,
 	createWorkspace,
 } from '@tabula/tabula'
+import type {
+	Message,
+	StateOperation,
+	StateSyncRequestPayload,
+	StateSyncResponsePayload,
+} from '@tabula/tabula'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
 	installMockBroadcastChannel,
 	installMockDocument,
 	installMockStorage,
 	installMockWindow,
+	makeMessage,
 } from './helpers'
 
 describe('workspace lifecycle and capabilities', () => {
@@ -51,6 +58,52 @@ describe('workspace lifecycle and capabilities', () => {
 		return workspace
 	}
 
+	function seedPeer(namespace: string, tabId: string): void {
+		localStorage.setItem(
+			`tabula:${namespace}:tab:${tabId}`,
+			JSON.stringify({ lastSeen: Date.now(), createdAt: Date.now(), visible: true, view: null }),
+		)
+	}
+
+	function syncRequests(namespace: string): Message<StateSyncRequestPayload>[] {
+		const channel = bcMock.instances.find((instance) => instance.name === `tabula:${namespace}`)
+		return (channel?.postMessage.mock.calls ?? [])
+			.map((call) => call[0] as Message)
+			.filter(
+				(message): message is Message<StateSyncRequestPayload> =>
+					message.type === 'state:sync-request' && message.payload !== null,
+			)
+	}
+
+	function respondToSync(
+		namespace: string,
+		request: Message<StateSyncRequestPayload>,
+		responderId: string,
+		responderInstanceId: string,
+		state: Record<string, StateOperation>,
+		responderState: 'initializing' | 'ready' = 'ready',
+	): void {
+		const channel = bcMock.instances.find((instance) => instance.name === `tabula:${namespace}`)
+		const payload: StateSyncResponsePayload = {
+			requestId: request.payload.requestId,
+			requesterInstanceId: request.payload.requesterInstanceId,
+			requesterGeneration: request.payload.requesterGeneration,
+			responderId,
+			responderInstanceId,
+			responderState,
+			complete: true,
+			state,
+		}
+		channel?.simulateMessage(
+			makeMessage({
+				type: 'state:sync',
+				from: { tabId: responderId, instanceId: responderInstanceId },
+				to: request.from,
+				payload,
+			}),
+		)
+	}
+
 	it('exposes immutable initializing and ready status snapshots', async () => {
 		const workspace = createWorkspace('status')
 		const initial = workspace.status()
@@ -73,6 +126,7 @@ describe('workspace lifecycle and capabilities', () => {
 	})
 
 	it('uses readyTimeout as one total initialization budget', async () => {
+		seedPeer('bounded-ready', 'missing-peer')
 		const workspace = createWorkspace('bounded-ready', { readyTimeout: 100 })
 		let settled = false
 		workspace.ready.then(() => {
@@ -104,6 +158,7 @@ describe('workspace lifecycle and capabilities', () => {
 	})
 
 	it('destroy during initialization cancels active waits and resources exactly once', async () => {
+		seedPeer('destroy-during-ready', 'missing-peer')
 		const workspace = createWorkspace('destroy-during-ready')
 		const ready = workspace.ready
 		await vi.advanceTimersByTimeAsync(100)
@@ -116,6 +171,205 @@ describe('workspace lifecycle and capabilities', () => {
 
 		expect(bcMock.instances[0].close).toHaveBeenCalledTimes(1)
 		expect(documentMock.getHandlers('visibilitychange')).toHaveLength(0)
+		expect(workspace.status().lifecycle).toBe('destroyed')
+	})
+
+	it('merges a complete response delayed beyond the former 150ms window', async () => {
+		seedPeer('delayed-sync', 'slow-peer')
+		const workspace = createWorkspace<Record<string, unknown>>('delayed-sync', {
+			readyTimeout: 500,
+		})
+		await vi.advanceTimersByTimeAsync(75)
+		const request = syncRequests('delayed-sync')[0]
+		expect(request).toBeDefined()
+
+		await vi.advanceTimersByTimeAsync(200)
+		let settled = false
+		workspace.ready.then(() => {
+			settled = true
+		})
+		expect(settled).toBe(false)
+		respondToSync('delayed-sync', request, 'slow-peer', 'slow-instance', {
+			late: {
+				kind: 'set',
+				key: 'late',
+				value: 'arrived',
+				clock: { wallTime: 10, logical: 0 },
+				tabId: 'slow-peer',
+				instanceId: 'slow-instance',
+				operationId: 'late-operation',
+			},
+		})
+		await workspace.ready
+
+		expect(workspace.state.get('late')).toBe('arrived')
+		expect(workspace.status().sync).toBe('complete')
+		workspace.destroy()
+	})
+
+	it.each([
+		['peer-a', 'peer-b'],
+		['peer-b', 'peer-a'],
+	] as const)('merges divergent responders in %s then %s order', async (first, second) => {
+		const namespace = `multi-${first}`
+		seedPeer(namespace, 'peer-a')
+		seedPeer(namespace, 'peer-b')
+		const workspace = createWorkspace<Record<string, unknown>>(namespace, { readyTimeout: 500 })
+		await vi.advanceTimersByTimeAsync(75)
+		const request = syncRequests(namespace)[0]
+		const snapshots: Record<string, Record<string, StateOperation>> = {
+			'peer-a': {
+				a: {
+					kind: 'set',
+					key: 'a',
+					value: 1,
+					clock: { wallTime: 10, logical: 0 },
+					tabId: 'peer-a',
+					instanceId: 'instance-a',
+					operationId: 'operation-a',
+				},
+				shared: {
+					kind: 'set',
+					key: 'shared',
+					value: 'older',
+					clock: { wallTime: 10, logical: 0 },
+					tabId: 'peer-a',
+					instanceId: 'instance-a',
+					operationId: 'operation-shared-a',
+				},
+			},
+			'peer-b': {
+				b: {
+					kind: 'set',
+					key: 'b',
+					value: 2,
+					clock: { wallTime: 10, logical: 0 },
+					tabId: 'peer-b',
+					instanceId: 'instance-b',
+					operationId: 'operation-b',
+				},
+				shared: {
+					kind: 'set',
+					key: 'shared',
+					value: 'newer',
+					clock: { wallTime: 11, logical: 0 },
+					tabId: 'peer-b',
+					instanceId: 'instance-b',
+					operationId: 'operation-shared-b',
+				},
+			},
+		}
+		for (const peer of [first, second]) {
+			respondToSync(namespace, request, peer, `instance-${peer.at(-1)}`, snapshots[peer])
+		}
+		await workspace.ready
+
+		expect(workspace.state.get('a')).toBe(1)
+		expect(workspace.state.get('b')).toBe(2)
+		expect(workspace.state.get('shared')).toBe('newer')
+		expect(new Set(workspace.state.keys())).toEqual(new Set(['a', 'b', 'shared']))
+		expect(workspace.status().sync).toBe('complete')
+		workspace.destroy()
+	})
+
+	it('repairs values and tombstones from a retained late response after ready', async () => {
+		seedPeer('late-repair', 'frozen-peer')
+		const workspace = createWorkspace<Record<string, unknown>>('late-repair', {
+			readyTimeout: 150,
+		})
+		const statuses: unknown[] = []
+		workspace.on('sync:status', (status) => statuses.push(status))
+		await vi.advanceTimersByTimeAsync(150)
+		await workspace.ready
+		expect(workspace.status()).toEqual({
+			lifecycle: 'ready',
+			sync: 'repairing',
+			missingPeerIds: ['frozen-peer'],
+		})
+		const request = syncRequests('late-repair')[0]
+
+		respondToSync('late-repair', request, 'frozen-peer', 'frozen-instance', {
+			kept: {
+				kind: 'set',
+				key: 'kept',
+				value: true,
+				clock: { wallTime: 20, logical: 0 },
+				tabId: 'frozen-peer',
+				instanceId: 'frozen-instance',
+				operationId: 'kept-operation',
+			},
+			gone: {
+				kind: 'delete',
+				key: 'gone',
+				clock: { wallTime: 21, logical: 0 },
+				tabId: 'frozen-peer',
+				instanceId: 'frozen-instance',
+				operationId: 'gone-operation',
+			},
+		})
+
+		expect(workspace.state.get('kept')).toBe(true)
+		expect(workspace.state.get('gone')).toBeUndefined()
+		expect(workspace.state.keys()).toEqual(['kept'])
+		expect(workspace.status().sync).toBe('complete')
+		expect(statuses).toEqual([
+			{ lifecycle: 'ready', sync: 'repairing', missingPeerIds: ['frozen-peer'] },
+			{ lifecycle: 'ready', sync: 'complete', missingPeerIds: [] },
+		])
+		workspace.destroy()
+	})
+
+	it('completes repair when presence proves the missing peer has left', async () => {
+		seedPeer('peer-left-repair', 'departed-peer')
+		const workspace = createWorkspace('peer-left-repair', { readyTimeout: 100 })
+		await vi.advanceTimersByTimeAsync(100)
+		await workspace.ready
+		expect(workspace.status().missingPeerIds).toEqual(['departed-peer'])
+
+		const channel = bcMock.instances.find((instance) => instance.name === 'tabula:peer-left-repair')
+		channel?.simulateMessage(
+			makeMessage({
+				type: 'tab:leave',
+				from: { tabId: 'departed-peer', instanceId: 'departed-instance' },
+				payload: null,
+			}),
+		)
+
+		expect(workspace.status()).toEqual({
+			lifecycle: 'ready',
+			sync: 'complete',
+			missingPeerIds: [],
+		})
+		workspace.destroy()
+	})
+
+	it('bootstraps an empty simultaneous cohort through the lowest instance', async () => {
+		seedPeer('empty-cohort', 'peer-b')
+		const workspace = createWorkspace('empty-cohort', { readyTimeout: 500 })
+		await vi.advanceTimersByTimeAsync(75)
+		const request = syncRequests('empty-cohort')[0]
+		respondToSync('empty-cohort', request, 'peer-b', 'zzzz-peer-instance', {}, 'initializing')
+		await workspace.ready
+
+		expect(workspace.status()).toEqual({
+			lifecycle: 'ready',
+			sync: 'complete',
+			missingPeerIds: [],
+		})
+		workspace.destroy()
+	})
+
+	it('cancels post-ready repair rounds on destroy', async () => {
+		seedPeer('destroy-repair', 'missing-peer')
+		const workspace = createWorkspace('destroy-repair', { readyTimeout: 100 })
+		await vi.advanceTimersByTimeAsync(100)
+		await workspace.ready
+		expect(workspace.status().sync).toBe('repairing')
+		const countBeforeDestroy = syncRequests('destroy-repair').length
+
+		workspace.destroy()
+		await vi.advanceTimersByTimeAsync(5000)
+		expect(syncRequests('destroy-repair')).toHaveLength(countBeforeDestroy)
 		expect(workspace.status().lifecycle).toBe('destroyed')
 	})
 

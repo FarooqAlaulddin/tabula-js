@@ -211,9 +211,9 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 	})
 })
 
-// ── Bug 3: syncState must always send sync request, even when alone ──────
+// ── Bug 3: verified singleton readiness must not wait for a retry ────────
 
-describe('Bug 3: syncState always broadcasts state:sync-request even when alone', () => {
+describe('Bug 3: verified singleton readiness avoids redundant sync retries', () => {
 	let bcMock: ReturnType<typeof installMockBroadcastChannel>
 	let storageMock: ReturnType<typeof installMockStorage>
 	let docMock: ReturnType<typeof installMockDocument>
@@ -237,26 +237,21 @@ describe('Bug 3: syncState always broadcasts state:sync-request even when alone'
 		winMock.restore()
 	})
 
-	it('a single-tab workspace still sends state:sync-request during init', async () => {
-		// Create workspace — only one tab will exist (no other tabs in presence)
+	it('a single-tab workspace becomes ready without broadcasting a sync request', async () => {
 		const ws = createWorkspace('regression-test-3')
-
-		// Advance timers enough for the full init sequence to complete
-		// init() has: sleep(100) for announce wait + syncState() with sleep(50)
-		await vi.advanceTimersByTimeAsync(500)
+		await vi.advanceTimersByTimeAsync(75)
+		await ws.ready
 
 		// Find the BroadcastChannel instance used for the namespace
 		const bc = bcMock.instances.find((i) => i.name === 'tabula:regression-test-3')
 		expect(bc).toBeDefined()
 
-		// Collect all messages posted to the BroadcastChannel
 		const postedMessages: Message[] = (bc as NonNullable<typeof bc>).postMessage.mock.calls.map(
 			(call: unknown[]) => call[0] as Message,
 		)
-
-		// There MUST be a state:sync-request among the posted messages
 		const syncRequests = postedMessages.filter((m) => m.type === 'state:sync-request')
-		expect(syncRequests.length).toBeGreaterThanOrEqual(1)
+		expect(syncRequests).toHaveLength(0)
+		expect(ws.status()).toEqual({ lifecycle: 'ready', sync: 'complete', missingPeerIds: [] })
 
 		ws.destroy()
 	})

@@ -104,6 +104,25 @@ export interface StateDeleteOperation extends StateOperationBase {
 
 export type StateOperation<V = unknown> = StateSetOperation<V> | StateDeleteOperation
 
+export interface StateSyncRequestPayload {
+	requestId: string
+	requesterInstanceId: string
+	requesterGeneration: number
+	knownPeers: string[]
+	protocolRevision: number
+}
+
+export interface StateSyncResponsePayload {
+	requestId: string
+	requesterInstanceId: string
+	requesterGeneration: number
+	responderId: string
+	responderInstanceId: string
+	responderState: 'initializing' | 'ready'
+	complete: true
+	state: Record<string, StateOperation>
+}
+
 export interface ProtocolIncompatibleEvent {
 	peer: MessageIdentity
 	local: ProtocolVersion
@@ -390,14 +409,31 @@ function validatePayload(type: MessageType, payload: unknown): boolean {
 				(isRecord(payload) &&
 					hasSafeOwnKeys(payload) &&
 					isValidId(payload.requestId) &&
+					isValidId(payload.requesterInstanceId) &&
+					Number.isSafeInteger(payload.requesterGeneration) &&
+					(payload.requesterGeneration as number) > 0 &&
 					Array.isArray(payload.knownPeers) &&
 					payload.knownPeers.length <= 256 &&
 					payload.knownPeers.every(isValidId) &&
+					new Set(payload.knownPeers).size === payload.knownPeers.length &&
 					Number.isSafeInteger(payload.protocolRevision) &&
 					(payload.protocolRevision as number) >= 0)
 			)
 		case 'state:sync':
-			return isRecord(payload) && hasSafeOwnKeys(payload) && isStateRecord(payload.state)
+			return (
+				isRecord(payload) &&
+				hasSafeOwnKeys(payload) &&
+				isStateRecord(payload.state) &&
+				(!('requestId' in payload) ||
+					(isValidId(payload.requestId) &&
+						isValidId(payload.requesterInstanceId) &&
+						Number.isSafeInteger(payload.requesterGeneration) &&
+						(payload.requesterGeneration as number) > 0 &&
+						isValidId(payload.responderId) &&
+						isValidId(payload.responderInstanceId) &&
+						(payload.responderState === 'initializing' || payload.responderState === 'ready') &&
+						payload.complete === true))
+			)
 		case 'view:claim':
 		case 'view:release':
 		case 'view:focus':

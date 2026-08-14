@@ -14,6 +14,8 @@ import {
 	type ProtocolIncompatibleEvent,
 	type StateClock,
 	type StateOperation,
+	type StateSyncRequestPayload,
+	type StateSyncResponsePayload,
 	isValidId,
 	isValidName,
 	isValidStateKey,
@@ -49,6 +51,8 @@ export type {
 	StateDeleteOperation,
 	StateOperation,
 	StateSetOperation,
+	StateSyncRequestPayload,
+	StateSyncResponsePayload,
 } from './protocol'
 export {
 	CapabilityError,
@@ -653,6 +657,45 @@ interface AnnouncePayload {
 		return Array.from(this.tabMap.values())
 	}
 
+	discoverStoredPeers(): void {
+		const now = Date.now()
+		try {
+			for (let index = 0; index < localStorage.length; index++) {
+				const key = localStorage.key(index)
+				if (!key?.startsWith(this.presencePrefix)) continue
+				const tabId = key.slice(this.presencePrefix.length)
+				if (tabId === this.tabId || !isValidId(tabId) || this.tabMap.has(tabId)) continue
+				const raw = localStorage.getItem(key)
+				if (!raw) continue
+				let entry: ReturnType<typeof validateStoredPresence>
+				try {
+					entry = validateStoredPresence(JSON.parse(raw))
+				} catch {
+					continue
+				}
+				if (!entry || now - entry.lastSeen > this.timeoutMs * 3) continue
+				if (this.tabMap.size >= MAX_PRESENCE_PEERS) {
+					if (!this.warnedAtCapacity) {
+						this.warnedAtCapacity = true
+						console.warn('Tabula presence reached its 256-peer limit; new peers are ignored.')
+					}
+					return
+				}
+				const tab: TabMeta = {
+					id: tabId,
+					view: entry.view ?? null,
+					visible: entry.visible ?? true,
+					firstSeenAt: entry.createdAt,
+					lastSeenAt: entry.lastSeen,
+				}
+				this.tabMap.set(tabId, tab)
+				this.onJoin(tab)
+			}
+		} catch (cause) {
+			throw new StorageOperationError('localStorage', 'read', cause)
+		}
+	}
+
 	isAlive(tabId: string): boolean {
 		return this.tabMap.has(tabId)
 	}
@@ -1016,27 +1059,36 @@ interface LeaderProjection {
 		} else if (msg.type === 'state:batch') {
 			const { operations } = msg.payload as { operations: StateOperation[] }
 			this.acceptRemoteOperations(operations, msg.from, true)
-		} else if (msg.type === 'state:sync-request') {
+		} else if (msg.type === 'state:sync-request' && msg.payload === null) {
 			const snapshot: Record<string, StateOperation> = Object.create(null)
 			for (const [k, v] of this.entries) snapshot[k] = v
 			this.channel.send('state:sync', { state: snapshot }, msg.from)
-		} else if (msg.type === 'state:sync') {
-			const { state: snapshot } = msg.payload as {
-				state: Record<string, StateOperation | StateEntry>
-			}
-			const operations = Object.entries(snapshot).map(([key, entry]) =>
-				this.operationFromSnapshot(key, entry, msg),
-			)
-			this.acceptRemoteOperations(
-				operations.filter((operation): operation is StateOperation => operation !== null),
-				msg.from,
-				false,
-			)
+		} else if (
+			msg.type === 'state:sync' &&
+			typeof msg.payload === 'object' &&
+			msg.payload !== null &&
+			!('requestId' in msg.payload)
+		) {
+			this.mergeSyncMessage(msg)
 		}
 	}
 
-	requestSync(): void {
-		this.channel.send<null>('state:sync-request', null)
+	mergeSyncMessage(msg: Message): void {
+		const { state: snapshot } = msg.payload as {
+			state: Record<string, StateOperation | StateEntry>
+		}
+		const operations = Object.entries(snapshot).map(([key, entry]) =>
+			this.operationFromSnapshot(key, entry, msg),
+		)
+		this.acceptRemoteOperations(
+			operations.filter((operation): operation is StateOperation => operation !== null),
+			msg.from,
+			false,
+		)
+	}
+
+	requestSync(payload?: StateSyncRequestPayload): void {
+		this.channel.send('state:sync-request', payload ?? null)
 	}
 
 	reidentify(_tabId: string): void {
@@ -1494,6 +1546,19 @@ interface QueuedCall {
 	reject?: (error: Error) => void
 }
 
+interface SyncRound {
+	requestId: string
+	generation: number
+	createdAt: number
+	expectedPeerIds: Set<string>
+	readyResponderIds: Set<string>
+	initializingResponders: Map<string, { instanceId: string; empty: boolean }>
+}
+
+const MAX_SYNC_CORRELATIONS = 16
+const SYNC_RETRY_BASE_MS = 50
+const SYNC_RETRY_MAX_MS = 1000
+
 class Coordinator<S extends object> {
 	private readonly namespace: string
 	private channel: Channel
@@ -1522,6 +1587,12 @@ class Coordinator<S extends object> {
 	private identityRepairRequested = false
 	private identityRepairing = false
 	private resourceCleanups = new Set<() => void>()
+	private syncGeneration = 0
+	private syncRounds = new Map<string, SyncRound>()
+	private activeSyncRound: SyncRound | null = null
+	private syncProgressWaiters = new Set<() => void>()
+	private syncRetryTimer: ReturnType<typeof setTimeout> | null = null
+	private syncRetryDelay = SYNC_RETRY_BASE_MS
 
 	// event system
 	private eventListeners = new Map<string, Set<(payload: unknown) => void>>()
@@ -1586,10 +1657,12 @@ class Coordinator<S extends object> {
 			(tab) => {
 				this.emit('tab:join', tab)
 				this.leader.refreshProjection()
+				this.handleSyncPeerJoin()
 			},
 			(tab) => {
 				this.emit('tab:leave', tab)
 				this.views.cleanupForTab(tab.id)
+				this.handleSyncPeerLeave()
 			},
 			this.namespace,
 		)
@@ -1625,10 +1698,13 @@ class Coordinator<S extends object> {
 		this.channel.onMessage((msg) => {
 			if (msg.type === 'identity:probe' || msg.type === 'identity:claim') return
 			if (msg.from.tabId === this.tabId && msg.from.instanceId !== this.instanceId) return
+			if (this.lifecycle === 'bfcache-suspended' && msg.type === 'state:sync-request') return
+			this.handleSyncMessage(msg)
 			this.presence.handleMessage(msg)
 			this.leader.handleMessage(msg)
 			this.state.handleMessage(msg)
 			this.views.handleMessage(msg)
+			if (msg.type === 'tab:announce') this.handleSyncPeerActivity()
 		})
 		this.registry.startListening()
 		this.domainsAttached = true
@@ -1646,28 +1722,36 @@ class Coordinator<S extends object> {
 
 	private async initialize(signal: AbortSignal): Promise<void> {
 		const deadline = Date.now() + this.options.readyTimeout
+		this.resetSyncHandshake()
+		this.syncGeneration++
 		this.setSync('pending', [])
 		await this.establishIdentity(deadline, signal)
 		this.ensureRunning(signal)
 
 		this.presence.start()
 		this.leader.start()
+		this.presence.discoverStoredPeers()
 		const knownFromRegistry = Object.values(this.registry.list())
 		const expectedTabs = new Set(knownFromRegistry.map((e) => e.tabId))
+		for (const tab of this.presence.getAllTabs()) expectedTabs.add(tab.id)
 		expectedTabs.delete(this.tabId)
 		await this.waitForTabs(expectedTabs, this.remainingBudget(deadline, 150), signal)
 		this.ensureRunning(signal)
 
-		await this.syncState(this.remainingBudget(deadline, 150), signal)
+		await this.syncState(deadline, signal)
 		this.ensureRunning(signal)
 
 		this.views.loadFromRegistry()
 		this.views.validateAgainstPresence()
 		this.views.start()
 
-		const missing = [...expectedTabs].filter((id) => !this.presence.isAlive(id))
 		this.lifecycle = 'ready'
-		this.setSync(missing.length > 0 ? 'repairing' : 'complete', missing)
+		if (this.isSyncComplete()) {
+			this.setSync('complete', [])
+		} else {
+			this.setSync('repairing', this.getMissingSyncPeerIds())
+			this.scheduleSyncRetry()
+		}
 		this.flushQueue()
 		if (!this.readySettled) {
 			this.readySettled = true
@@ -1683,56 +1767,284 @@ class Coordinator<S extends object> {
 	private waitForTabs(expected: Set<string>, maxMs: number, signal: AbortSignal): Promise<void> {
 		return new Promise((resolve) => {
 			let settled = false
+			const resources: { unsub?: () => void } = {}
 			const finish = () => {
 				if (settled) return
 				settled = true
 				clearTimeout(timeout)
-				unsub?.()
-				signal.removeEventListener('abort', finish)
-				resolve()
-			}
-			let unsub: (() => void) | undefined
-			const timeout = setTimeout(finish, maxMs)
-			signal.addEventListener('abort', finish, { once: true })
-			if (expected.size > 0) {
-				const check = () => {
-					for (const tabId of expected) {
-						if (!this.presence.isAlive(tabId)) return false
-					}
-					return true
-				}
-				if (check()) {
-					finish()
-					return
-				}
-				unsub = this.onInternal('tab:join', () => {
-					if (check()) finish()
-				})
-			} else {
-				unsub = this.onInternal('tab:join', finish)
-			}
-		})
-	}
-
-	private async syncState(maxMs: number, signal: AbortSignal): Promise<void> {
-		return new Promise<void>((resolve) => {
-			let settled = false
-			const resources: { timeout?: ReturnType<typeof setTimeout>; unsub?: () => void } = {}
-			const finish = () => {
-				if (settled) return
-				settled = true
-				if (resources.timeout) clearTimeout(resources.timeout)
 				resources.unsub?.()
 				signal.removeEventListener('abort', finish)
 				resolve()
 			}
-			resources.unsub = this.channel.onMessage((msg) => {
-				if (msg.type === 'state:sync') finish()
-			})
-			resources.timeout = setTimeout(finish, maxMs)
+			const timeout = setTimeout(finish, maxMs)
 			signal.addEventListener('abort', finish, { once: true })
-			this.state.requestSync()
+			if (expected.size === 0) {
+				finish()
+				return
+			}
+			const check = () => {
+				for (const tabId of expected) {
+					if (!this.presence.isAlive(tabId)) return false
+				}
+				return true
+			}
+			if (check()) {
+				finish()
+				return
+			}
+			resources.unsub = this.onInternal('tab:join', () => {
+				if (check()) finish()
+			})
 		})
+	}
+
+	private async syncState(deadline: number, signal: AbortSignal): Promise<void> {
+		if (this.currentSyncPeerIds().length === 0) return
+		this.startSyncRound()
+		let retryDelay = SYNC_RETRY_BASE_MS
+		let nextRetryAt = Date.now() + retryDelay
+		while (!signal.aborted && !this.isSyncComplete()) {
+			const now = Date.now()
+			if (now >= deadline) return
+			await this.waitForSyncProgress(Math.min(deadline, nextRetryAt) - now, signal)
+			this.ensureRunning(signal)
+			if (this.isSyncComplete() || Date.now() >= deadline) return
+			if (Date.now() >= nextRetryAt) {
+				this.startSyncRound()
+				retryDelay = Math.min(retryDelay * 2, SYNC_RETRY_MAX_MS)
+				nextRetryAt = Date.now() + retryDelay
+			}
+		}
+	}
+
+	private handleSyncMessage(msg: Message): void {
+		if (msg.type === 'state:sync-request' && msg.payload !== null) {
+			if (this.lifecycle === 'bfcache-suspended') return
+			const request = msg.payload as StateSyncRequestPayload
+			if (
+				request.requesterInstanceId !== msg.from.instanceId ||
+				request.protocolRevision !== msg.protocol.revision
+			) {
+				return
+			}
+			const identity = this.channel.getIdentity()
+			const response: StateSyncResponsePayload = {
+				requestId: request.requestId,
+				requesterInstanceId: request.requesterInstanceId,
+				requesterGeneration: request.requesterGeneration,
+				responderId: identity.tabId,
+				responderInstanceId: identity.instanceId,
+				responderState: this.lifecycle === 'ready' ? 'ready' : 'initializing',
+				complete: true,
+				state: this.state.getSnapshot(),
+			}
+			this.channel.send('state:sync', response, msg.from)
+			return
+		}
+		if (
+			msg.type !== 'state:sync' ||
+			typeof msg.payload !== 'object' ||
+			msg.payload === null ||
+			!('requestId' in msg.payload)
+		) {
+			return
+		}
+		this.handleSyncResponse(msg, msg.payload as unknown as StateSyncResponsePayload)
+	}
+
+	private handleSyncResponse(msg: Message, response: StateSyncResponsePayload): void {
+		if (
+			response.requesterInstanceId !== this.instanceId ||
+			response.requesterGeneration !== this.syncGeneration ||
+			response.responderId !== msg.from.tabId ||
+			response.responderInstanceId !== msg.from.instanceId
+		) {
+			return
+		}
+		const round = this.syncRounds.get(response.requestId)
+		if (!round || round.generation !== this.syncGeneration) return
+
+		this.state.mergeSyncMessage(msg)
+		if (round.expectedPeerIds.has(response.responderId)) {
+			if (response.responderState === 'ready') {
+				round.readyResponderIds.add(response.responderId)
+				round.initializingResponders.delete(response.responderId)
+			} else {
+				round.initializingResponders.set(response.responderId, {
+					instanceId: response.responderInstanceId,
+					empty: Object.keys(response.state).length === 0,
+				})
+			}
+		}
+		this.notifySyncProgress()
+		this.updateReadySyncStatus()
+	}
+
+	private startSyncRound(): void {
+		const expectedPeerIds = new Set(this.currentSyncPeerIds())
+		if (expectedPeerIds.size === 0) {
+			this.notifySyncProgress()
+			return
+		}
+		const requestId = crypto.randomUUID()
+		const round: SyncRound = {
+			requestId,
+			generation: this.syncGeneration,
+			createdAt: Date.now(),
+			expectedPeerIds,
+			readyResponderIds: new Set(),
+			initializingResponders: new Map(),
+		}
+		this.syncRounds.set(requestId, round)
+		this.activeSyncRound = round
+		while (this.syncRounds.size > MAX_SYNC_CORRELATIONS) {
+			const oldest = this.syncRounds.keys().next().value
+			if (oldest === undefined) break
+			this.syncRounds.delete(oldest)
+		}
+		this.state.requestSync({
+			requestId,
+			requesterInstanceId: this.instanceId,
+			requesterGeneration: this.syncGeneration,
+			knownPeers: [...expectedPeerIds].sort(),
+			protocolRevision: LOCAL_PROTOCOL.revision,
+		})
+	}
+
+	private currentSyncPeerIds(): string[] {
+		return this.presence
+			.getAllTabs()
+			.map((tab) => tab.id)
+			.filter((tabId) => tabId !== this.tabId)
+			.sort()
+	}
+
+	private isSyncComplete(): boolean {
+		const livePeerIds = this.currentSyncPeerIds()
+		if (livePeerIds.length === 0) return true
+		for (const round of [...this.syncRounds.values()].reverse()) {
+			if (this.isSyncRoundComplete(round, livePeerIds)) return true
+		}
+		return false
+	}
+
+	private isSyncRoundComplete(round: SyncRound, livePeerIds: string[]): boolean {
+		if (round.generation !== this.syncGeneration) return false
+		if (livePeerIds.some((tabId) => !round.expectedPeerIds.has(tabId))) return false
+		if (livePeerIds.every((tabId) => round.readyResponderIds.has(tabId))) return true
+		if (Object.keys(this.state.getSnapshot()).length > 0) return false
+		if (
+			!livePeerIds.every((tabId) => {
+				const response = round.initializingResponders.get(tabId)
+				return response?.empty === true
+			})
+		) {
+			return false
+		}
+		const cohortInstances = [
+			this.instanceId,
+			...livePeerIds.map((tabId) => round.initializingResponders.get(tabId)?.instanceId as string),
+		]
+		return this.instanceId === cohortInstances.sort()[0]
+	}
+
+	private getMissingSyncPeerIds(): string[] {
+		if (this.isSyncComplete()) return []
+		const round = this.activeSyncRound
+		return this.currentSyncPeerIds().filter(
+			(tabId) => !round?.expectedPeerIds.has(tabId) || !round.readyResponderIds.has(tabId),
+		)
+	}
+
+	private waitForSyncProgress(maxMs: number, signal: AbortSignal): Promise<void> {
+		return new Promise((resolve) => {
+			let settled = false
+			const finish = () => {
+				if (settled) return
+				settled = true
+				clearTimeout(timeout)
+				this.syncProgressWaiters.delete(finish)
+				signal.removeEventListener('abort', finish)
+				resolve()
+			}
+			const timeout = setTimeout(finish, Math.max(0, maxMs))
+			this.syncProgressWaiters.add(finish)
+			signal.addEventListener('abort', finish, { once: true })
+		})
+	}
+
+	private notifySyncProgress(): void {
+		for (const finish of [...this.syncProgressWaiters]) finish()
+	}
+
+	private handleSyncPeerJoin(): void {
+		this.notifySyncProgress()
+		if (this.lifecycle === 'ready') this.beginImmediateRepair()
+	}
+
+	private handleSyncPeerLeave(): void {
+		this.notifySyncProgress()
+		this.updateReadySyncStatus()
+	}
+
+	private handleSyncPeerActivity(): void {
+		if (this.lifecycle !== 'ready' || this.sync !== 'repairing') return
+		if (this.activeSyncRound && Date.now() - this.activeSyncRound.createdAt < SYNC_RETRY_BASE_MS) {
+			return
+		}
+		this.beginImmediateRepair()
+	}
+
+	private beginImmediateRepair(): void {
+		if (this.lifecycle !== 'ready' || this.isTerminal()) return
+		this.cancelSyncRetry()
+		this.syncRetryDelay = SYNC_RETRY_BASE_MS
+		this.startSyncRound()
+		this.updateReadySyncStatus()
+	}
+
+	private updateReadySyncStatus(): void {
+		if (this.lifecycle !== 'ready' || this.isTerminal()) return
+		if (this.isSyncComplete()) {
+			this.cancelSyncRetry()
+			this.syncRetryDelay = SYNC_RETRY_BASE_MS
+			this.setSync('complete', [])
+			return
+		}
+		this.setSync('repairing', this.getMissingSyncPeerIds())
+		this.scheduleSyncRetry()
+	}
+
+	private scheduleSyncRetry(): void {
+		if (
+			this.syncRetryTimer ||
+			this.lifecycle !== 'ready' ||
+			this.sync !== 'repairing' ||
+			this.isTerminal()
+		) {
+			return
+		}
+		const delay = this.syncRetryDelay
+		this.syncRetryTimer = setTimeout(() => {
+			this.syncRetryTimer = null
+			if (this.lifecycle !== 'ready' || this.sync !== 'repairing' || this.isTerminal()) return
+			this.startSyncRound()
+			this.syncRetryDelay = Math.min(this.syncRetryDelay * 2, SYNC_RETRY_MAX_MS)
+			this.updateReadySyncStatus()
+		}, delay)
+	}
+
+	private cancelSyncRetry(): void {
+		if (this.syncRetryTimer) clearTimeout(this.syncRetryTimer)
+		this.syncRetryTimer = null
+	}
+
+	private resetSyncHandshake(): void {
+		this.cancelSyncRetry()
+		this.notifySyncProgress()
+		this.syncRounds.clear()
+		this.activeSyncRound = null
+		this.syncRetryDelay = SYNC_RETRY_BASE_MS
 	}
 
 	private async establishIdentity(deadline: number, signal: AbortSignal): Promise<void> {
@@ -1831,6 +2143,7 @@ class Coordinator<S extends object> {
 	private suspendForBfcache(): void {
 		if (this.isTerminal() || this.lifecycle === 'bfcache-suspended') return
 		this.initAbort?.abort()
+		this.resetSyncHandshake()
 		this.lifecycle = 'bfcache-suspended'
 		this.setSync('pending', [])
 		this.stopLeaderCallbacks()
@@ -2052,6 +2365,7 @@ class Coordinator<S extends object> {
 	private cleanupTerminal(error: Error): void {
 		this.initAbort?.abort()
 		this.initAbort = null
+		this.resetSyncHandshake()
 		this.stopLeaderCallbacks()
 		this.leader.stop()
 		this.leaderSetups = []

@@ -54,9 +54,31 @@ describe('protocol validation', () => {
 		['state:delete', { operation: stateTombstone }],
 		['state:batch', { operations: [stateOperation] }],
 		['state:sync-request', null],
-		['state:sync-request', { requestId: 'request-1', knownPeers: ['peer-1'], protocolRevision: 1 }],
+		[
+			'state:sync-request',
+			{
+				requestId: 'request-1',
+				requesterInstanceId: 'requester-instance',
+				requesterGeneration: 1,
+				knownPeers: ['peer-1'],
+				protocolRevision: 1,
+			},
+		],
 		['state:sync', { state: { theme: stateEntry } }],
 		['state:sync', { state: { theme: stateTombstone } }],
+		[
+			'state:sync',
+			{
+				requestId: 'request-1',
+				requesterInstanceId: 'requester-instance',
+				requesterGeneration: 1,
+				responderId: 'remote-tab',
+				responderInstanceId: 'remote-instance',
+				responderState: 'ready',
+				complete: true,
+				state: { theme: stateTombstone },
+			},
+		],
 		['view:claim', { name: 'editor' }],
 		['view:claimed', { name: 'editor', tabId: 'remote-tab' }],
 		['view:release', { name: 'editor' }],
@@ -168,6 +190,39 @@ describe('protocol validation', () => {
 			validateInboundMessage(
 				envelope('state:batch', {
 					operations: [stateOperation, { ...stateOperation, operationId: 'operation-3' }],
+				}),
+			).kind,
+		).toBe('invalid')
+	})
+
+	it('rejects malformed sync correlations and incomplete snapshots', () => {
+		const request = {
+			requestId: 'request-1',
+			requesterInstanceId: 'requester-instance',
+			requesterGeneration: 1,
+			knownPeers: ['peer-1'],
+			protocolRevision: 1,
+		}
+		expect(
+			validateInboundMessage(
+				envelope('state:sync-request', { ...request, knownPeers: ['peer-1', 'peer-1'] }),
+			).kind,
+		).toBe('invalid')
+		expect(
+			validateInboundMessage(envelope('state:sync-request', { ...request, requesterGeneration: 0 }))
+				.kind,
+		).toBe('invalid')
+		expect(
+			validateInboundMessage(
+				envelope('state:sync', {
+					requestId: 'request-1',
+					requesterInstanceId: 'requester-instance',
+					requesterGeneration: 1,
+					responderId: 'remote-tab',
+					responderInstanceId: 'remote-instance',
+					responderState: 'ready',
+					complete: false,
+					state: {},
 				}),
 			).kind,
 		).toBe('invalid')

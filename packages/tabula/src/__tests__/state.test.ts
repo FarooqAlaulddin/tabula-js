@@ -281,7 +281,9 @@ describe('State operation convergence', () => {
 	it('synchronizes tombstones while keeping them out of value-facing helpers', () => {
 		const first = createState('tab-1')
 		first.state.delete('gone')
-		first.state.handleMessage(makeMessage({ type: 'state:sync-request', from: 'tab-2' }))
+		first.state.handleMessage(
+			makeMessage({ type: 'state:sync-request', from: 'tab-2', payload: null }),
+		)
 		const sync = first.channel.send.mock.calls.find((call) => call[0] === 'state:sync')
 		const snapshot = (sync?.[1] as any).state
 		expect(snapshot.gone.kind).toBe('delete')

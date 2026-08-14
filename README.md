@@ -225,6 +225,12 @@ time). `ready` can resolve with `sync: 'repairing'`; inspect `status()` or subsc
 `sync:status` when completeness matters. Mutations made while initializing or suspended
 in the back/forward cache are queued in call order.
 
+After presence discovery, state synchronization uses correlated rounds and merges
+complete snapshots from every known live responder. Missing or suspended peers do not
+block usability past the readiness budget: Tabula reports `repairing`, retries with
+bounded backoff, and moves to `complete` after peer responses or presence removal.
+Late retained responses still merge, including delete tombstones.
+
 `destroy()` is terminal and idempotent. Destroying before readiness rejects `ready` with
 `WorkspaceDestroyedError`; asynchronous startup failure rejects it with
 `WorkspaceFailedError`. All operations except `status()` and repeated `destroy()` throw
@@ -238,7 +244,7 @@ Tabula makes deliberate tradeoffs. Know them before you depend on it:
 |----------|------------------|-------------------------|
 | Leadership | One exclusive Web Lock holder | Browser-controlled ordering; frozen holders are not replaced, and exactly-once effects still need server authority. |
 | State | In-memory, last-write-wins | No durability, no merging. Persist what matters yourself; don't build collaborative text editing on it. |
-| New-tab sync | Requests state, waits for first response or 150 ms | If every other tab is frozen or busy past the window, the new tab starts empty and converges as messages arrive. `await app.ready` covers this window. |
+| New-tab sync | Correlated multi-peer rounds with bounded post-ready repair | `await app.ready` bounds usability, not guaranteed completeness. Check `status().sync` or `sync:status`; delayed and resumed peers continue repairing values and tombstones. |
 | Focus & popups | `open()` and `focus()` go through browser policy | Call `open()` from a user gesture; treat `focus()` as a request, not a guarantee. |
 | Scope | Same origin, same browser, same device | Not a server sync, not cross-device, not cross-origin. |
 
@@ -396,6 +402,8 @@ Every message uses a validated, versioned envelope:
 Revision 1 readers accept revision 0, reject unsupported version ranges, and emit one
 `protocol:incompatible` event with the recovery action for each peer/version episode.
 Malformed, misdirected, duplicate, or oversized traffic is dropped before domain code.
+State sync requests and replies also carry a request id and initialization generation;
+only retained matching rounds affect synchronization status.
 
 ## API reference
 

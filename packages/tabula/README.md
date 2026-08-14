@@ -174,6 +174,11 @@ time). `ready` can resolve with `sync: 'repairing'`; inspect `status()` or subsc
 `sync:status` when completeness matters. Mutations made while initializing or suspended
 in the back/forward cache are queued in call order.
 
+State startup uses correlated rounds and merges complete snapshots from every known
+live responder. A delayed, busy, or suspended peer cannot hold usability past the
+readiness budget: repair continues with bounded backoff and on peer activity, and late
+retained replies still merge values and tombstones before status becomes `complete`.
+
 `destroy()` is terminal and idempotent. Destroying before readiness rejects `ready` with
 `WorkspaceDestroyedError`; asynchronous startup failure rejects it with
 `WorkspaceFailedError`. All operations except `status()` and repeated `destroy()` throw
@@ -288,6 +293,8 @@ Every message uses a validated, versioned envelope:
 Revision 1 readers accept revision 0, reject unsupported version ranges, and emit one
 `protocol:incompatible` event with the recovery action for each peer/version episode.
 Malformed, misdirected, duplicate, or oversized traffic is dropped before domain code.
+State synchronization uses request ids and initialization generations so only retained
+matching rounds can change synchronization status.
 
 ## API reference
 

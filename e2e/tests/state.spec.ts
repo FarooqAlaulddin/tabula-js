@@ -189,6 +189,128 @@ test.describe('Shared State', () => {
 		expect(await getState(pageB, 'count')).toBe(99)
 	})
 
+	test('a retained late response repairs state after bounded readiness', async ({ context }) => {
+		const ns = uniqueNs('state-late-repair')
+		const pageA = await context.newPage()
+		await openTab(pageA, ns)
+		await setState(pageA, 'kept', 'from-a')
+		await setState(pageA, 'gone', 'old')
+		await deleteState(pageA, 'gone')
+
+		const pageB = await context.newPage()
+		await pageB.addInitScript(() => {
+			const NativeBroadcastChannel = window.BroadcastChannel
+			;(window as any).__queuedStateSync = []
+			window.BroadcastChannel = class ControlledBroadcastChannel {
+				private readonly inner: BroadcastChannel
+				private handler: ((event: MessageEvent) => void) | null = null
+
+				constructor(name: string) {
+					this.inner = new NativeBroadcastChannel(name)
+					this.inner.onmessage = (event) => {
+						if (event.data?.type === 'state:sync') {
+							;(window as any).__queuedStateSync.push(() => this.handler?.(event))
+							return
+						}
+						this.handler?.(event)
+					}
+				}
+
+				set onmessage(handler: ((event: MessageEvent) => void) | null) {
+					this.handler = handler
+				}
+
+				get onmessage(): ((event: MessageEvent) => void) | null {
+					return this.handler
+				}
+
+				postMessage(message: unknown): void {
+					this.inner.postMessage(message)
+				}
+
+				close(): void {
+					this.inner.close()
+				}
+			} as unknown as typeof BroadcastChannel
+		})
+		await pageB.goto(`/?ns=${ns}&heartbeat=200&timeout=1000&readyTimeout=200`)
+		await pageB.waitForFunction(() => document.getElementById('status')?.textContent === 'ready')
+		expect(await pageB.evaluate(() => (window as any).__tabula.status().sync)).toBe('repairing')
+
+		await pageB.evaluate(() => {
+			const queued = (window as any).__queuedStateSync.splice(0)
+			for (const deliver of queued) deliver()
+		})
+		await pageB.waitForFunction(
+			() =>
+				(window as any).__tabula.status().sync === 'complete' &&
+				(window as any).__tabula.state.get('kept') === 'from-a',
+		)
+
+		expect(await getState(pageB, 'gone')).toBeUndefined()
+		expect(
+			await pageB.evaluate(() =>
+				(window as any).__tabulaEvents.map((event: any) => `${event.type}:${event.sync ?? ''}`),
+			),
+		).toEqual(expect.arrayContaining(['sync:status:repairing', 'sync:status:complete']))
+	})
+
+	test('a busy responder repairs the requester after its event loop resumes', async ({
+		context,
+	}) => {
+		const ns = uniqueNs('state-busy-repair')
+		const pageA = await context.newPage()
+		await openTab(pageA, ns)
+		await setState(pageA, 'busy-value', 42)
+
+		const busy = pageA.evaluate(() => {
+			const until = performance.now() + 600
+			while (performance.now() < until) {
+				// Deliberately block this responder beyond the requester's ready budget.
+			}
+		})
+		const pageB = await context.newPage()
+		await pageB.goto(`/?ns=${ns}&heartbeat=200&timeout=1000&readyTimeout=200`)
+		await pageB.waitForFunction(() => document.getElementById('status')?.textContent === 'ready')
+		expect(await pageB.evaluate(() => (window as any).__tabula.status().sync)).toBe('repairing')
+
+		await busy
+		await pageB.waitForFunction(
+			() =>
+				(window as any).__tabula.status().sync === 'complete' &&
+				(window as any).__tabula.state.get('busy-value') === 42,
+			{ timeout: 5000 },
+		)
+	})
+
+	test('a frozen responder repairs after browser lifecycle resume', async ({ context }) => {
+		const ns = uniqueNs('state-frozen-repair')
+		const pageA = await context.newPage()
+		await openTab(pageA, ns)
+		await setState(pageA, 'frozen-value', 'restored')
+		await pageA.evaluate(() => {
+			window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
+		})
+		await pageA.waitForFunction(
+			() => (window as any).__tabula.status().lifecycle === 'bfcache-suspended',
+		)
+
+		const pageB = await context.newPage()
+		await pageB.goto(`/?ns=${ns}&heartbeat=200&timeout=3000&readyTimeout=200`)
+		await pageB.waitForFunction(() => document.getElementById('status')?.textContent === 'ready')
+		expect(await pageB.evaluate(() => (window as any).__tabula.status().sync)).toBe('repairing')
+
+		await pageA.evaluate(() => {
+			window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+		})
+		await pageB.waitForFunction(
+			() =>
+				(window as any).__tabula.status().sync === 'complete' &&
+				(window as any).__tabula.state.get('frozen-value') === 'restored',
+			{ timeout: 5000 },
+		)
+	})
+
 	test('namespace isolation — state in one namespace is invisible to another', async ({
 		context,
 	}) => {

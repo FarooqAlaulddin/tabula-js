@@ -8,6 +8,8 @@ export type {
 	StateDeleteOperation,
 	StateOperation,
 	StateSetOperation,
+	StateSyncRequestPayload,
+	StateSyncResponsePayload,
 	ViewRegistryEntry,
 	WorkspaceOptions,
 	ViewOpenOptions,

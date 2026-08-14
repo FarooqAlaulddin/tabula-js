@@ -305,17 +305,24 @@ the structured-clone value model.
 ### 6.6 Repairable synchronization
 
 Startup sync begins after bounded presence discovery. A request carries request id,
-requester instance, known-peer set, and protocol revision. Every responder returns a
-complete operation snapshot plus a completion marker, even when empty. The requester
-merges every valid response in the round using operation ordering; first response does
-not win by arrival.
+requester instance, requester initialization generation, known-peer set, and protocol
+revision. Every responder returns its tab/document identity, initialization state, the
+echoed request correlation, a complete operation snapshot, and `complete: true`, even
+when the snapshot is empty. The requester merges every valid response in a retained
+round using operation ordering; first response does not win by arrival.
+
+A verified singleton completes without a redundant retry delay. For a simultaneous
+empty cohort, the lowest requester/responder instance id may complete from a round in
+which every live peer returned an empty initializing snapshot. Its ready response then
+lets the remaining members complete without circular waiting.
 
 Known-peer misses retry with bounded exponential backoff. At the ready budget, the
 workspace reports `repairing`, becomes usable, and continues repair on backoff and
 peer activity. It reports `complete` after every currently known live peer responded
-to one round or was removed by presence. Late responses remain mergeable while their
-correlation record is retained. Correlation records and retries are cancelled on
-destroy and kept within protocol bounds.
+ready to one round, the empty-cohort bootstrap rule applies, or missing peers were
+removed by presence. Late responses remain mergeable while their correlation record
+is retained. At most 16 recent round records are retained. Correlation records,
+waiters, and retries are cancelled on destroy or suspension.
 
 Selected design: correlated multi-responder rounds with post-ready repair.
 

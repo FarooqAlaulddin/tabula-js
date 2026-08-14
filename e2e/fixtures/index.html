@@ -11,6 +11,7 @@ const params = new URLSearchParams(location.search)
 const ns = params.get('ns') || 'e2e-default'
 const heartbeat = Number(params.get('heartbeat')) || 200
 const timeout = Number(params.get('timeout')) || 1000
+const readyTimeout = Number(params.get('readyTimeout')) || 1000
 
 window.__tabulaModule = { createWorkspace }
 window.__focusCallCount = 0
@@ -20,7 +21,7 @@ window.focus = () => {
 	originalFocus()
 }
 
-const app = createWorkspace(ns, { heartbeat, timeout })
+const app = createWorkspace(ns, { heartbeat, timeout, readyTimeout })
 
 // expose for Playwright
 window.__tabula = app

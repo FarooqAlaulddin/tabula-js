@@ -313,3 +313,18 @@ app.state.on('*', () => {
 - `setAll` emits one validated batch. Every winning key is installed before lexical
   key notifications and then lexical wildcard notifications; any preflight/send
   failure leaves the entire batch uncommitted.
+
+## 2026-08-14 — repairable startup synchronization
+
+- Startup state synchronization begins after presence discovery and uses correlated,
+  generation-scoped rounds. Every known live responder returns a complete operation
+  snapshot, including an explicit empty snapshot and retained tombstones.
+- All valid responses in a retained round merge through the state operation total
+  order. Arrival order and the first responder have no authority over the result.
+- A verified singleton completes immediately. A simultaneous empty cohort lets its
+  lowest document instance bootstrap readiness so peers cannot circularly wait.
+- The readiness budget bounds when the workspace becomes usable, not when every peer
+  must answer. Missing peers produce observable `repairing` status while retries
+  continue with bounded backoff and on peer activity.
+- Sixteen recent correlations retain late-response repair without unbounded memory.
+  Destroy and bfcache suspension cancel retry timers, waiters, and correlation state.
