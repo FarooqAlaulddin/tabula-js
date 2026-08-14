@@ -13,7 +13,7 @@
 		<span class="companion-status" id="status">Connecting...</span>
 	</header>
 	<div class="companion-body">
-		<textarea id="editor" placeholder="Start typing... content syncs across all tabs."></textarea>
+		<textarea id="editor" placeholder="Exclusive editor; preview tabs mirror this content."></textarea>
 	</div>
 </div>
 
@@ -37,7 +37,8 @@ const editorEl = document.getElementById('editor')
 app.ready.then(async () => {
 	try {
 		const result = await app.claim('editor')
-		statusEl.textContent = result.status === 'claimed' ? 'Claimed "editor"' : 'Editor already open'
+		statusEl.textContent = result.status === 'claimed' ? 'Claimed "editor"' : 'Read-only: editor already open'
+		if (result.status === 'conflict') editorEl.readOnly = true
 	} catch (e) {
 		statusEl.textContent = 'Claim failed: ' + e.message
 	}

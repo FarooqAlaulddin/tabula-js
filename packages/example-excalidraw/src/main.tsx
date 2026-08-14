@@ -6,6 +6,14 @@ import './style.css'
 
 const subscribeTheme = (onStoreChange: () => void) => workspace.state.on('theme', onStoreChange)
 const getTheme = () => workspace.state.get('theme') ?? 'light'
+const expandCanvas = () => {
+	void workspace
+		.open('canvas', {
+			url: '/canvas.html',
+			syncKeys: ['elements', 'theme'],
+		})
+		.catch(console.error)
+}
 
 function Dashboard() {
 	const [tabs, setTabs] = useState(() => workspace.tabs.list())
@@ -38,15 +46,6 @@ function Dashboard() {
 
 	const toggleTheme = () => {
 		workspace.state.set('theme', currentTheme === 'light' ? 'dark' : 'light')
-	}
-
-	const expandCanvas = () => {
-		void workspace
-			.open('canvas', {
-				url: '/canvas.html',
-				syncKeys: ['elements', 'theme'],
-			})
-			.catch(console.error)
 	}
 
 	return (
@@ -107,14 +106,14 @@ function Dashboard() {
 						subscribes directly to the Tabula workspace and passes data as ordinary props.
 					</p>
 					<p className="sidebar-text">
-						Click <strong>Expand to Tab</strong> to open a full-screen canvas. Draw in either tab —
-						changes sync instantly.
+						Click <strong>Expand to Tab</strong> to claim the full-screen editor. This dashboard
+						remains a read-only mirror because scene data is not collaboratively merged.
 					</p>
 				</div>
 			</aside>
 
 			<main className="canvas-area">
-				<SharedCanvas />
+				<SharedCanvas editable={false} />
 			</main>
 		</div>
 	)

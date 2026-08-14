@@ -30,14 +30,14 @@ import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
 interface AppState {
   theme: 'light' | 'dark'
-  draft: string
+  filter: 'all' | 'open'
 }
 
 const app = createWorkspace<AppState>('my-app')
 
 await app.ready
 
-// Shared state — syncs to all tabs instantly
+// Shared UI state — converges across live tabs
 app.state.set('theme', 'dark')
 app.state.on('theme', (value) => {
   document.body.dataset.theme = value
@@ -84,9 +84,9 @@ app.state.delete('theme')
 app.state.on('theme', (value) => { /* reactive */ })
 app.state.on('*', (key, value) => { /* wildcard */ })
 
-app.state.keys()                 // ['theme', 'draft']
-app.state.entries()              // [['theme', 'dark'], ['draft', '']]
-app.state.setAll({ theme: 'dark', draft: '' })
+app.state.keys()                 // ['theme', 'filter']
+app.state.entries()              // [['theme', 'dark'], ['filter', 'open']]
+app.state.setAll({ theme: 'dark', filter: 'open' })
 ```
 
 Values follow structured-clone semantics within bounded message limits. Use `delete`
@@ -109,7 +109,7 @@ A view is a named region that one tab holds at a time. Think "editor", "preview"
 // Tab A: open a view in a new tab
 const handle = await app.open('editor', {
   url: '/editor',
-  syncKeys: ['draft', 'theme']  // pre-sync these keys to the new tab
+  syncKeys: ['theme']  // pre-sync selected UI state to the new tab
 })
 
 // Tab B (at /editor): claim the view
@@ -124,7 +124,8 @@ app.on('view:conflict', ({ name, existing, incoming }) => { })
 
 ### Presence
 
-Every tab is tracked. Presence survives Chrome's background timer throttling through localStorage-based heartbeats.
+Every tab is tracked. Presence combines announcements with bounded storage leases and
+remains an eventual liveness estimate under browser suspension.
 
 ```ts
 app.tabs.list()      // TabMeta[] — all connected tabs
@@ -243,7 +244,9 @@ use Web Locks, whose request ordering is controlled by the browser.
 
 ## Real-world example
 
-The [`example-excalidraw`](./packages/example-excalidraw) package demonstrates Tabula integrated with [Excalidraw](https://excalidraw.com) — a popular open-source whiteboard. Zero changes to Excalidraw's code. A thin wrapper syncs drawing data across tabs via Tabula's shared state.
+The [`example-excalidraw`](./packages/example-excalidraw) package demonstrates one
+exclusive named canvas editor feeding a read-only dashboard mirror. The scene is not
+collaboratively merged; allowing multiple editors to write it would be unsafe LWW use.
 
 ```
 pnpm example:excalidraw
@@ -251,11 +254,9 @@ pnpm example:excalidraw
 
 Features demonstrated:
 
-- Drawing syncs between dashboard and full-screen canvas tab
-- Theme syncs via `useSharedState`
-- Tab presence via `useTabPresence`
-- Leader election via `useLeader`
-- View claiming via `useTabView`
+- One claimed full-screen canvas edits the scene
+- The dashboard renders a read-only scene mirror
+- Theme, presence, leadership, and view state use the core directly
 
 ## How it works
 
@@ -404,7 +405,7 @@ Tabula trusts all scripts on the same origin. Keep in mind:
 
 | Package | Description | Size |
 |---------|-------------|------|
-| `@farooqalaulddin/tabula-js` | Core library. Zero dependencies. | ~7 KB gzipped |
+| `@farooqalaulddin/tabula-js` | Core library. Zero dependencies. | Gated before preview publication |
 | `@farooqalaulddin/tabula-js/testing` | Test utilities. In-memory multi-tab simulation. | Included in core |
 
 ## License

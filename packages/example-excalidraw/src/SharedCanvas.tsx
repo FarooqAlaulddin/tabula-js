@@ -1,16 +1,15 @@
 /**
- * SharedCanvas — connects Excalidraw directly to Tabula cross-tab state.
+ * SharedCanvas — one editor publishes a scene to read-only mirrors.
  *
  * The <Excalidraw> component is used AS-IS, zero modifications.
- * This application component connects it to Tabula shared state so the canvas
- * stays in sync across browser tabs automatically.
+ * Tabula LWW state is safe here only because a named-view claim gates writes.
  */
 import { Excalidraw } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { workspace } from './workspace'
 
-export function SharedCanvas() {
+export function SharedCanvas({ editable = false }: { editable?: boolean }) {
 	const [api, setApi] = useState<any>(null)
 	const [initialElements, setInitialElements] = useState<unknown[] | null>(null)
 	const [ready, setReady] = useState(false)
@@ -46,10 +45,10 @@ export function SharedCanvas() {
 	// Excalidraw onChange → debounced sync to Tabula
 	const handleChange = useCallback(
 		(elements: readonly any[]) => {
-			if (isApplyingRemote.current) return
+			if (!editable || isApplyingRemote.current) return
 			syncToTabula([...elements])
 		},
-		[syncToTabula],
+		[editable, syncToTabula],
 	)
 
 	// Listen for remote state changes → update Excalidraw canvas
@@ -95,6 +94,7 @@ export function SharedCanvas() {
 			initialData={initialElements ? { elements: initialElements as any } : undefined}
 			onChange={handleChange}
 			theme={workspace.state.get('theme') ?? 'light'}
+			viewModeEnabled={!editable}
 		/>
 	)
 }

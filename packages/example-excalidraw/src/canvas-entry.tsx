@@ -4,20 +4,17 @@ import { SharedCanvas } from './SharedCanvas'
 import { workspace } from './workspace'
 import './style.css'
 
-// Claim the 'canvas' view; a conflict means another canvas tab won.
-void workspace.claim('canvas').then((result) => {
-	if (result.status === 'conflict') console.warn('Canvas view is already open.', result.owner)
-})
-
 const subscribeTheme = (onStoreChange: () => void) => workspace.state.on('theme', onStoreChange)
 const getTheme = () => workspace.state.get('theme') ?? 'light'
 
 function CanvasPage() {
 	const [tabs, setTabs] = useState(() => workspace.tabs.list())
 	const [view, setView] = useState(() => workspace.tabs.current().view)
+	const [editable, setEditable] = useState(false)
 	const currentTheme = useSyncExternalStore(subscribeTheme, getTheme)
 
 	useEffect(() => {
+		void workspace.claim('canvas').then((result) => setEditable(result.status === 'claimed'))
 		const refreshTabs = () => setTabs(workspace.tabs.list())
 		const refreshView = () => setView(workspace.tabs.current().view)
 		const unsubscribeJoin = workspace.on('tab:join', refreshTabs)
@@ -40,7 +37,8 @@ function CanvasPage() {
 		<div className="canvas-fullscreen" data-theme={currentTheme}>
 			<div className="canvas-topbar">
 				<span className="canvas-topbar-text">
-					Full-screen canvas — synced with {tabs.length} tab{tabs.length !== 1 ? 's' : ''}
+					{editable ? 'Exclusive canvas editor' : 'Read-only: canvas already claimed'} —{' '}
+					{tabs.length} tab{tabs.length !== 1 ? 's' : ''}
 				</span>
 				{view && (
 					<span className="canvas-topbar-view">
@@ -49,7 +47,7 @@ function CanvasPage() {
 				)}
 			</div>
 			<div className="canvas-body">
-				<SharedCanvas />
+				<SharedCanvas editable={editable} />
 			</div>
 		</div>
 	)

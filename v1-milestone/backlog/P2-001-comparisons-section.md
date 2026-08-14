@@ -2,7 +2,7 @@
 id: P2-001
 title: Publish honest alternatives and product boundaries
 phase: 2
-status: todo
+status: done
 depends_on: [P1-007]
 owner: agent
 scope: root positioning + source-verified alternatives
@@ -30,11 +30,11 @@ capable alternative is the correct choice.
 
 ## Acceptance criteria
 
-- [ ] Every alternative includes a sourced capability statement and "use it instead when" guidance.
-- [ ] No comparison relies on an outdated feature claim or strawman.
-- [ ] Root positioning matches CONTRACT and the feature matrix exactly.
-- [ ] Excalidraw/draft examples no longer imply unsupported collaborative merge semantics.
-- [ ] The section remains concise enough to scan and links to detailed behavior docs.
+- [x] Every alternative includes a sourced capability statement and "use it instead when" guidance.
+- [x] No comparison relies on an outdated feature claim or strawman.
+- [x] Root positioning matches CONTRACT and the feature matrix exactly.
+- [x] Excalidraw/draft examples no longer imply unsupported collaborative merge semantics.
+- [x] The section remains concise enough to scan and links to detailed behavior docs.
 
 ## Files
 
@@ -42,4 +42,13 @@ Root README and example descriptions/docs that contain conflicting product claim
 
 ## Outcome
 
-(pending)
+- Added a source-linked comparison table for raw browser primitives, the maintained
+  `broadcast-channel` package, SharedWorker, store plugins, server fan-out, and Yjs.
+- Defined Tabula's integrated same-origin workspace model and a concrete case where
+  each narrower or more capable alternative is preferable.
+- Audited timing, persistence, security, and LWW claims across the root/package docs
+  and demo copy; removed stale size claims pending the release size gate.
+- Converted the Excalidraw example to one claimed editor with read-only mirrors so it
+  demonstrates the documented LWW boundary instead of implying collaborative merge.
+- Verified with React Doctor (no actionable findings), `pnpm lint`, `pnpm typecheck`,
+  and `pnpm build`.

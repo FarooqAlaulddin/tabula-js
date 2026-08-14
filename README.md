@@ -27,7 +27,7 @@ Tabula is the missing coordination layer: shared state, presence, leader electio
 
 Tabula is deliberately narrow:
 
-- **Thin.** A coordination protocol over BroadcastChannel and localStorage, ~7 KB gzipped. No window manager, no UI, no framework.
+- **Thin.** A small coordination protocol over browser primitives. No window manager, no UI, no framework runtime.
 - **Removable.** State is a standalone key-value store. Framework components subscribe at their integration boundary and receive ordinary props, so removing Tabula does not require rewriting them.
 - **Zero dependencies.** The core has none.
 - **Niche by design.** Built for desktop workspace apps — editors with detached previews, trading consoles, monitoring dashboards, creative tools. Not for mobile, not cross-origin, not a persistence layer. The full non-goals list is in [DECISIONS.md](./DECISIONS.md).
@@ -47,7 +47,7 @@ import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
 interface AppState {
   theme: 'light' | 'dark'
-  draft: string
+  filter: 'all' | 'open'
 }
 
 const app = createWorkspace<AppState>('my-app')
@@ -102,9 +102,9 @@ app.state.delete('theme')
 app.state.on('theme', (value) => { /* reactive */ })
 app.state.on('*', (key, value) => { /* wildcard */ })
 
-app.state.keys()                 // ['theme', 'draft']
-app.state.entries()              // [['theme', 'dark'], ['draft', '']]
-app.state.setAll({ theme: 'dark', draft: '' })
+app.state.keys()                 // ['theme', 'filter']
+app.state.entries()              // [['theme', 'dark'], ['filter', 'open']]
+app.state.setAll({ theme: 'dark', filter: 'open' })
 ```
 
 Two properties to design around:
@@ -130,7 +130,7 @@ The browser almost has this: `window.open('/editor', 'editor')` reuses a named w
 // Tab A: open a view in a new tab
 const handle = await app.open('editor', {
   url: '/editor',
-  syncKeys: ['draft', 'theme']  // pre-sync these keys to the new tab
+  syncKeys: ['theme']  // pre-sync selected UI state to the new tab
 })
 
 // Tab A: or focus it if it's already open
@@ -176,7 +176,8 @@ Two browser realities apply: call `open()` from a user gesture so popup blocking
 
 ### Presence
 
-Every tab is tracked. Presence survives Chrome's background timer throttling through localStorage-based heartbeats.
+Every tab is tracked. Presence combines announcements with bounded storage leases so
+tabs can repair after ordinary background throttling. It remains an eventual liveness estimate.
 
 ```ts
 app.tabs.list()      // TabMeta[] — all connected tabs
@@ -255,6 +256,28 @@ Tabula makes deliberate tradeoffs. Know them before you depend on it:
 
 If your requirements are stricter than this — durable state, guaranteed single execution, cross-device — you need a server, not a tab-coordination library.
 
+## Alternatives
+
+Tabula's differentiator is the integrated same-origin workspace model: typed ephemeral
+UI state, presence, leader identity/callbacks, atomic named views, and deterministic
+test adapters. Use the smaller or more capable primitive when that bundle is not what
+you need.
+
+| Alternative | What it provides | Use it instead when |
+|-------------|------------------|---------------------|
+| [BroadcastChannel](https://html.spec.whatwg.org/multipage/web-messaging.html#broadcasting-to-other-browsing-contexts) | Same-origin message delivery between browsing contexts | You need a few messages and are willing to own validation, versioning, presence, synchronization, and lifecycle behavior. |
+| [Web Locks](https://www.w3.org/TR/web-locks/) | Origin-scoped mutual exclusion while a lock is held | Your only requirement is one tab performing a bounded task; you do not need shared state, membership, or named-view discovery. |
+| [`broadcast-channel`](https://github.com/pubkey/broadcast-channel) | Cross-tab/process channels, fallback transports, and leader election | You need older-browser or Node/Deno transports, or its channel/election API is sufficient. Its documentation also notes duplicate fallback leaders under heavy throttling. |
+| [SharedWorker](https://html.spec.whatwg.org/multipage/workers.html#shared-workers-and-the-sharedworker-interface) | One worker reachable from multiple same-origin contexts | A centralized in-browser process and worker lifecycle fit your architecture better than peer tabs, and your browser floor supports it. |
+| [A store-specific plugin](https://github.com/wobsoriano/pinia-shared-state) | Cross-tab synchronization shaped around one framework store | Replicating that store is the whole requirement and framework coupling is desirable. |
+| [Server fan-out over WebSocket](https://websockets.spec.whatwg.org/) | Bidirectional communication with a server process | State must cross devices/origins, persist centrally, enforce authorization, or survive all local tabs closing. |
+| [Yjs](https://docs.yjs.dev/) | CRDT shared types that merge concurrent document edits | Multiple writers must edit a document body, scene, or rich-text model concurrently, including offline or cross-device workflows. |
+
+Tabula complements the last two in some applications: a server or CRDT owns durable
+application data, while Tabula coordinates ephemeral UI surfaces on one device. It is
+not a replacement for either. Detailed lifecycle and support boundaries are in the
+[behavioral contract](./docs/CONTRACT.md).
+
 ## Adopting Tabula
 
 ### Existing apps: one feature at a time
@@ -262,7 +285,7 @@ If your requirements are stricter than this — durable state, guaranteed single
 Don't restructure anything. Pick the single pain you actually have, wire that one feature, and stop:
 
 1. **Lowest stakes first.** Leader-elect your WebSocket so ten tabs open one connection instead of ten. Or broadcast logout so signing out in one tab signs out all of them. Both are a few lines, touch no components, and fail soft.
-2. **Then shared UI state** — theme, filters, drafts — through `workspace.state`.
+2. **Then shared UI state** — theme, filters, selected panels — through `workspace.state`.
 3. **Views last.** Detaching a panel into its own tab is the biggest payoff but also the biggest product decision; do it once the plumbing has earned trust.
 
 Each step is independently removable: delete the subscription boundary, keep the component.
@@ -277,21 +300,21 @@ Components receive plain props and never know they're multi-tab:
 
 ```tsx
 // Your existing component — unchanged
-function EditorPanel({ content, onChange }) {
-  return <textarea value={content} onChange={e => onChange(e.target.value)} />
+function FilterControl({ value, onChange }) {
+  return <select value={value} onChange={e => onChange(e.target.value)} />
 }
 
 // Integration boundary — direct core subscription
-function SyncedEditor() {
-	const content = useSyncExternalStore(
-		onStoreChange => workspace.state.on('draft', onStoreChange),
-		() => workspace.state.get('draft') ?? '',
+function SyncedFilter() {
+	const filter = useSyncExternalStore(
+		onStoreChange => workspace.state.on('filter', onStoreChange),
+		() => workspace.state.get('filter') ?? 'all',
 	)
-	return <EditorPanel content={content} onChange={value => workspace.state.set('draft', value)} />
+	return <FilterControl value={filter} onChange={value => workspace.state.set('filter', value)} />
 }
 ```
 
-Removing Tabula is deleting `SyncedEditor`, not rewriting `EditorPanel`.
+Removing Tabula is deleting `SyncedFilter`, not rewriting `FilterControl`.
 
 ## Framework integration
 
@@ -356,7 +379,10 @@ locks, popup policies, focus, storage events, or browser scheduling.
 
 ## Real-world example
 
-The [`example-excalidraw`](./packages/example-excalidraw) package demonstrates Tabula integrated with [Excalidraw](https://excalidraw.com) — a popular open-source whiteboard. Zero changes to Excalidraw's code. A thin wrapper syncs drawing data across tabs via Tabula's shared state.
+The [`example-excalidraw`](./packages/example-excalidraw) package demonstrates an
+exclusive named canvas view feeding a read-only dashboard mirror. It uses Excalidraw
+without modifying Excalidraw itself. The scene is safe only because one claimed view
+writes it; Tabula's LWW state must not be used for concurrent scene editing.
 
 ```
 pnpm example:excalidraw
@@ -364,11 +390,9 @@ pnpm example:excalidraw
 
 Features demonstrated:
 
-- Drawing syncs between dashboard and full-screen canvas tab
-- Theme syncs via `useSharedState`
-- Tab presence via `useTabPresence`
-- Leader election via `useLeader`
-- View claiming via `useTabView`
+- One claimed full-screen canvas edits the scene
+- The dashboard renders a read-only scene mirror
+- Theme, presence, leadership, and view state use the framework-neutral core directly
 
 ## How it works
 
@@ -536,14 +560,14 @@ Tabula trusts all scripts on the same origin. Keep in mind:
 - Never store auth tokens, API keys, or raw PII in shared state.
 - XSS on any page compromises all tabs in the workspace.
 - Any same-origin script can observe all Tabula traffic.
-- Leader identity is based on self-reported presence metadata and is not a security boundary.
+- Leader work is authorized by a held Web Lock; its projected identity is not a security boundary.
 - Protocol validation limits malformed traffic; it does not authenticate same-origin peers.
 
 ## Packages
 
 | Package | Description | Size |
 |---------|-------------|------|
-| [`@farooqalaulddin/tabula-js`](./packages/tabula) | Core library. Zero dependencies. | ~7 KB gzipped |
+| [`@farooqalaulddin/tabula-js`](./packages/tabula) | Core library. Zero dependencies. | Gated before preview publication |
 | [`@farooqalaulddin/tabula-js/testing`](./packages/tabula/src/testing.ts) | Test utilities. In-memory multi-tab simulation. | Included in core |
 
 ## Development
