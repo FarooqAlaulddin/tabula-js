@@ -64,6 +64,110 @@ test.describe('Shared State', () => {
 		expect(await getState(pageB, 'temp')).toBeUndefined()
 	})
 
+	test('a tombstone defeats delayed set traffic and stale late-join sync', async ({ context }) => {
+		const ns = uniqueNs('state-tombstone')
+		const pageA = await context.newPage()
+		const pageB = await context.newPage()
+		await openTab(pageA, ns)
+		await openTab(pageB, ns)
+		await pageB.evaluate((namespace) => {
+			const channel = new BroadcastChannel(`tabula:${namespace}`)
+			;(window as any).__stateCapture = { channel, setMessage: null }
+			channel.onmessage = (event) => {
+				if (event.data?.type === 'state:set' && event.data?.payload?.operation?.key === 'draft') {
+					;(window as any).__stateCapture.setMessage = event.data
+				}
+			}
+		}, ns)
+
+		await setState(pageA, 'draft', 'old')
+		await pageB.waitForFunction(() => (window as any).__tabula.state.get('draft') === 'old')
+		await deleteState(pageA, 'draft')
+		await pageB.waitForFunction(() => (window as any).__tabula.state.get('draft') === undefined)
+
+		await pageB.evaluate(() => {
+			const capture = (window as any).__stateCapture
+			capture.channel.postMessage({
+				...capture.setMessage,
+				id: `${capture.setMessage.id}:delayed`,
+				sentAt: Date.now(),
+			})
+		})
+		await pageB.waitForTimeout(100)
+		expect(await getState(pageA, 'draft')).toBeUndefined()
+		expect(await getState(pageB, 'draft')).toBeUndefined()
+
+		const pageC = await context.newPage()
+		await openTab(pageC, ns)
+		expect(await getState(pageC, 'draft')).toBeUndefined()
+	})
+
+	test('setAll callbacks observe the complete batch in lexical order', async ({ context }) => {
+		const ns = uniqueNs('state-batch')
+		const pageA = await context.newPage()
+		const pageB = await context.newPage()
+		await openTab(pageA, ns)
+		await openTab(pageB, ns)
+		await pageB.evaluate(() => {
+			const app = (window as any).__tabula
+			;(window as any).__batchObservations = []
+			for (const key of ['a', 'b']) {
+				app.state.on(key, () => {
+					;(window as any).__batchObservations.push({
+						key,
+						a: app.state.get('a'),
+						b: app.state.get('b'),
+					})
+				})
+			}
+		})
+		await pageA.evaluate(() => (window as any).__tabula.state.setAll({ b: 2, a: 1 }))
+		await pageB.waitForFunction(() => (window as any).__batchObservations.length === 2)
+
+		expect(await pageB.evaluate(() => (window as any).__batchObservations)).toEqual([
+			{ key: 'a', a: 1, b: 2 },
+			{ key: 'b', a: 1, b: 2 },
+		])
+	})
+
+	test('cyclic cloneable values propagate and transfer-only values fail transactionally', async ({
+		context,
+	}) => {
+		const ns = uniqueNs('state-clone')
+		const pageA = await context.newPage()
+		const pageB = await context.newPage()
+		await openTab(pageA, ns)
+		await openTab(pageB, ns)
+
+		await pageA.evaluate(() => {
+			const cyclic: any = { label: 'cycle' }
+			cyclic.self = cyclic
+			;(window as any).__tabula.state.set('cyclic', cyclic)
+		})
+		await pageB.waitForFunction(() => {
+			const value = (window as any).__tabula.state.get('cyclic')
+			return value?.self === value
+		})
+
+		const failure = await pageA.evaluate(() => {
+			const app = (window as any).__tabula
+			const { port1, port2 } = new MessageChannel()
+			try {
+				app.state.set('port', port1)
+				return { name: null, committed: app.state.keys().includes('port') }
+			} catch (error) {
+				return {
+					name: (error as Error).name,
+					committed: app.state.keys().includes('port'),
+				}
+			} finally {
+				port1.close()
+				port2.close()
+			}
+		})
+		expect(failure).toEqual({ name: 'DataCloneError', committed: false })
+	})
+
 	test('late-joining tab receives existing state via sync', async ({ context }) => {
 		const ns = uniqueNs()
 		const pageA = await context.newPage()

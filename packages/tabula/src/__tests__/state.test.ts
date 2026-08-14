@@ -1,5 +1,6 @@
+import { MAX_STATE_KEYS } from '@tabula/protocol'
 import { State } from '@tabula/tabula'
-import type { StateEntry } from '@tabula/tabula'
+import type { StateDeleteOperation, StateOperation, StateSetOperation } from '@tabula/tabula'
 import { describe, expect, it, vi } from 'vitest'
 import { createStubChannel, makeMessage } from './helpers'
 
@@ -9,413 +10,328 @@ function createState(tabId = 'tab-1') {
 	return { state, channel }
 }
 
-function makeStateEntry(overrides: Partial<StateEntry> = {}): StateEntry {
+function setOperation(
+	key: string,
+	value: unknown,
+	overrides: Partial<StateSetOperation> = {},
+): StateSetOperation {
 	return {
-		value: 'default',
-		ts: 1000,
+		kind: 'set',
+		key,
+		value,
+		clock: { wallTime: 1000, logical: 0 },
 		tabId: 'remote-tab',
-		version: 1,
+		instanceId: 'remote-tab-instance',
+		operationId: `${key}-set`,
 		...overrides,
 	}
 }
 
-describe('State', () => {
-	it('set/get roundtrip', () => {
-		const { state } = createState()
-		state.set('theme', 'dark')
-		expect(state.get('theme')).toBe('dark')
-	})
+function deleteOperation(
+	key: string,
+	overrides: Partial<StateDeleteOperation> = {},
+): StateDeleteOperation {
+	return {
+		kind: 'delete',
+		key,
+		clock: { wallTime: 1000, logical: 0 },
+		tabId: 'remote-tab',
+		instanceId: 'remote-tab-instance',
+		operationId: `${key}-delete`,
+		...overrides,
+	}
+}
 
-	it('get returns undefined for missing keys', () => {
-		const { state } = createState()
-		expect(state.get('nonexistent')).toBeUndefined()
-	})
+function deliver(state: State<Record<string, unknown>>, operation: StateOperation): void {
+	state.handleMessage(
+		makeMessage({
+			type: operation.kind === 'set' ? 'state:set' : 'state:delete',
+			from: { tabId: operation.tabId, instanceId: operation.instanceId },
+			payload: { operation },
+		}),
+	)
+}
 
-	it.each(['__proto__', 'prototype', 'constructor'])('rejects the unsafe local key %s', (key) => {
-		const { state, channel } = createState()
-		expect(() => state.set(key, 'value')).toThrow(TypeError)
-		expect(channel.send).not.toHaveBeenCalled()
-		expect(state.get(key)).toBeUndefined()
-	})
+function permutations<T>(values: T[]): T[][] {
+	if (values.length <= 1) return [values]
+	return values.flatMap((value, index) =>
+		permutations([...values.slice(0, index), ...values.slice(index + 1)]).map((rest) => [
+			value,
+			...rest,
+		]),
+	)
+}
 
-	it('delete removes key', () => {
+describe('State operation convergence', () => {
+	it('sets, gets, clones, lists, and deletes values', () => {
 		const { state } = createState()
-		state.set('theme', 'dark')
+		const input = { nested: { count: 1 } }
+		state.set('theme', input)
+		input.nested.count = 2
+
+		expect(state.get('theme')).toEqual({ nested: { count: 1 } })
+		expect(state.keys()).toEqual(['theme'])
+		expect(state.allEntries()).toEqual([['theme', { nested: { count: 1 } }]])
+
 		state.delete('theme')
 		expect(state.get('theme')).toBeUndefined()
+		expect(state.keys()).toEqual([])
+		expect(state.allEntries()).toEqual([])
+		expect(state.getSnapshot().theme.kind).toBe('delete')
 	})
 
-	it('set increments version per key', () => {
+	it.each(['__proto__', 'prototype', 'constructor'])('rejects unsafe local key %s', (key) => {
 		const { state, channel } = createState()
-
-		state.set('count', 1)
-		const firstCall = channel.send.mock.calls[0]
-		expect(firstCall[0]).toBe('state:set')
-		expect((firstCall[1] as any).entry.version).toBe(1)
-
-		state.set('count', 2)
-		const secondCall = channel.send.mock.calls[1]
-		expect((secondCall[1] as any).entry.version).toBe(2)
-
-		// A different key starts at version 1
-		state.set('theme', 'light')
-		const thirdCall = channel.send.mock.calls[2]
-		expect((thirdCall[1] as any).entry.version).toBe(1)
+		expect(() => state.set(key, 'value')).toThrow(TypeError)
+		expect(() => state.delete(key)).toThrow(TypeError)
+		expect(channel.send).not.toHaveBeenCalled()
 	})
 
-	it('set broadcasts state:set via channel', () => {
+	it('rejects undefined and non-cloneable values without sending or committing', () => {
 		const { state, channel } = createState()
-		state.set('theme', 'dark')
-
-		expect(channel.send).toHaveBeenCalledWith('state:set', {
-			key: 'theme',
-			entry: expect.objectContaining({
-				value: 'dark',
-				tabId: 'tab-1',
-				version: 1,
-			}),
-		})
+		expect(() => state.set('undefined', undefined)).toThrow(/state\.delete/)
+		expect(() => state.set('function', () => undefined)).toThrow(TypeError)
+		expect(() => state.set('promise', Promise.resolve())).toThrowError(
+			expect.objectContaining({ name: 'DataCloneError' }),
+		)
+		expect(channel.send).not.toHaveBeenCalled()
+		expect(state.keys()).toEqual([])
 	})
 
-	it('delete broadcasts state:delete via channel', () => {
-		const { state, channel } = createState()
-		state.set('theme', 'dark')
-		state.delete('theme')
-
-		expect(channel.send).toHaveBeenCalledWith('state:delete', { key: 'theme' })
-	})
-
-	describe('LWW conflict resolution', () => {
-		it('remote newer timestamp wins', () => {
-			const { state } = createState()
-			// Set a local value with a known timestamp
-			state.set('theme', 'dark')
-
-			// Simulate a remote set with a future timestamp
-			const remoteEntry = makeStateEntry({
-				value: 'light',
-				ts: Date.now() + 10000,
-				tabId: 'remote-tab',
-				version: 1,
-			})
-			state.handleMessage(
-				makeMessage({
-					type: 'state:set',
-					from: 'remote-tab',
-					payload: { key: 'theme', entry: remoteEntry },
-				}),
-			)
-
-			expect(state.get('theme')).toBe('light')
-		})
-
-		it('remote older timestamp loses', () => {
-			const { state } = createState()
-			state.set('theme', 'dark')
-
-			const remoteEntry = makeStateEntry({
-				value: 'light',
-				ts: 1, // very old timestamp
-				tabId: 'remote-tab',
-				version: 1,
-			})
-			state.handleMessage(
-				makeMessage({
-					type: 'state:set',
-					from: 'remote-tab',
-					payload: { key: 'theme', entry: remoteEntry },
-				}),
-			)
-
-			expect(state.get('theme')).toBe('dark')
-		})
-
-		it('timestamp tie, higher tabId wins', () => {
-			const { state } = createState('aaa')
-			const fixedTs = 5000
-
-			// Manually set up a local entry by simulating the internal state
-			// Use a remote message with the same timestamp from a "lower" tabId first
-			const localEntry = makeStateEntry({ value: 'local', ts: fixedTs, tabId: 'aaa', version: 1 })
-			state.handleMessage(
-				makeMessage({
-					type: 'state:set',
-					from: 'aaa',
-					payload: { key: 'color', entry: localEntry },
-				}),
-			)
-
-			// Now a remote entry with same ts but higher tabId
-			const remoteEntry = makeStateEntry({ value: 'remote', ts: fixedTs, tabId: 'zzz', version: 1 })
-			state.handleMessage(
-				makeMessage({
-					type: 'state:set',
-					from: 'zzz',
-					payload: { key: 'color', entry: remoteEntry },
-				}),
-			)
-
-			expect(state.get('color')).toBe('remote')
-		})
-
-		it('timestamp tie, lower tabId loses', () => {
-			const { state } = createState('zzz')
-			const fixedTs = 5000
-
-			// Set up an entry from a higher tabId
-			const highEntry = makeStateEntry({ value: 'high', ts: fixedTs, tabId: 'zzz', version: 1 })
-			state.handleMessage(
-				makeMessage({
-					type: 'state:set',
-					from: 'zzz',
-					payload: { key: 'color', entry: highEntry },
-				}),
-			)
-
-			// Remote entry with same ts but lower tabId should lose
-			const lowEntry = makeStateEntry({ value: 'low', ts: fixedTs, tabId: 'aaa', version: 1 })
-			state.handleMessage(
-				makeMessage({
-					type: 'state:set',
-					from: 'aaa',
-					payload: { key: 'color', entry: lowEntry },
-				}),
-			)
-
-			expect(state.get('color')).toBe('high')
-		})
-	})
-
-	it('remote set for nonexistent key always accepted', () => {
+	it('preserves cyclic and standard structured-clone values', () => {
 		const { state } = createState()
+		const cyclic: Record<string, unknown> = { map: new Map([['key', new Set([1, 2])]]) }
+		cyclic.self = cyclic
+		state.set('complex', cyclic)
 
-		const remoteEntry = makeStateEntry({
-			value: 'new-value',
-			ts: 1, // even an old timestamp
-			tabId: 'remote-tab',
-			version: 1,
+		const result = state.get('complex') as typeof cyclic
+		expect(result).not.toBe(cyclic)
+		expect(result.self).toBe(result)
+		expect(result.map).toBeInstanceOf(Map)
+	})
+
+	it('does not commit or notify when BroadcastChannel send throws DataCloneError', () => {
+		const { state, channel } = createState()
+		const keyListener = vi.fn()
+		const wildcard = vi.fn()
+		state.onKey('theme', keyListener)
+		state.onWildcard(wildcard)
+		channel.send.mockImplementation(() => {
+			throw new DOMException('clone failed', 'DataCloneError')
 		})
+
+		expect(() => state.set('theme', 'dark')).toThrowError(
+			expect.objectContaining({ name: 'DataCloneError' }),
+		)
+		expect(state.get('theme')).toBeUndefined()
+		expect(state.getSnapshot()).not.toHaveProperty('theme')
+		expect(keyListener).not.toHaveBeenCalled()
+		expect(wildcard).not.toHaveBeenCalled()
+	})
+
+	it('uses an HLC that advances through clock rollback', () => {
+		const { state, channel } = createState()
+		const now = vi.spyOn(Date, 'now').mockReturnValue(1000)
+		state.set('value', 1)
+		now.mockReturnValue(500)
+		state.set('value', 2)
+
+		const operations = channel.send.mock.calls.map((call) => (call[1] as any).operation)
+		expect(operations[0].clock).toEqual({ wallTime: 1000, logical: 0 })
+		expect(operations[1].clock).toEqual({ wallTime: 1000, logical: 1 })
+		expect(state.get('value')).toBe(2)
+	})
+
+	it('advances the local HLC from an accepted remote clock', () => {
+		const { state, channel } = createState()
+		vi.spyOn(Date, 'now').mockReturnValue(100)
+		deliver(state, setOperation('remote', true, { clock: { wallTime: 5000, logical: 7 } }))
+		state.set('local', true)
+
+		const local = (channel.send.mock.calls.at(-1)?.[1] as any).operation as StateOperation
+		expect(local.clock).toEqual({ wallTime: 5000, logical: 9 })
+	})
+
+	it('converges for every permutation of the same set/delete operation set', () => {
+		const operations: StateOperation[] = [
+			setOperation('key', 'first', { clock: { wallTime: 10, logical: 0 }, operationId: 'a' }),
+			deleteOperation('key', { clock: { wallTime: 10, logical: 1 }, operationId: 'b' }),
+			setOperation('key', 'stale', { clock: { wallTime: 9, logical: 99 }, operationId: 'c' }),
+			setOperation('key', 'winner', {
+				clock: { wallTime: 10, logical: 1 },
+				tabId: 'z-tab',
+				instanceId: 'z-instance',
+				operationId: 'd',
+			}),
+		]
+
+		for (const ordering of permutations(operations)) {
+			const { state } = createState()
+			for (const operation of ordering) deliver(state, operation)
+			expect(state.get('key')).toBe('winner')
+			expect(state.getSnapshot().key).toEqual(operations[3])
+		}
+	})
+
+	it('uses instance and operation IDs as final deterministic tie breakers', () => {
+		const { state } = createState()
+		const base = { clock: { wallTime: 10, logical: 2 }, tabId: 'same-tab' }
+		deliver(state, setOperation('key', 'a', { ...base, instanceId: 'a', operationId: 'z' }))
+		deliver(state, setOperation('key', 'b', { ...base, instanceId: 'b', operationId: 'a' }))
+		deliver(state, setOperation('key', 'c', { ...base, instanceId: 'b', operationId: 'z' }))
+		expect(state.get('key')).toBe('c')
+	})
+
+	it('uses locale-independent code-unit ordering for actor ties', () => {
+		const { state } = createState()
+		const base = { clock: { wallTime: 10, logical: 2 }, instanceId: 'instance' }
+		deliver(state, setOperation('key', 'upper', { ...base, tabId: 'Z', operationId: 'same' }))
+		deliver(state, setOperation('key', 'lower', { ...base, tabId: 'a', operationId: 'same' }))
+		expect(state.get('key')).toBe('lower')
+	})
+
+	it('retains tombstones against delayed sets and stale snapshots', () => {
+		const { state } = createState()
+		const stale = setOperation('draft', 'old', { clock: { wallTime: 5, logical: 0 } })
+		const tombstone = deleteOperation('draft', { clock: { wallTime: 6, logical: 0 } })
+		deliver(state, tombstone)
+		deliver(state, stale)
 		state.handleMessage(
 			makeMessage({
-				type: 'state:set',
-				from: 'remote-tab',
-				payload: { key: 'brand-new', entry: remoteEntry },
+				type: 'state:sync',
+				from: 'peer',
+				payload: { state: { draft: stale } },
 			}),
 		)
 
-		expect(state.get('brand-new')).toBe('new-value')
+		expect(state.get('draft')).toBeUndefined()
+		expect(state.keys()).toEqual([])
+		expect(state.getSnapshot().draft).toEqual(tombstone)
 	})
 
-	describe('listeners', () => {
-		it('onKey listener fires on local set', () => {
-			const { state } = createState()
-			const cb = vi.fn()
-			state.onKey('theme', cb)
+	it('fires listeners once only for effective winning operations', () => {
+		const { state } = createState()
+		const keyListener = vi.fn()
+		const wildcard = vi.fn()
+		state.onKey('key', keyListener)
+		state.onWildcard(wildcard)
+		const winner = setOperation('key', 'winner', { clock: { wallTime: 20, logical: 0 } })
+		const stale = setOperation('key', 'stale', { clock: { wallTime: 10, logical: 0 } })
 
-			state.set('theme', 'dark')
-			expect(cb).toHaveBeenCalledWith('dark')
-		})
+		deliver(state, winner)
+		deliver(state, winner)
+		deliver(state, stale)
 
-		it('onKey listener fires on accepted remote set', () => {
-			const { state } = createState()
-			const cb = vi.fn()
-			state.onKey('theme', cb)
-
-			const remoteEntry = makeStateEntry({
-				value: 'light',
-				ts: Date.now() + 10000,
-				tabId: 'remote-tab',
-			})
-			state.handleMessage(
-				makeMessage({
-					type: 'state:set',
-					from: 'remote-tab',
-					payload: { key: 'theme', entry: remoteEntry },
-				}),
-			)
-
-			expect(cb).toHaveBeenCalledWith('light')
-		})
-
-		it('onKey listener does NOT fire on rejected remote set', () => {
-			const { state } = createState()
-			state.set('theme', 'dark')
-
-			const cb = vi.fn()
-			state.onKey('theme', cb)
-
-			// Remote with old timestamp — should be rejected
-			const remoteEntry = makeStateEntry({
-				value: 'light',
-				ts: 1,
-				tabId: 'remote-tab',
-			})
-			state.handleMessage(
-				makeMessage({
-					type: 'state:set',
-					from: 'remote-tab',
-					payload: { key: 'theme', entry: remoteEntry },
-				}),
-			)
-
-			expect(cb).not.toHaveBeenCalled()
-		})
-
-		it('onWildcard fires on every accepted change', () => {
-			const { state } = createState()
-			const cb = vi.fn()
-			state.onWildcard(cb)
-
-			state.set('theme', 'dark')
-			state.set('count', 42)
-
-			expect(cb).toHaveBeenCalledTimes(2)
-			expect(cb).toHaveBeenCalledWith('theme', 'dark')
-			expect(cb).toHaveBeenCalledWith('count', 42)
-		})
-
-		it('unsubscribe works for onKey', () => {
-			const { state } = createState()
-			const cb = vi.fn()
-			const unsub = state.onKey('theme', cb)
-
-			unsub()
-			state.set('theme', 'dark')
-
-			expect(cb).not.toHaveBeenCalled()
-		})
-
-		it('unsubscribe works for onWildcard', () => {
-			const { state } = createState()
-			const cb = vi.fn()
-			const unsub = state.onWildcard(cb)
-
-			unsub()
-			state.set('theme', 'dark')
-
-			expect(cb).not.toHaveBeenCalled()
-		})
-
-		it('delete notifies with undefined', () => {
-			const { state } = createState()
-			state.set('theme', 'dark')
-
-			const keyCb = vi.fn()
-			const wildcardCb = vi.fn()
-			state.onKey('theme', keyCb)
-			state.onWildcard(wildcardCb)
-
-			state.delete('theme')
-
-			expect(keyCb).toHaveBeenCalledWith(undefined)
-			expect(wildcardCb).toHaveBeenCalledWith('theme', undefined)
-		})
+		expect(keyListener).toHaveBeenCalledTimes(1)
+		expect(keyListener).toHaveBeenCalledWith('winner')
+		expect(wildcard).toHaveBeenCalledTimes(1)
 	})
 
-	describe('sync protocol', () => {
-		it('state:sync-request responds with full snapshot', () => {
-			const { state, channel } = createState('tab-1')
-			state.set('theme', 'dark')
-			state.set('count', 42)
+	it('setAll sends one sorted atomic batch and installs all winners before callbacks', () => {
+		const { state, channel } = createState()
+		const order: string[] = []
+		state.onKey('a', () => order.push(`key:a:${String(state.get('b'))}`))
+		state.onKey('b', () => order.push(`key:b:${String(state.get('a'))}`))
+		state.onWildcard((key) => order.push(`wildcard:${key}`))
 
-			// Simulate a sync request from another tab
-			state.handleMessage(
-				makeMessage({
-					type: 'state:sync-request',
-					from: 'tab-2',
-				}),
-			)
+		state.setAll({ b: 2, a: 1 })
 
-			// Should have sent state:sync back to tab-2
-			const syncCall = channel.send.mock.calls.find((call: any[]) => call[0] === 'state:sync')
-			expect(syncCall).toBeDefined()
-			expect(syncCall?.[2]).toEqual({ tabId: 'tab-2', instanceId: 'tab-2-instance' })
-
-			const snapshot = (syncCall?.[1] as any).state
-			expect(snapshot.theme.value).toBe('dark')
-			expect(snapshot.count.value).toBe(42)
-		})
-
-		it('state:sync merges using LWW', () => {
-			const { state } = createState('tab-1')
-			state.set('theme', 'dark')
-
-			// Simulate receiving a sync with a newer value for theme and a new key
-			const newerTs = Date.now() + 10000
-			state.handleMessage(
-				makeMessage({
-					type: 'state:sync',
-					from: 'tab-2',
-					payload: {
-						state: {
-							theme: makeStateEntry({ value: 'light', ts: newerTs, tabId: 'tab-2' }),
-							newKey: makeStateEntry({ value: 'hello', ts: newerTs, tabId: 'tab-2' }),
-						},
-					},
-				}),
-			)
-
-			expect(state.get('theme')).toBe('light')
-			expect(state.get('newKey')).toBe('hello')
-		})
-
-		it('state:sync rejects entries that lose LWW', () => {
-			const { state } = createState('tab-1')
-			state.set('theme', 'dark')
-
-			// Simulate receiving a sync with an older value for theme
-			state.handleMessage(
-				makeMessage({
-					type: 'state:sync',
-					from: 'tab-2',
-					payload: {
-						state: {
-							theme: makeStateEntry({ value: 'light', ts: 1, tabId: 'tab-2' }),
-						},
-					},
-				}),
-			)
-
-			expect(state.get('theme')).toBe('dark')
-		})
-
-		it('requestSync sends state:sync-request', () => {
-			const { state, channel } = createState()
-			state.requestSync()
-
-			expect(channel.send).toHaveBeenCalledWith('state:sync-request', null)
-		})
+		expect(channel.send).toHaveBeenCalledTimes(1)
+		expect(channel.send.mock.calls[0][0]).toBe('state:batch')
+		expect(
+			(channel.send.mock.calls[0][1] as any).operations.map((op: StateOperation) => op.key),
+		).toEqual(['a', 'b'])
+		expect(order).toEqual(['key:a:2', 'key:b:1', 'wildcard:a', 'wildcard:b'])
 	})
 
-	describe('snapshot helpers', () => {
-		it('getSnapshot returns all entries', () => {
-			const { state } = createState()
-			state.set('theme', 'dark')
-			state.set('count', 42)
+	it('remote batches are installed atomically before ordered notifications', () => {
+		const { state } = createState()
+		const observations: string[] = []
+		state.onKey('a', () => observations.push(`a:${String(state.get('b'))}`))
+		state.onKey('b', () => observations.push(`b:${String(state.get('a'))}`))
+		state.handleMessage(
+			makeMessage({
+				type: 'state:batch',
+				from: 'remote-tab',
+				payload: {
+					operations: [setOperation('b', 2), setOperation('a', 1)],
+				},
+			}),
+		)
+		expect(observations).toEqual(['a:2', 'b:1'])
+	})
 
-			const snapshot = state.getSnapshot()
-			expect(Object.keys(snapshot)).toHaveLength(2)
-			expect(snapshot.theme.value).toBe('dark')
-			expect(snapshot.count.value).toBe(42)
+	it('setAll validates and sends the entire batch before committing any prefix', () => {
+		const { state, channel } = createState()
+		expect(() => state.setAll({ a: 1, b: Promise.resolve() })).toThrowError(
+			expect.objectContaining({ name: 'DataCloneError' }),
+		)
+		expect(channel.send).not.toHaveBeenCalled()
+		expect(state.keys()).toEqual([])
+
+		channel.send.mockImplementation(() => {
+			throw new DOMException('send failed', 'DataCloneError')
 		})
+		expect(() => state.setAll({ a: 1, b: 2 })).toThrowError(
+			expect.objectContaining({ name: 'DataCloneError' }),
+		)
+		expect(state.keys()).toEqual([])
+	})
 
-		it('getKeysForSync returns values for requested keys only', () => {
-			const { state } = createState()
-			state.set('theme', 'dark')
-			state.set('count', 42)
-			state.set('extra', 'ignored')
+	it('synchronizes tombstones while keeping them out of value-facing helpers', () => {
+		const first = createState('tab-1')
+		first.state.delete('gone')
+		first.state.handleMessage(makeMessage({ type: 'state:sync-request', from: 'tab-2' }))
+		const sync = first.channel.send.mock.calls.find((call) => call[0] === 'state:sync')
+		const snapshot = (sync?.[1] as any).state
+		expect(snapshot.gone.kind).toBe('delete')
 
-			const result = state.getKeysForSync(['theme', 'count'])
-			expect(result).toEqual({ theme: 'dark', count: 42 })
-			expect(result).not.toHaveProperty('extra')
-		})
+		const second = createState('tab-2')
+		second.state.handleMessage(
+			makeMessage({ type: 'state:sync', from: 'tab-1', payload: { state: snapshot } }),
+		)
+		expect(second.state.get('gone')).toBeUndefined()
+		expect(second.state.keys()).toEqual([])
+		expect(second.state.getSnapshot().gone.kind).toBe('delete')
+	})
 
-		it('getKeysForSync skips keys that have no entry', () => {
-			const { state } = createState()
-			state.set('theme', 'dark')
+	it('supports subscriptions and safe unsubscribe', () => {
+		const { state } = createState()
+		const key = vi.fn()
+		const wildcard = vi.fn()
+		const offKey = state.onKey('value', key)
+		const offWildcard = state.onWildcard(wildcard)
+		state.set('value', 1)
+		offKey()
+		offWildcard()
+		state.set('value', 2)
+		expect(key).toHaveBeenCalledTimes(1)
+		expect(wildcard).toHaveBeenCalledTimes(1)
+	})
 
-			const result = state.getKeysForSync(['theme', 'missing'])
-			expect(result).toEqual({ theme: 'dark' })
-		})
+	it('enforces the observed-key cap including tombstones', () => {
+		const { state, channel } = createState()
+		const snapshot = Object.fromEntries(
+			Array.from({ length: MAX_STATE_KEYS }, (_, index) => {
+				const key = `key-${index}`
+				return [key, deleteOperation(key, { operationId: `delete-${index}` })]
+			}),
+		)
+		state.handleMessage(
+			makeMessage({ type: 'state:sync', from: 'remote-tab', payload: { state: snapshot } }),
+		)
+		expect(Object.keys(state.getSnapshot())).toHaveLength(MAX_STATE_KEYS)
+		expect(() => state.set('overflow', true)).toThrow(RangeError)
+		expect(channel.send).not.toHaveBeenCalled()
+	})
+
+	it('requests sync and returns selected live values only', () => {
+		const { state, channel } = createState()
+		state.setAll({ theme: 'dark', count: 2 })
+		state.delete('count')
+		expect(state.getKeysForSync(['theme', 'count', 'missing'])).toEqual({ theme: 'dark' })
+		channel.send.mockClear()
+		state.requestSync()
+		expect(channel.send).toHaveBeenCalledWith('state:sync-request', null)
 	})
 })

@@ -6,14 +6,18 @@
 import {
 	LOCAL_PROTOCOL,
 	MAX_PRESENCE_PEERS,
+	MAX_STATE_KEYS,
 	type Message,
 	type MessageIdentity,
 	type MessageTarget,
 	type MessageType,
 	type ProtocolIncompatibleEvent,
+	type StateClock,
+	type StateOperation,
 	isValidId,
 	isValidName,
 	isValidStateKey,
+	structuralBudgetIsValid,
 	validateInboundMessage,
 	validateStoredPresence,
 	validateStoredViewRegistryEntry,
@@ -41,6 +45,10 @@ export type {
 	MessageType,
 	ProtocolIncompatibleEvent,
 	ProtocolVersion,
+	StateClock,
+	StateDeleteOperation,
+	StateOperation,
+	StateSetOperation,
 } from './protocol'
 export {
 	CapabilityError,
@@ -946,42 +954,40 @@ interface LeaderProjection {
 // ── Layer 2: State ────────────────────────────────────────────────────────
 
 /** @internal */ export class State<S extends object> {
-	private entries = new Map<string, StateEntry>()
-	private versions = new Map<string, number>()
+	private entries = new Map<string, StateOperation>()
 	private keyListeners = new Map<string, Set<(value: unknown) => void>>()
 	private wildcardListeners = new Set<(key: string, value: unknown) => void>()
 	private channel: Channel
-	private tabId: string
+	private wallTime = 0
+	private logical = 0
 
-	constructor(channel: Channel, tabId: string) {
+	constructor(channel: Channel, _tabId: string) {
 		this.channel = channel
-		this.tabId = tabId
 	}
 
 	set<K extends keyof S & string>(key: K, value: S[K]): void {
-		if (!isValidStateKey(key)) {
-			throw new TypeError('State keys must be non-empty, safe strings of at most 256 UTF-8 bytes.')
+		this.assertKey(key)
+		this.ensureCapacity([key])
+		const cloned = this.cloneValue(value)
+		const operation = this.createOperation(key, 'set', cloned)
+		if (!structuralBudgetIsValid({ operation })) {
+			throw new TypeError('State operation exceeds Tabula message safety limits.')
 		}
-		const version = (this.versions.get(key) ?? 0) + 1
-		this.versions.set(key, version)
-		const entry: StateEntry = { value, ts: Date.now(), tabId: this.tabId, version }
-		this.entries.set(key, entry)
-		this.channel.send('state:set', { key, entry })
-		this.notify(key, value)
+		this.channel.send('state:set', { operation })
+		this.applyOperations([operation])
 	}
 
 	get<K extends keyof S & string>(key: K): S[K] | undefined {
-		const entry = this.entries.get(key)
-		return entry?.value as S[K] | undefined
+		const operation = this.entries.get(key)
+		return operation?.kind === 'set' ? (operation.value as S[K]) : undefined
 	}
 
 	delete<K extends keyof S & string>(key: K): void {
-		if (!isValidStateKey(key)) {
-			throw new TypeError('State keys must be non-empty, safe strings of at most 256 UTF-8 bytes.')
-		}
-		this.entries.delete(key)
-		this.channel.send('state:delete', { key })
-		this.notify(key, undefined)
+		this.assertKey(key)
+		this.ensureCapacity([key])
+		const operation = this.createOperation(key, 'delete')
+		this.channel.send('state:delete', { operation })
+		this.applyOperations([operation])
 	}
 
 	onKey<K extends keyof S & string>(key: K, cb: (value: S[K]) => void): () => void {
@@ -1002,28 +1008,30 @@ interface LeaderProjection {
 
 	handleMessage(msg: Message): void {
 		if (msg.type === 'state:set') {
-			const { key, entry } = msg.payload as { key: string; entry: StateEntry }
-			if (this.shouldAccept(key, entry)) {
-				this.entries.set(key, entry)
-				this.notify(key, entry.value)
-			}
+			const operation = this.operationFromSetMessage(msg)
+			if (operation) this.acceptRemoteOperations([operation], msg.from, true)
 		} else if (msg.type === 'state:delete') {
-			const { key } = msg.payload as { key: string }
-			this.entries.delete(key)
-			this.notify(key, undefined)
+			const operation = this.operationFromDeleteMessage(msg)
+			if (operation) this.acceptRemoteOperations([operation], msg.from, true)
+		} else if (msg.type === 'state:batch') {
+			const { operations } = msg.payload as { operations: StateOperation[] }
+			this.acceptRemoteOperations(operations, msg.from, true)
 		} else if (msg.type === 'state:sync-request') {
-			// respond with our full state
-			const snapshot: Record<string, StateEntry> = {}
+			const snapshot: Record<string, StateOperation> = Object.create(null)
 			for (const [k, v] of this.entries) snapshot[k] = v
 			this.channel.send('state:sync', { state: snapshot }, msg.from)
 		} else if (msg.type === 'state:sync') {
-			const { state: snapshot } = msg.payload as { state: Record<string, StateEntry> }
-			for (const [key, entry] of Object.entries(snapshot)) {
-				if (this.shouldAccept(key, entry)) {
-					this.entries.set(key, entry)
-					this.notify(key, entry.value)
-				}
+			const { state: snapshot } = msg.payload as {
+				state: Record<string, StateOperation | StateEntry>
 			}
+			const operations = Object.entries(snapshot).map(([key, entry]) =>
+				this.operationFromSnapshot(key, entry, msg),
+			)
+			this.acceptRemoteOperations(
+				operations.filter((operation): operation is StateOperation => operation !== null),
+				msg.from,
+				false,
+			)
 		}
 	}
 
@@ -1031,8 +1039,8 @@ interface LeaderProjection {
 		this.channel.send<null>('state:sync-request', null)
 	}
 
-	reidentify(tabId: string): void {
-		this.tabId = tabId
+	reidentify(_tabId: string): void {
+		// Channel identity is the actor source and is updated by the coordinator.
 	}
 
 	stop(): void {
@@ -1040,51 +1048,223 @@ interface LeaderProjection {
 		this.wildcardListeners.clear()
 	}
 
-	getSnapshot(): Record<string, StateEntry> {
-		const out: Record<string, StateEntry> = {}
+	getSnapshot(): Record<string, StateOperation> {
+		const out: Record<string, StateOperation> = Object.create(null)
 		for (const [k, v] of this.entries) out[k] = v
 		return out
 	}
 
 	keys(): string[] {
-		return Array.from(this.entries.keys())
+		return [...this.entries].filter(([, operation]) => operation.kind === 'set').map(([key]) => key)
 	}
 
 	allEntries(): Array<[string, unknown]> {
-		return Array.from(this.entries.entries()).map(([k, e]) => [k, e.value])
+		return [...this.entries]
+			.filter(([, operation]) => operation.kind === 'set')
+			.map(([key, operation]) => [
+				key,
+				(operation as Extract<StateOperation, { kind: 'set' }>).value,
+			])
 	}
 
 	setAll(entries: Record<string, unknown>): void {
-		for (const [key, value] of Object.entries(entries)) {
-			this.set(key as any, value as any)
+		const normalized = Object.entries(entries).sort(([left], [right]) =>
+			this.compareStrings(left, right),
+		)
+		if (normalized.length === 0) return
+		for (const [key] of normalized) this.assertKey(key)
+		this.ensureCapacity(normalized.map(([key]) => key))
+		const cloned = normalized.map(([key, value]) => [key, this.cloneValue(value)] as const)
+		const operations = cloned.map(([key, value]) => this.createOperation(key, 'set', value))
+		if (!structuralBudgetIsValid({ operations })) {
+			throw new TypeError('State batch exceeds Tabula message safety limits.')
 		}
+		this.channel.send('state:batch', { operations })
+		this.applyOperations(operations)
 	}
 
 	getKeysForSync(keys: string[]): Record<string, unknown> {
 		const out: Record<string, unknown> = {}
 		for (const key of keys) {
-			const entry = this.entries.get(key)
-			if (entry) out[key] = entry.value
+			const operation = this.entries.get(key)
+			if (operation?.kind === 'set') out[key] = operation.value
 		}
 		return out
 	}
 
-	private shouldAccept(key: string, incoming: StateEntry): boolean {
-		const existing = this.entries.get(key)
-		if (!existing) return true
-		if (incoming.ts > existing.ts) return true
-		if (incoming.ts < existing.ts) return false
-		// same timestamp: use tabId tiebreak, then version for same-tab rapid writes
-		if (incoming.tabId !== existing.tabId) return incoming.tabId > existing.tabId
-		return incoming.version > existing.version
+	private assertKey(key: string): void {
+		if (!isValidStateKey(key)) {
+			throw new TypeError('State keys must be non-empty, safe strings of at most 256 UTF-8 bytes.')
+		}
 	}
 
-	private notify(key: string, value: unknown): void {
-		const listeners = this.keyListeners.get(key)
-		if (listeners) {
-			for (const cb of listeners) cb(value)
+	private ensureCapacity(keys: string[]): void {
+		const additions = new Set(keys.filter((key) => !this.entries.has(key)))
+		if (this.entries.size + additions.size > MAX_STATE_KEYS) {
+			throw new RangeError(`Tabula state is limited to ${MAX_STATE_KEYS} observed keys.`)
 		}
+	}
+
+	private cloneValue(value: unknown): unknown {
+		if (value === undefined) {
+			throw new TypeError('state.set() does not accept undefined; use state.delete() for absence.')
+		}
+		if (!structuralBudgetIsValid(value)) {
+			throw new TypeError('State value exceeds Tabula structured-clone safety limits.')
+		}
+		return structuredClone(value)
+	}
+
+	private createOperation(key: string, kind: 'set', value: unknown): StateOperation
+	private createOperation(key: string, kind: 'delete'): StateOperation
+	private createOperation(key: string, kind: 'set' | 'delete', value?: unknown): StateOperation {
+		const identity = this.channel.getIdentity()
+		const base = {
+			key,
+			clock: this.tick(),
+			tabId: identity.tabId,
+			instanceId: identity.instanceId,
+			operationId: crypto.randomUUID(),
+		}
+		return kind === 'set' ? { ...base, kind, value } : { ...base, kind }
+	}
+
+	private tick(remote?: StateClock): StateClock {
+		const now = Date.now()
+		const previousWall = this.wallTime
+		const previousLogical = this.logical
+		const remoteWall = remote?.wallTime ?? -1
+		const wallTime = Math.max(now, previousWall, remoteWall)
+		if (remote && wallTime === previousWall && wallTime === remoteWall) {
+			this.logical = Math.max(previousLogical, remote.logical) + 1
+		} else if (wallTime === previousWall) {
+			this.logical = previousLogical + 1
+		} else if (remote && wallTime === remoteWall) {
+			this.logical = remote.logical + 1
+		} else {
+			this.logical = 0
+		}
+		this.wallTime = wallTime
+		return { wallTime, logical: this.logical }
+	}
+
+	private acceptRemoteOperations(
+		operations: StateOperation[],
+		sender: MessageIdentity,
+		requireSenderMatch: boolean,
+	): void {
+		const accepted: StateOperation[] = []
+		const newKeys = new Set<string>()
+		for (const operation of operations) {
+			if (
+				requireSenderMatch &&
+				(operation.tabId !== sender.tabId || operation.instanceId !== sender.instanceId)
+			) {
+				continue
+			}
+			this.tick(operation.clock)
+			if (!this.entries.has(operation.key) && !newKeys.has(operation.key)) {
+				if (this.entries.size + newKeys.size >= MAX_STATE_KEYS) continue
+				newKeys.add(operation.key)
+			}
+			const existing = this.entries.get(operation.key)
+			if (!existing || this.compareOperations(operation, existing) > 0) accepted.push(operation)
+		}
+		this.applyOperations(accepted)
+	}
+
+	private applyOperations(operations: StateOperation[]): void {
+		const winners = [...operations]
+			.sort((left, right) => this.compareStrings(left.key, right.key))
+			.filter((operation) => {
+				const existing = this.entries.get(operation.key)
+				return !existing || this.compareOperations(operation, existing) > 0
+			})
+		for (const operation of winners) this.entries.set(operation.key, operation)
+		for (const operation of winners) this.notifyKey(operation.key, this.operationValue(operation))
+		for (const operation of winners)
+			this.notifyWildcard(operation.key, this.operationValue(operation))
+	}
+
+	private compareOperations(left: StateOperation, right: StateOperation): number {
+		for (const [leftValue, rightValue] of [
+			[left.clock.wallTime, right.clock.wallTime],
+			[left.clock.logical, right.clock.logical],
+		] as const) {
+			if (leftValue !== rightValue) return leftValue < rightValue ? -1 : 1
+		}
+		for (const [leftValue, rightValue] of [
+			[left.tabId, right.tabId],
+			[left.instanceId, right.instanceId],
+			[left.operationId, right.operationId],
+		] as const) {
+			const comparison = this.compareStrings(leftValue, rightValue)
+			if (comparison !== 0) return comparison
+		}
+		return 0
+	}
+
+	private compareStrings(left: string, right: string): number {
+		return left === right ? 0 : left < right ? -1 : 1
+	}
+
+	private operationValue(operation: StateOperation): unknown {
+		return operation.kind === 'set' ? operation.value : undefined
+	}
+
+	private notifyKey(key: string, value: unknown): void {
+		const listeners = this.keyListeners.get(key)
+		if (listeners) for (const cb of listeners) cb(value)
+	}
+
+	private notifyWildcard(key: string, value: unknown): void {
 		for (const cb of this.wildcardListeners) cb(key, value)
+	}
+
+	private operationFromSetMessage(msg: Message): StateOperation | null {
+		const payload = msg.payload as { operation?: StateOperation; key?: string; entry?: StateEntry }
+		if (payload.operation) return payload.operation
+		if (!payload.key || !payload.entry) return null
+		return {
+			kind: 'set',
+			key: payload.key,
+			value: payload.entry.value,
+			clock: { wallTime: payload.entry.ts, logical: payload.entry.version },
+			tabId: payload.entry.tabId,
+			instanceId: msg.from.instanceId,
+			operationId: `legacy:${msg.id}`,
+		}
+	}
+
+	private operationFromDeleteMessage(msg: Message): StateOperation | null {
+		const payload = msg.payload as { operation?: StateOperation; key?: string }
+		if (payload.operation) return payload.operation
+		if (!payload.key) return null
+		return {
+			kind: 'delete',
+			key: payload.key,
+			clock: { wallTime: msg.sentAt, logical: 0 },
+			tabId: msg.from.tabId,
+			instanceId: msg.from.instanceId,
+			operationId: `legacy:${msg.id}`,
+		}
+	}
+
+	private operationFromSnapshot(
+		key: string,
+		entry: StateOperation | StateEntry,
+		msg: Message,
+	): StateOperation | null {
+		if ('kind' in entry) return entry.key === key ? entry : null
+		return {
+			kind: 'set',
+			key,
+			value: entry.value,
+			clock: { wallTime: entry.ts, logical: entry.version },
+			tabId: entry.tabId,
+			instanceId: msg.from.instanceId,
+			operationId: `legacy:${msg.id}:${key}`,
+		}
 	}
 }
 

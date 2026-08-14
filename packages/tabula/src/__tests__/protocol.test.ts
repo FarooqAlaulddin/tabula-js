@@ -22,6 +22,25 @@ const stateEntry = {
 	version: 1,
 }
 
+const stateOperation = {
+	kind: 'set',
+	key: 'theme',
+	value: { nested: ['value'] },
+	clock: { wallTime: 1, logical: 0 },
+	tabId: 'remote-tab',
+	instanceId: 'remote-instance',
+	operationId: 'operation-1',
+}
+
+const stateTombstone = {
+	kind: 'delete',
+	key: 'theme',
+	clock: { wallTime: 2, logical: 0 },
+	tabId: 'remote-tab',
+	instanceId: 'remote-instance',
+	operationId: 'operation-2',
+}
+
 describe('protocol validation', () => {
 	it.each([
 		['identity:probe', { startedAt: 1 }],
@@ -30,10 +49,14 @@ describe('protocol validation', () => {
 		['tab:heartbeat', null],
 		['tab:leave', null],
 		['state:set', { key: 'theme', entry: stateEntry }],
+		['state:set', { operation: stateOperation }],
 		['state:delete', { key: 'theme' }],
+		['state:delete', { operation: stateTombstone }],
+		['state:batch', { operations: [stateOperation] }],
 		['state:sync-request', null],
 		['state:sync-request', { requestId: 'request-1', knownPeers: ['peer-1'], protocolRevision: 1 }],
 		['state:sync', { state: { theme: stateEntry } }],
+		['state:sync', { state: { theme: stateTombstone } }],
 		['view:claim', { name: 'editor' }],
 		['view:claimed', { name: 'editor', tabId: 'remote-tab' }],
 		['view:release', { name: 'editor' }],
@@ -124,6 +147,30 @@ describe('protocol validation', () => {
 		)
 		expect(result.kind).toBe('invalid')
 		expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
+	})
+
+	it('rejects malformed operations and duplicate batch keys', () => {
+		expect(
+			validateInboundMessage(
+				envelope('state:set', {
+					operation: { ...stateOperation, value: undefined },
+				}),
+			).kind,
+		).toBe('invalid')
+		expect(
+			validateInboundMessage(
+				envelope('state:delete', {
+					operation: { ...stateTombstone, value: 'not-a-tombstone' },
+				}),
+			).kind,
+		).toBe('invalid')
+		expect(
+			validateInboundMessage(
+				envelope('state:batch', {
+					operations: [stateOperation, { ...stateOperation, operationId: 'operation-3' }],
+				}),
+			).kind,
+		).toBe('invalid')
 	})
 
 	it('rejects excessive byte, depth, and node budgets', () => {

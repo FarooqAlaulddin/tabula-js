@@ -285,6 +285,7 @@ export function installMockWindow(): {
 // ── Stub Channel (for Presence/State/Views tests) ─────────────────────────
 
 export function createStubChannel(tabId = 'tab-1') {
+	const identity = { tabId, instanceId: `${tabId}-instance` }
 	return {
 		send: vi.fn(
 			(type: MessageType, payload: unknown, to?: string | MessageTarget): Message => ({
@@ -298,6 +299,7 @@ export function createStubChannel(tabId = 'tab-1') {
 			}),
 		),
 		onMessage: vi.fn(() => () => {}),
+		getIdentity: vi.fn(() => ({ ...identity })),
 		close: vi.fn(),
 	}
 }

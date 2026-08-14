@@ -23,6 +23,7 @@ export type MessageType =
 	| 'state:sync'
 	| 'state:set'
 	| 'state:delete'
+	| 'state:batch'
 	| 'view:claim'
 	| 'view:claimed'
 	| 'view:release'
@@ -42,6 +43,7 @@ const MESSAGE_TYPES = new Set<MessageType>([
 	'state:sync',
 	'state:set',
 	'state:delete',
+	'state:batch',
 	'view:claim',
 	'view:claimed',
 	'view:release',
@@ -77,6 +79,30 @@ export interface Message<T = unknown> {
 	sentAt: number
 	payload: T
 }
+
+export interface StateClock {
+	wallTime: number
+	logical: number
+}
+
+interface StateOperationBase {
+	key: string
+	clock: StateClock
+	tabId: string
+	instanceId: string
+	operationId: string
+}
+
+export interface StateSetOperation<V = unknown> extends StateOperationBase {
+	kind: 'set'
+	value: V
+}
+
+export interface StateDeleteOperation extends StateOperationBase {
+	kind: 'delete'
+}
+
+export type StateOperation<V = unknown> = StateSetOperation<V> | StateDeleteOperation
 
 export interface ProtocolIncompatibleEvent {
 	peer: MessageIdentity
@@ -182,7 +208,7 @@ export function protocolRangesOverlap(remote: ProtocolVersion): boolean {
 	)
 }
 
-function structuralBudgetIsValid(root: unknown): boolean {
+export function structuralBudgetIsValid(root: unknown): boolean {
 	let bytes = 0
 	let nodes = 0
 	const seen = new Set<object>()
@@ -271,13 +297,51 @@ function isStateEntry(value: unknown): boolean {
 	)
 }
 
+export function isStateOperation(value: unknown): value is StateOperation {
+	if (!isRecord(value) || !hasSafeOwnKeys(value)) return false
+	if (
+		!isValidStateKey(value.key) ||
+		!isRecord(value.clock) ||
+		!hasSafeOwnKeys(value.clock) ||
+		!isFiniteTimestamp(value.clock.wallTime) ||
+		!Number.isSafeInteger(value.clock.logical) ||
+		(value.clock.logical as number) < 0 ||
+		!isValidId(value.tabId) ||
+		!isValidId(value.instanceId) ||
+		!isValidId(value.operationId)
+	) {
+		return false
+	}
+	if (value.kind === 'delete') return !('value' in value)
+	return (
+		value.kind === 'set' &&
+		'value' in value &&
+		value.value !== undefined &&
+		structuralBudgetIsValid(value.value)
+	)
+}
+
 function isStateRecord(value: unknown): boolean {
 	if (!isRecord(value) || !hasSafeOwnKeys(value)) return false
 	const entries = Object.entries(value)
 	return (
 		entries.length <= MAX_STATE_KEYS &&
-		entries.every(([key, entry]) => isValidStateKey(key) && isStateEntry(entry))
+		entries.every(
+			([key, entry]) =>
+				isValidStateKey(key) &&
+				(isStateEntry(entry) || (isStateOperation(entry) && entry.key === key)),
+		)
 	)
+}
+
+function isStateBatch(value: unknown): boolean {
+	if (!Array.isArray(value) || value.length === 0 || value.length > MAX_STATE_KEYS) return false
+	const keys = new Set<string>()
+	for (const operation of value) {
+		if (!isStateOperation(operation) || keys.has(operation.key)) return false
+		keys.add(operation.key)
+	}
+	return true
 }
 
 function hasName(value: unknown): boolean {
@@ -304,11 +368,22 @@ function validatePayload(type: MessageType, payload: unknown): boolean {
 			return (
 				isRecord(payload) &&
 				hasSafeOwnKeys(payload) &&
-				isValidStateKey(payload.key) &&
-				isStateEntry(payload.entry)
+				(('operation' in payload &&
+					isStateOperation(payload.operation) &&
+					payload.operation.kind === 'set') ||
+					(isValidStateKey(payload.key) && isStateEntry(payload.entry)))
 			)
 		case 'state:delete':
-			return isRecord(payload) && hasSafeOwnKeys(payload) && isValidStateKey(payload.key)
+			return (
+				isRecord(payload) &&
+				hasSafeOwnKeys(payload) &&
+				(('operation' in payload &&
+					isStateOperation(payload.operation) &&
+					payload.operation.kind === 'delete') ||
+					isValidStateKey(payload.key))
+			)
+		case 'state:batch':
+			return isRecord(payload) && hasSafeOwnKeys(payload) && isStateBatch(payload.operations)
 		case 'state:sync-request':
 			return (
 				payload === null ||

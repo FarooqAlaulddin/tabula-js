@@ -187,7 +187,7 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 | P1-005 | Add protocol versioning, validation, and deployment compatibility | agent | done |
 | P1-006 | Harden lifecycle, tab identity, storage access, and bfcache recovery | agent | done |
 | P1-001 | Rebuild leadership on Web Locks | agent | done |
-| P1-008 | Make state set/delete operations convergent | agent | todo |
+| P1-008 | Make state set/delete operations convergent | agent | done |
 | P1-002 | Replace startup sync timing with a repairable handshake | agent | todo |
 | P1-007 | Make named-view ownership atomic and fenced | agent | todo |
 | P1-004 | Run the browser matrix on the final coordination protocol | agent | todo |

@@ -298,3 +298,18 @@ app.state.on('*', () => {
   the browser releasing the lock and cannot promise application cleanup.
 - The testing cluster retains oldest-created selection solely for deterministic tests;
   it is explicitly not a simulation of browser request order.
+
+## 2026-08-14 — convergent state operations
+
+- Set and delete share one operation shape ordered by `(wallTime, logical, tabId,
+  instanceId, operationId)`. String fields use code-unit ordering rather than
+  locale-sensitive collation.
+- Each state actor maintains a hybrid logical clock that cannot move backward and
+  advances from accepted remote clocks. Raw wall-clock arrival is not authority.
+- Deletes remain as invisible tombstones for the workspace lifetime. The 1,024-key
+  limit includes tombstones; v1 does not expire them without a cohort acknowledgement.
+- Local values are structured-cloned and the outbound message must send successfully
+  before commit. `undefined` is reserved for absence and is accepted only through delete.
+- `setAll` emits one validated batch. Every winning key is installed before lexical
+  key notifications and then lexical wildcard notifications; any preflight/send
+  failure leaves the entire batch uncommitted.

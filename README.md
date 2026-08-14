@@ -109,7 +109,9 @@ app.state.setAll({ theme: 'dark', draft: '' })
 
 Two properties to design around:
 
-- **Conflict resolution is last-write-wins** by timestamp (then tab id, then version for same-millisecond writes). There is no merging and no CRDT. This is the right tool for UI state — theme, selection, filters, a draft pointer — and the wrong tool for concurrent edits to the same document body.
+- **Conflict resolution is deterministic last-write-wins.** Set and delete operations use a hybrid logical clock plus actor and operation-id tie breakers, so every delivery order selects the same winner. Deletes retain an in-memory tombstone while the workspace lives, preventing delayed traffic or stale sync from resurrecting a value. There is no field merging or CRDT.
+- **Values use structured-clone semantics.** Cycles, maps, sets, dates, and binary values are supported within documented limits. `undefined` represents absence and is rejected by `set`; use `delete`. Clone or send failure leaves local state unchanged.
+- **`setAll` is one atomic batch.** Every key is installed before key listeners run in lexical order, followed by wildcard listeners. Validation or send failure commits nothing.
 - **State lives in memory only.** When the last tab closes, it's gone. Persistence is deliberately your responsibility, in whatever store you already use:
 
 ```ts
@@ -383,7 +385,7 @@ Tabula uses 13 domain message types plus identity and compatibility control mess
 ```
 identity:probe · identity:claim
 tab:announce · tab:heartbeat · tab:leave
-state:sync-request · state:sync · state:set · state:delete
+state:sync-request · state:sync · state:set · state:delete · state:batch
 view:claim · view:claimed · view:release · view:conflict · view:focus
 leader:query · leader:change
 protocol:reject
@@ -437,7 +439,7 @@ Returns `Workspace<S>`.
 | `delete(key)` | Delete a key. Broadcasts to all tabs. |
 | `keys()` | Returns array of set keys. |
 | `entries()` | Returns `[key, value]` pairs. |
-| `setAll(partial)` | Batch set multiple keys. |
+| `setAll(partial)` | Atomically set multiple keys before ordered notifications. |
 
 ### `WorkspaceViews`
 

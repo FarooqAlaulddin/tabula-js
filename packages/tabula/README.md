@@ -71,7 +71,10 @@ await app.ready // resolves when init is complete
 
 ### Shared state
 
-A typed key-value store that syncs across tabs in real time. Conflict resolution is last-write-wins by timestamp.
+A typed key-value store that syncs across tabs in real time. Set and delete operations
+use a hybrid logical clock plus actor and operation-id tie breakers, so delivery order
+does not change the winner. Deletes retain in-memory tombstones to prevent stale
+traffic from resurrecting values.
 
 ```ts
 app.state.set('theme', 'dark')
@@ -85,6 +88,10 @@ app.state.keys()                 // ['theme', 'draft']
 app.state.entries()              // [['theme', 'dark'], ['draft', '']]
 app.state.setAll({ theme: 'dark', draft: '' })
 ```
+
+Values follow structured-clone semantics within bounded message limits. Use `delete`
+for absence because `set(key, undefined)` is rejected. `setAll` validates and sends one
+atomic batch; all keys are installed before ordered key and wildcard notifications.
 
 State lives in memory only. Persistence is your responsibility:
 
@@ -270,7 +277,7 @@ Tabula uses 13 domain message types plus identity and compatibility control mess
 ```
 identity:probe · identity:claim
 tab:announce · tab:heartbeat · tab:leave
-state:sync-request · state:sync · state:set · state:delete
+state:sync-request · state:sync · state:set · state:delete · state:batch
 view:claim · view:claimed · view:release · view:conflict · view:focus
 leader:query · leader:change
 protocol:reject
@@ -323,7 +330,7 @@ Returns `Workspace<S>`.
 | `delete(key)` | Delete a key. Broadcasts to all tabs. |
 | `keys()` | Returns array of set keys. |
 | `entries()` | Returns `[key, value]` pairs. |
-| `setAll(partial)` | Batch set multiple keys. |
+| `setAll(partial)` | Atomically set multiple keys before ordered notifications. |
 
 ### Events
 

@@ -132,6 +132,12 @@ export function assertBaselineCapabilities(): void {
 	if (typeof globalThis.crypto?.randomUUID !== 'function') {
 		throw new CapabilityError('crypto.randomUUID()', 'A modern secure browser is required.')
 	}
+	if (typeof globalThis.structuredClone !== 'function') {
+		throw new CapabilityError(
+			'structuredClone()',
+			'A modern browser with structured cloning is required.',
+		)
+	}
 	if (typeof globalThis.BroadcastChannel !== 'function') {
 		throw new CapabilityError(
 			'BroadcastChannel',

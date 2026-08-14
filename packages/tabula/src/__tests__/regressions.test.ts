@@ -1,5 +1,5 @@
 import { Channel, State, Views, createWorkspace } from '@tabula/tabula'
-import type { Message, StateEntry } from '@tabula/tabula'
+import type { Message, StateOperation } from '@tabula/tabula'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
 	createStubChannel,
@@ -29,30 +29,28 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 		writer.set('counter', 3)
 
 		// Extract the entries that were broadcast
-		const sentEntries: Array<{ key: string; entry: StateEntry }> = writerChannel.send.mock.calls
+		const sentOperations: StateOperation[] = writerChannel.send.mock.calls
 			.filter((call: unknown[]) => call[0] === 'state:set')
-			.map((call: unknown[]) => call[1] as { key: string; entry: StateEntry })
+			.map((call: unknown[]) => (call[1] as { operation: StateOperation }).operation)
 
-		expect(sentEntries).toHaveLength(3)
-		// All share the same timestamp and tabId, but versions must be 1, 2, 3
-		expect(sentEntries[0].entry.ts).toBe(fixedTime)
-		expect(sentEntries[1].entry.ts).toBe(fixedTime)
-		expect(sentEntries[2].entry.ts).toBe(fixedTime)
-		expect(sentEntries[0].entry.version).toBe(1)
-		expect(sentEntries[1].entry.version).toBe(2)
-		expect(sentEntries[2].entry.version).toBe(3)
+		expect(sentOperations).toHaveLength(3)
+		expect(sentOperations.map((operation) => operation.clock)).toEqual([
+			{ wallTime: fixedTime, logical: 0 },
+			{ wallTime: fixedTime, logical: 1 },
+			{ wallTime: fixedTime, logical: 2 },
+		])
 
 		// Now simulate a SECOND tab receiving these messages in order
 		const receiverId = 'receiver-tab'
 		const receiverChannel = createStubChannel(receiverId)
 		const receiver = new State<Record<string, unknown>>(receiverChannel as any, receiverId)
 
-		for (const { key, entry } of sentEntries) {
+		for (const operation of sentOperations) {
 			receiver.handleMessage(
 				makeMessage({
 					type: 'state:set',
 					from: tabId,
-					payload: { key, entry },
+					payload: { operation },
 				}),
 			)
 		}
@@ -63,8 +61,8 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 		// Verify intermediate values were also accepted by checking
 		// the entry's version reflects the final write
 		const snapshot = receiver.getSnapshot()
-		expect(snapshot.counter.version).toBe(3)
-		expect(snapshot.counter.value).toBe(3)
+		expect(snapshot.counter.clock.logical).toBe(2)
+		expect(snapshot.counter.kind === 'set' && snapshot.counter.value).toBe(3)
 
 		vi.restoreAllMocks()
 	})
@@ -85,7 +83,7 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 				from: sameTabId,
 				payload: {
 					key: 'score',
-					entry: { value: 10, ts: fixedTime, tabId: sameTabId, version: 1 } as StateEntry,
+					entry: { value: 10, ts: fixedTime, tabId: sameTabId, version: 1 },
 				},
 			}),
 		)
@@ -98,7 +96,7 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 				from: sameTabId,
 				payload: {
 					key: 'score',
-					entry: { value: 20, ts: fixedTime, tabId: sameTabId, version: 2 } as StateEntry,
+					entry: { value: 20, ts: fixedTime, tabId: sameTabId, version: 2 },
 				},
 			}),
 		)
@@ -112,7 +110,7 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 				from: sameTabId,
 				payload: {
 					key: 'score',
-					entry: { value: 30, ts: fixedTime, tabId: sameTabId, version: 3 } as StateEntry,
+					entry: { value: 30, ts: fixedTime, tabId: sameTabId, version: 3 },
 				},
 			}),
 		)
