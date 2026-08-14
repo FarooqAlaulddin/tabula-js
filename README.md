@@ -525,8 +525,8 @@ contexts. Every participating page must provide:
 
 Iframes are not supported. Storage-blocked or capability-limited contexts cannot
 join a workspace. Tabula does not provide storage, Web Locks, or BroadcastChannel
-polyfills. The tested browser-version matrix will be published before 1.0 rather
-than inferred from individual API compatibility tables.
+polyfills. The current tested engine baselines and pending Safari verification are
+recorded in the [behavioral contract](./docs/CONTRACT.md#9-capabilities-storage-and-support-floors).
 
 ## Security
 

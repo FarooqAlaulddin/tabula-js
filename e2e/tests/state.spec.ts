@@ -165,7 +165,10 @@ test.describe('Shared State', () => {
 				port2.close()
 			}
 		})
-		expect(failure).toEqual({ name: 'DataCloneError', committed: false })
+		// WebKit reports this browser clone rejection as TypeError; Chromium and Firefox
+		// use DataCloneError. docs/BEHAVIOR.md records the portable no-commit guarantee.
+		expect(['DataCloneError', 'TypeError']).toContain(failure.name)
+		expect(failure.committed).toBe(false)
 	})
 
 	test('late-joining tab receives existing state via sync', async ({ context }) => {

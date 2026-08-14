@@ -2,7 +2,7 @@
 id: P1-004
 title: Run the browser matrix on the final coordination protocol
 phase: 1
-status: todo
+status: in-progress
 depends_on: [P1-007]
 owner: agent
 scope: Playwright projects + CI matrix + engine-specific findings

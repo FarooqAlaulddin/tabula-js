@@ -387,8 +387,8 @@ contexts. Every participating page must provide:
 
 Iframes are not supported. Storage-blocked or capability-limited contexts cannot
 join a workspace. Tabula does not provide storage, Web Locks, or BroadcastChannel
-polyfills. The tested browser-version matrix will be published before 1.0 rather
-than inferred from individual API compatibility tables.
+polyfills. Automated release evidence currently covers current Chromium, Firefox,
+and Playwright WebKit; a real Safari/macOS pass remains required before 1.0 RC.
 
 ## Security
 

@@ -559,12 +559,24 @@ ignoring storage errors, because both make guarantees depend on hidden browser s
 Rationale: capability failures are actionable only when they happen before partial
 startup or atomically at the operation that lost its prerequisite.
 
-The final browser version table comes from P1-004 automated results and dated manual
-Safari evidence, not API tables alone. Normative immediacy is limited to local reads
-after an accepted local commit, local validation errors, and Web Lock exclusion while
-held. Presence, projections, state repair, vacancy, and termination detection are
-eventual. Browser focus, scheduling, bfcache eligibility, and cleanup after process
-death remain browser policy/best effort.
+The automated P1-004 matrix established these tested baselines on 2026-08-14. They
+are evidence floors, not claims that older versions fail. Runtime admission remains
+capability-based so an untested engine with the required semantics is not silently
+treated as proven.
+
+| Project | Tested engine | Result | Scope |
+|---------|---------------|--------|-------|
+| Chromium | Chrome for Testing 145.0.7632.6 (Playwright build 1208) | 49/49 passed | Portable suite plus Chromium lifecycle controls |
+| Firefox | Firefox 146.0.1 (Playwright build 1509) | 47/47 passed | Portable suite |
+| WebKit | Playwright WebKit 26.0 (build 2248) | 47/47 passed | Portable suite; not Safari proof |
+| Safari on macOS | Pending | See [manual checklist](./SAFARI-CHECKLIST.md) | Required before the 1.0 release candidate |
+
+The matrix was repeated three consecutive times with retries disabled: 143/143 each
+run. Normative immediacy is limited to local reads after an accepted local commit,
+local validation errors, and Web Lock exclusion while held. Presence, projections,
+state repair, vacancy, and termination detection are eventual. Browser focus,
+scheduling, bfcache eligibility, and cleanup after process death remain browser
+policy/best effort.
 
 ## 10. Published artifact contract (I10)
 

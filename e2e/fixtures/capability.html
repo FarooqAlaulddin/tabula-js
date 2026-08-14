@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><title>Tabula capability probe</title></head>
+<body>
+<div id="status">loading</div>
+<script type="module">
+import { createWorkspace } from '@farooqalaulddin/tabula-js'
+
+const missing = new URLSearchParams(location.search).get('missing')
+if (missing === 'broadcast-channel') {
+	Object.defineProperty(globalThis, 'BroadcastChannel', { configurable: true, value: undefined })
+} else if (missing === 'web-locks') {
+	Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined })
+}
+
+try {
+	createWorkspace(`capability-${missing}`)
+	document.getElementById('status').textContent = 'unexpected-success'
+} catch (error) {
+	window.__capabilityError = { name: error.name, message: error.message }
+	document.getElementById('status').textContent = 'failed-as-expected'
+}
+</script>
+</body>
+</html>

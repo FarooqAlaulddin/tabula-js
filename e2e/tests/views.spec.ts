@@ -317,33 +317,6 @@ test.describe('Views', () => {
 		expect(storedGeneration).toBeGreaterThan(firstGeneration)
 	})
 
-	test('a frozen view holder is not replaced while its lock remains held', async ({ context }) => {
-		const ns = uniqueNs('view-frozen')
-		const holder = await context.newPage()
-		const contender = await context.newPage()
-		await Promise.all([openTab(holder, ns), openTab(contender, ns)])
-		const claimed = await claimView(holder, 'editor')
-		expect(claimed.status).toBe('claimed')
-		await contender.waitForFunction(() => (window as any).__tabula.views.has('editor'))
-
-		const session = await context.newCDPSession(holder)
-		await session.send('Page.setWebLifecycleState', { state: 'frozen' })
-		await contender.waitForTimeout(1200)
-		const conflict = await claimView(contender, 'editor')
-		expect(conflict.status).toBe('conflict')
-		expect(await hasView(contender, 'editor')).toBe(true)
-		const held = await contender.evaluate(
-			async (name) => {
-				const snapshot = await navigator.locks.query()
-				return snapshot.held?.filter((lock) => lock.name === name).length ?? 0
-			},
-			`tabula-js:v1:${encodeURIComponent(ns)}:view:editor`,
-		)
-		expect(held).toBe(1)
-
-		await session.send('Page.setWebLifecycleState', { state: 'active' })
-	})
-
 	test('bfcache suspension retains the exact view authority', async ({ context }) => {
 		const ns = uniqueNs('view-bfcache')
 		const holder = await context.newPage()

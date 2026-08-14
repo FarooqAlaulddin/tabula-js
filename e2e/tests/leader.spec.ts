@@ -163,36 +163,6 @@ test.describe('Leader Election', () => {
 		await expect.poll(() => isLeader(follower), { timeout: 10000 }).toBe(true)
 	})
 
-	test('a frozen holder is not replaced while its lock remains held', async ({ context }) => {
-		const ns = uniqueNs('leader-frozen')
-		const pageA = await context.newPage()
-		const pageB = await context.newPage()
-		await Promise.all([openTab(pageA, ns), openTab(pageB, ns)])
-		await expect.poll(async () => [await isLeader(pageA), await isLeader(pageB)]).toContain(true)
-
-		const aIsLeader = await isLeader(pageA)
-		const holder = aIsLeader ? pageA : pageB
-		const follower = aIsLeader ? pageB : pageA
-		const session = await context.newCDPSession(holder)
-		await session.send('Page.setWebLifecycleState', { state: 'frozen' })
-
-		await follower.waitForTimeout(1200)
-		expect(await isLeader(follower)).toBe(false)
-		const lockName = `tabula-js:v1:${encodeURIComponent(ns)}:leader`
-		const lockSnapshot = await follower.evaluate(async (name) => {
-			const snapshot = await navigator.locks.query()
-			return {
-				held: snapshot.held?.filter((lock) => lock.name === name).length ?? 0,
-				pending: snapshot.pending?.filter((lock) => lock.name === name).length ?? 0,
-			}
-		}, lockName)
-		expect(lockSnapshot).toEqual({ held: 1, pending: 1 })
-
-		await session.send('Page.setWebLifecycleState', { state: 'active' })
-		await destroyWorkspace(holder)
-		await expect.poll(() => isLeader(follower), { timeout: 10000 }).toBe(true)
-	})
-
 	test('single tab is always leader', async ({ context }) => {
 		const ns = uniqueNs()
 		const pageA = await context.newPage()

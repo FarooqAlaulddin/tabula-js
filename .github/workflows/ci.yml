@@ -15,7 +15,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 11.5.0
 
       - uses: actions/setup-node@v6
         with:
@@ -36,8 +36,42 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      - name: Install Playwright
-        run: pnpm exec playwright install --with-deps chromium
+  browser:
+    name: E2E (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v6
 
-      - name: E2E tests
-        run: pnpm test:e2e
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # @playwright/test pins the browser revision installed by this command.
+      - name: Install ${{ matrix.engine }}
+        run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
+
+      - name: Run ${{ matrix.engine }} suite
+        run: pnpm exec playwright test --config e2e/playwright.config.ts --project=${{ matrix.engine }}
+
+      - name: Retain browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.engine }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
