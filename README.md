@@ -136,16 +136,21 @@ const handle = await app.open('editor', {
 // Tab A: or focus it if it's already open
 if (app.views.has('editor')) app.focus('editor')
 
-// Tab B (at /editor): claim the view
-app.claim('editor')
+// Tab B (at /editor): claim the view without waiting on a conflict
+const claim = await app.claim('editor')
+if (claim.status === 'conflict') {
+  console.log('Already owned by', claim.owner)
+} else {
+  claim.handle.on('vacant', () => console.log('editor released'))
+}
 
 // React to view lifecycle
-app.on('view:claimed', ({ name, tab }) => { })
-app.on('view:vacant', ({ name }) => { })
+app.on('view:claimed', ({ name, tab, token }) => { })
+app.on('view:vacant', ({ name, token }) => { })
 app.on('view:conflict', ({ name, existing, incoming }) => { })
 ```
 
-`syncKeys` stages selected current values for the newly opened tab without putting application state in the URL.
+`syncKeys` transfers selected state operations through the validated protocol without putting application state in the URL or localStorage. `open()` keeps only expiring intent metadata in localStorage and rejects after `openTimeout` (10 seconds by default).
 
 The registry can be queried from any tab:
 
@@ -155,7 +160,7 @@ app.views.has('editor') // boolean
 app.views.list()        // Record<string, TabMeta>
 ```
 
-The handle returned by `open()` controls that view and subscribes to its lifecycle:
+The handle returned by `open()` or a successful `claim()` is fenced to that exact ownership term:
 
 ```ts
 const stop = handle.on('vacant', () => console.log('editor closed'))
@@ -165,7 +170,7 @@ handle.release()
 stop()
 ```
 
-The view registry lives in localStorage, so it survives refreshes; if the holding tab dies without releasing, presence timeout vacates the view automatically.
+The localStorage registry is a discovery projection, not ownership authority. An exclusive per-view Web Lock is authoritative. Refresh reacquires with a new token; crashes rely on browser lock release; and frozen tabs retain ownership until the browser releases their lock.
 
 Two browser realities apply: call `open()` from a user gesture so popup blocking doesn't eat the new tab, and treat `focus()` as a request — browsers retain final control over whether a script may focus another tab.
 
@@ -370,7 +375,7 @@ Features demonstrated:
 Tabula uses three browser APIs for coordination:
 
 - **BroadcastChannel** — real-time messaging between tabs (namespaced per workspace)
-- **localStorage** — durable view registry, presence heartbeats, and pending-open data for new tabs
+- **localStorage** — view/presence projections, fenced generations, and expiring open-intent metadata
 - **Web Locks** — exclusive leadership authority
 
 No WebSocket. No server. No polling. Everything happens client-side within the same origin.
@@ -392,7 +397,7 @@ Tabula uses 13 domain message types plus identity and compatibility control mess
 identity:probe · identity:claim
 tab:announce · tab:heartbeat · tab:leave
 state:sync-request · state:sync · state:set · state:delete · state:batch
-view:claim · view:claimed · view:release · view:conflict · view:focus
+view:claim · view:claimed · view:release · view:conflict · view:focus · view:intent-claim · view:intent-state
 leader:query · leader:change
 protocol:reject
 ```
@@ -415,6 +420,7 @@ only retained matching rounds affect synchronization status.
 | `options.heartbeat` | `number` | Presence heartbeat interval in ms. Default: `1500`. |
 | `options.timeout` | `number` | Time before a silent tab is pruned. Default: `5000`. |
 | `options.readyTimeout` | `number` | Total initial discovery/sync budget in runnable ms. Default: `1000`. |
+| `options.openTimeout` | `number` | Open-intent claim timeout in ms. Default: `10000`. |
 
 Returns `Workspace<S>`.
 
@@ -427,7 +433,7 @@ Returns `Workspace<S>`.
 | `state` | `WorkspaceState<S>` | Shared state API. |
 | `views` | `WorkspaceViews` | View registry queries. |
 | `tabs` | `WorkspaceTabs` | Presence information. |
-| `claim(name)` | `void` | Claim a view for this tab. |
+| `claim(name)` | `Promise<ViewClaimResult>` | Atomically claim a view or return its current projected owner. |
 | `open(name, opts)` | `Promise<ViewHandle>` | Open a view in a new tab. |
 | `focus(name)` | `void` | Request focus for the tab holding a view. |
 | `onLeader(setup)` | `() => void` | Register leader callback. Returns unsubscribe. |
@@ -467,10 +473,18 @@ Returns `Workspace<S>`.
 
 ### `ViewHandle`
 
-Returned by `open()`.
+Returned by `open()` and successful `claim()` results.
 
-| Method | Description |
-|--------|-------------|
+`ViewClaimResult` is `{ status: 'claimed', handle: ViewHandle }` or
+`{ status: 'conflict', owner: TabMeta | null }`. Conflict is an expected result;
+claiming a different view while this tab already owns one rejects with
+`ViewAlreadyClaimedError`.
+
+| Property / Method | Description |
+|-------------------|-------------|
+| `name` | View name captured by this handle. |
+| `token` | `{ generation, claimId }` fencing this ownership term. |
+| `owner` | `TabMeta` for the owner captured by this handle. |
 | `on('vacant', cb)` | Subscribe to vacancy of this view. Returns unsubscribe. |
 | `on('conflict', cb)` | Subscribe to claim conflicts on this view. Returns unsubscribe. |
 | `release()` | Release the view claim. |
@@ -483,9 +497,9 @@ Returned by `open()`.
 | `tab:join` | `TabMeta` | A tab connects to the workspace. |
 | `tab:leave` | `TabMeta` | A tab disconnects (close, crash, timeout). |
 | `leader:change` | `{ tab: TabMeta, isMe: boolean }` | Leadership changes. |
-| `view:claimed` | `{ name: string, tab: TabMeta }` | A view is claimed by a tab. |
-| `view:vacant` | `{ name: string }` | A view is released or its holder disconnected. |
-| `view:conflict` | `{ name, existing, incoming }` | Two tabs claim the same view. |
+| `view:claimed` | `{ name, tab, token }` | A fenced view claim is projected. |
+| `view:vacant` | `{ name, token }` | That exact ownership term becomes vacant. |
+| `view:conflict` | `{ name, existing, incoming, token? }` | A claim encounters an existing owner projection. |
 
 ### `TabMeta`
 

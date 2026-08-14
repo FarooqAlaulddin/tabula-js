@@ -1,518 +1,370 @@
-import { Views } from '@tabula/tabula'
+import type { StoredOpenIntent } from '@tabula/protocol'
+import { ViewAlreadyClaimedError, Views } from '@tabula/tabula'
+import type { StateOperation, ViewClaimToken, ViewRegistryEntry } from '@tabula/tabula'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
 	createStubChannel,
 	createStubPresence,
 	createStubRegistry,
 	installMockDocument,
+	installMockStorage,
 	installMockWindow,
 	makeMessage,
 	makeTab,
 } from './helpers'
 
-function setup(opts: { tabId?: string; tabs?: ReturnType<typeof makeTab>[] } = {}) {
-	const tabId = opts.tabId ?? 'tab-1'
-	const registry = createStubRegistry()
+const namespace = 'test space'
+
+function token(generation: number, claimId = `claim-${generation}`): ViewClaimToken {
+	return { generation, claimId }
+}
+
+function entry(
+	tabId: string,
+	claimToken: ViewClaimToken,
+	instanceId = `${tabId}-instance`,
+): ViewRegistryEntry {
+	return { tabId, instanceId, claimedAt: Date.now(), token: claimToken }
+}
+
+function createViews(
+	tabId = 'tab-1',
+	tabs: ReturnType<typeof makeTab>[] = [],
+	registry = createStubRegistry(),
+) {
 	const channel = createStubChannel(tabId)
-	const presence = createStubPresence(tabId, opts.tabs ?? [])
-	const epoch = 'epoch-1'
+	const presence = createStubPresence(tabId, tabs)
 	const onClaimed = vi.fn()
 	const onVacant = vi.fn()
 	const onConflict = vi.fn()
-
+	const onIntentClaim = vi.fn()
+	const applyIntentState = vi.fn()
+	const onError = vi.fn()
 	const views = new Views(
+		namespace,
 		registry as any,
 		channel as any,
 		presence as any,
-		epoch,
 		onClaimed,
 		onVacant,
 		onConflict,
+		onIntentClaim,
+		applyIntentState,
+		onError,
 	)
-
-	return { views, registry, channel, presence, epoch, onClaimed, onVacant, onConflict }
+	return {
+		views,
+		registry,
+		channel,
+		presence,
+		onClaimed,
+		onVacant,
+		onConflict,
+		onIntentClaim,
+		applyIntentState,
+		onError,
+	}
 }
 
-// ── claim() happy path ────────────────────────────────────────────────────
-
 describe('Views', () => {
-	describe('claim() happy path', () => {
-		it('claiming unclaimed view succeeds', () => {
-			const { views, registry, channel, presence, onClaimed } = setup()
+	let storageMock: ReturnType<typeof installMockStorage>
+	let windowMock: ReturnType<typeof installMockWindow>
+	let documentMock: ReturnType<typeof installMockDocument>
 
-			const result = views.claim('editor')
+	beforeEach(() => {
+		storageMock = installMockStorage()
+		windowMock = installMockWindow()
+		documentMock = installMockDocument()
+	})
 
-			expect(result).toBe(true)
+	afterEach(() => {
+		documentMock.restore()
+		windowMock.restore()
+		storageMock.restore()
+	})
 
-			// registry updated
-			expect(registry.set).toHaveBeenCalledWith(
-				'editor',
-				expect.objectContaining({
-					tabId: 'tab-1',
-					epoch: 'epoch-1',
-				}),
-			)
+	it('claims the exact encoded per-view Web Lock and publishes a fenced projection', async () => {
+		const { views, registry, channel, presence, onClaimed } = createViews()
 
-			// in-memory updated
-			expect(views.get('editor')).toEqual(expect.objectContaining({ id: 'tab-1' }))
+		const result = await views.claim('main/editor')
 
-			// onClaimed fired
-			expect(onClaimed).toHaveBeenCalledWith('editor', expect.objectContaining({ id: 'tab-1' }))
-
-			// channel.send called with view:claimed
-			expect(channel.send).toHaveBeenCalledWith('view:claimed', {
-				name: 'editor',
+		expect(result.status).toBe('claimed')
+		if (result.status !== 'claimed') return
+		expect(windowMock.locks.requestedNames).toContain(
+			'tabula-js:v1:test%20space:view:main%2Feditor',
+		)
+		expect(registry.set).toHaveBeenCalledWith(
+			'main/editor',
+			expect.objectContaining({
 				tabId: 'tab-1',
-			})
+				instanceId: 'tab-1-instance',
+				token: result.authority.token,
+			}),
+		)
+		expect(channel.send).toHaveBeenCalledWith(
+			'view:claimed',
+			expect.objectContaining({ name: 'main/editor', token: result.authority.token }),
+		)
+		expect(onClaimed).toHaveBeenCalledWith(
+			'main/editor',
+			expect.objectContaining({ id: 'tab-1' }),
+			result.authority.token,
+		)
+		expect(presence.setView).toHaveBeenCalledWith('main/editor')
+		expect(sessionStorage.getItem('tabula:test%20space:view-name')).toBe('main/editor')
+	})
 
-			// presence.setView called
-			expect(presence.setView).toHaveBeenCalledWith('editor')
-		})
+	it('is idempotent for the same view and rejects a second view in one tab', async () => {
+		const { views } = createViews()
+		const first = await views.claim('editor')
+		const again = await views.claim('editor')
 
-		it('claim sets correct epoch', () => {
-			const { views, registry } = setup()
-
-			views.claim('dashboard')
-
-			expect(registry.set).toHaveBeenCalledWith(
-				'dashboard',
-				expect.objectContaining({ epoch: 'epoch-1' }),
-			)
+		expect(again).toEqual(first)
+		await expect(views.claim('dashboard')).rejects.toMatchObject({
+			name: ViewAlreadyClaimedError.name,
+			currentView: 'editor',
 		})
 	})
 
-	// ── claim() conflict ──────────────────────────────────────────────────
+	it('allows one winner when two tabs contend for the same view', async () => {
+		const registry = createStubRegistry()
+		const first = createViews('tab-1', [makeTab({ id: 'tab-2' })], registry)
+		const second = createViews('tab-2', [makeTab({ id: 'tab-1' })], registry)
 
-	describe('claim() conflict', () => {
-		it('claiming view held by live tab returns false, onConflict fires', () => {
-			const otherTab = makeTab({ id: 'tab-2' })
-			const { views, registry, onConflict } = setup({ tabs: [otherTab] })
+		const winner = await first.views.claim('editor')
+		second.views.loadFromRegistry()
+		const loser = await second.views.claim('editor')
 
-			// Pre-populate registry as if tab-2 holds the view
-			registry._store.set('editor', {
-				tabId: 'tab-2',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-
-			const result = views.claim('editor')
-
-			expect(result).toBe(false)
-			expect(onConflict).toHaveBeenCalledWith(
-				'editor',
-				expect.objectContaining({ id: 'tab-2' }),
-				expect.objectContaining({ id: 'tab-1' }),
-			)
+		expect(winner.status).toBe('claimed')
+		expect(loser).toEqual({
+			status: 'conflict',
+			owner: expect.objectContaining({ id: 'tab-1' }),
 		})
-
-		it('claiming view held by dead tab succeeds', () => {
-			const { views, registry, onClaimed } = setup()
-
-			// Pre-populate registry with a tab that is NOT in presence (dead)
-			registry._store.set('editor', {
-				tabId: 'tab-dead',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-
-			// tab-dead is not in presence.getAllTabs, so isAlive returns false
-			const result = views.claim('editor')
-
-			expect(result).toBe(true)
-			expect(onClaimed).toHaveBeenCalledWith('editor', expect.objectContaining({ id: 'tab-1' }))
-		})
+		expect(second.onConflict).toHaveBeenCalledWith(
+			'editor',
+			expect.objectContaining({ id: 'tab-1' }),
+			expect.objectContaining({ id: 'tab-2' }),
+			expect.any(Object),
+		)
 	})
 
-	// ── release() ─────────────────────────────────────────────────────────
+	it('ignores stale release handles and releases only the exact active token', async () => {
+		const { views, registry, onVacant } = createViews()
+		const first = await views.claim('editor')
+		if (first.status !== 'claimed') return
+		const stale = first.authority.token
+		views.release('editor', stale)
+		const second = await views.claim('editor')
+		if (second.status !== 'claimed') return
 
-	describe('release()', () => {
-		it('removes from registry and in-memory, fires onVacant, sends view:release, clears presence view', () => {
-			const { views, registry, channel, presence, onVacant } = setup()
+		views.release('editor', stale)
+		expect(views.has('editor')).toBe(true)
+		expect(registry.delete).toHaveBeenCalledTimes(1)
 
-			views.claim('editor')
-			views.release('editor')
-
-			// registry entry removed
-			expect(registry.delete).toHaveBeenCalledWith('editor')
-
-			// in-memory removed
-			expect(views.get('editor')).toBeNull()
-
-			// onVacant fired
-			expect(onVacant).toHaveBeenCalledWith('editor')
-
-			// channel sent view:release
-			expect(channel.send).toHaveBeenCalledWith('view:release', { name: 'editor' })
-
-			// presence view cleared
-			expect(presence.setView).toHaveBeenCalledWith(null)
-		})
+		views.release('editor', second.authority.token)
+		expect(views.has('editor')).toBe(false)
+		expect(onVacant).toHaveBeenLastCalledWith('editor', second.authority.token)
 	})
 
-	// ── handleMessage ─────────────────────────────────────────────────────
+	it('fences release and focus messages with the exact token', async () => {
+		const { views } = createViews()
+		const result = await views.claim('editor')
+		if (result.status !== 'claimed') return
+		const active = result.authority.token
 
-	describe('handleMessage()', () => {
-		it('view:claimed from remote updates in-memory and fires onClaimed', () => {
-			const otherTab = makeTab({ id: 'tab-2' })
-			const { views, onClaimed } = setup({ tabs: [otherTab] })
+		views.handleMessage(
+			makeMessage({ type: 'view:focus', payload: { name: 'editor', token: token(99) } }),
+		)
+		expect(window.focus).not.toHaveBeenCalled()
+		views.handleMessage(
+			makeMessage({ type: 'view:focus', payload: { name: 'editor', token: active } }),
+		)
+		expect(window.focus).toHaveBeenCalledOnce()
 
-			views.handleMessage(
-				makeMessage({
-					type: 'view:claimed',
-					from: 'tab-2',
-					payload: { name: 'editor', tabId: 'tab-2' },
+		views.handleMessage(
+			makeMessage({
+				type: 'view:release',
+				payload: { name: 'editor', token: token(99), request: true },
+			}),
+		)
+		expect(views.has('editor')).toBe(true)
+		views.handleMessage(
+			makeMessage({
+				type: 'view:release',
+				payload: { name: 'editor', token: active, request: true },
+			}),
+		)
+		expect(views.has('editor')).toBe(false)
+	})
+
+	it('does not declare a frozen lock holder vacant', async () => {
+		const remote = makeTab({ id: 'tab-remote' })
+		const { views, registry, onVacant } = createViews('tab-self', [remote])
+		const remoteToken = token(4)
+		registry._store.set('editor', entry(remote.id, remoteToken))
+		views.loadFromRegistry()
+
+		let releaseLock: () => void = () => undefined
+		const held = navigator.locks.request(
+			'tabula-js:v1:test%20space:view:editor',
+			{ mode: 'exclusive' },
+			async () =>
+				new Promise<void>((resolve) => {
+					releaseLock = resolve
 				}),
-			)
+		)
+		await Promise.resolve()
+		views.cleanupForTab(remote.id)
+		await Promise.resolve()
 
-			expect(views.get('editor')).toEqual(expect.objectContaining({ id: 'tab-2' }))
-			expect(onClaimed).toHaveBeenCalledWith('editor', expect.objectContaining({ id: 'tab-2' }))
-		})
-
-		it('view:claimed from unknown tab still registers with synthetic metadata', () => {
-			const { views, onClaimed } = setup()
-
-			views.handleMessage(
-				makeMessage({
-					type: 'view:claimed',
-					from: 'tab-unknown',
-					payload: { name: 'editor', tabId: 'tab-unknown' },
-				}),
-			)
-
-			expect(views.get('editor')).toEqual(
-				expect.objectContaining({ id: 'tab-unknown', view: 'editor' }),
-			)
-			expect(onClaimed).toHaveBeenCalledWith(
-				'editor',
-				expect.objectContaining({ id: 'tab-unknown' }),
-			)
-		})
-
-		it('view:release removes and fires onVacant', () => {
-			const otherTab = makeTab({ id: 'tab-2' })
-			const { views, onClaimed, onVacant } = setup({ tabs: [otherTab] })
-
-			// First, simulate a remote claim
-			views.handleMessage(
-				makeMessage({
-					type: 'view:claimed',
-					from: 'tab-2',
-					payload: { name: 'editor', tabId: 'tab-2' },
-				}),
-			)
-			expect(views.has('editor')).toBe(true)
-			onClaimed.mockClear()
-
-			// Now release
-			views.handleMessage(
-				makeMessage({
-					type: 'view:release',
-					from: 'tab-2',
-					payload: { name: 'editor' },
-				}),
-			)
-
-			expect(views.get('editor')).toBeNull()
-			expect(onVacant).toHaveBeenCalledWith('editor')
-		})
-
-		it('view:focus triggers window.focus if this tab holds that view', () => {
-			const mockWin = installMockWindow()
-			try {
-				const { views } = setup()
-
-				views.claim('editor')
-
-				views.handleMessage(
-					makeMessage({
-						type: 'view:focus',
-						from: 'tab-2',
-						payload: { name: 'editor' },
-					}),
-				)
-
-				expect(window.focus).toHaveBeenCalled()
-			} finally {
-				mockWin.restore()
-			}
-		})
-
-		it('view:focus does NOT trigger window.focus if tab does not hold view', () => {
-			const mockWin = installMockWindow()
-			try {
-				const { views } = setup()
-
-				// tab-1 does NOT hold 'editor'
-				views.handleMessage(
-					makeMessage({
-						type: 'view:focus',
-						from: 'tab-2',
-						payload: { name: 'editor' },
-					}),
-				)
-
-				expect(window.focus).not.toHaveBeenCalled()
-			} finally {
-				mockWin.restore()
-			}
-		})
+		expect(views.has('editor')).toBe(true)
+		expect(onVacant).not.toHaveBeenCalled()
+		releaseLock()
+		await held
 	})
 
-	// ── loadFromRegistry() ────────────────────────────────────────────────
+	it('removes an exact stale projection only after proving its lock is vacant', async () => {
+		const remote = makeTab({ id: 'tab-remote' })
+		const { views, registry, onVacant } = createViews('tab-self', [remote])
+		const remoteToken = token(7)
+		registry._store.set('editor', entry(remote.id, remoteToken))
+		views.loadFromRegistry()
+		views.cleanupForTab(remote.id)
+		await Promise.resolve()
+		await Promise.resolve()
 
-	describe('loadFromRegistry()', () => {
-		it('populates in-memory from registry entries cross-referenced with presence', () => {
-			const otherTab = makeTab({ id: 'tab-2' })
-			const { views, registry } = setup({ tabs: [otherTab] })
-
-			registry._store.set('editor', {
-				tabId: 'tab-1',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-			registry._store.set('dashboard', {
-				tabId: 'tab-2',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-
-			views.loadFromRegistry()
-
-			expect(views.get('editor')).toEqual(expect.objectContaining({ id: 'tab-1' }))
-			expect(views.get('dashboard')).toEqual(expect.objectContaining({ id: 'tab-2' }))
-		})
-
-		it('skips entries for dead tabs', () => {
-			const { views, registry } = setup()
-
-			registry._store.set('editor', {
-				tabId: 'tab-dead',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-
-			views.loadFromRegistry()
-
-			expect(views.get('editor')).toBeNull()
-		})
+		expect(views.has('editor')).toBe(false)
+		expect(registry.delete).toHaveBeenCalledWith('editor')
+		expect(onVacant).toHaveBeenCalledWith('editor', remoteToken)
 	})
 
-	// ── validateAgainstPresence() ─────────────────────────────────────────
+	it('stores only intent metadata and sends selected state through the protocol', async () => {
+		const { views, channel, applyIntentState } = createViews()
+		const now = Date.now()
+		const intent: StoredOpenIntent = {
+			intentId: 'intent-1',
+			view: 'editor',
+			requester: { tabId: 'tab-opener', instanceId: 'opener-instance' },
+			syncKeys: ['document'],
+			createdAt: now,
+			expiresAt: now + 10_000,
+		}
+		localStorage.setItem('tabula:test space:pending-open:editor', JSON.stringify(intent))
+		const result = await views.claim('editor')
+		if (result.status !== 'claimed') return
 
-	describe('validateAgainstPresence()', () => {
-		it('removes entries whose tab is dead, fires onVacant', () => {
-			const deadTab = makeTab({ id: 'tab-dead' })
-			const { views, registry, presence, onVacant } = setup({ tabs: [deadTab] })
+		expect(localStorage.getItem('tabula:test space:pending-open:editor')).toBeNull()
+		expect(channel.send).toHaveBeenCalledWith(
+			'view:intent-claim',
+			{ intentId: intent.intentId, name: 'editor', token: result.authority.token },
+			intent.requester,
+		)
 
-			// Claim with dead tab present, then remove it from presence
-			registry._store.set('editor', {
-				tabId: 'tab-dead',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-			views.loadFromRegistry()
-			expect(views.has('editor')).toBe(true)
-
-			// Now simulate tab-dead leaving by updating presence tabs
-			presence.setTabs([])
-
-			views.validateAgainstPresence()
-
-			expect(views.get('editor')).toBeNull()
-			expect(registry.delete).toHaveBeenCalledWith('editor')
-			expect(onVacant).toHaveBeenCalledWith('editor')
-		})
+		const operation: StateOperation = {
+			kind: 'set',
+			key: 'document',
+			value: { title: 'Protocol only' },
+			clock: { wallTime: now, logical: 0 },
+			tabId: 'tab-opener',
+			instanceId: 'opener-instance',
+			operationId: 'operation-1',
+		}
+		views.handleMessage(
+			makeMessage({
+				from: intent.requester,
+				type: 'view:intent-state',
+				payload: {
+					intentId: intent.intentId,
+					name: 'editor',
+					token: result.authority.token,
+					operations: [operation],
+				},
+			}),
+		)
+		expect(applyIntentState).toHaveBeenCalledWith([operation], intent.requester)
 	})
 
-	// ── cleanupForTab() ───────────────────────────────────────────────────
-
-	describe('cleanupForTab()', () => {
-		it('removes all views for a specific tab', () => {
-			const otherTab = makeTab({ id: 'tab-2' })
-			const { views, registry, onVacant } = setup({ tabs: [otherTab] })
-
-			// Simulate tab-2 holding two views via loadFromRegistry
-			registry._store.set('editor', {
-				tabId: 'tab-2',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-			registry._store.set('dashboard', {
-				tabId: 'tab-2',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-			views.loadFromRegistry()
-
-			views.cleanupForTab('tab-2')
-
-			expect(views.get('editor')).toBeNull()
-			expect(views.get('dashboard')).toBeNull()
-			expect(registry.delete).toHaveBeenCalledWith('editor')
-			expect(registry.delete).toHaveBeenCalledWith('dashboard')
-			expect(onVacant).toHaveBeenCalledWith('editor')
-			expect(onVacant).toHaveBeenCalledWith('dashboard')
-		})
+	it('rejects intent state with a stale token or the wrong requester', async () => {
+		const { views, applyIntentState } = createViews()
+		const now = Date.now()
+		const intent: StoredOpenIntent = {
+			intentId: 'intent-1',
+			view: 'editor',
+			requester: { tabId: 'tab-opener', instanceId: 'opener-instance' },
+			syncKeys: [],
+			createdAt: now,
+			expiresAt: now + 10_000,
+		}
+		localStorage.setItem('tabula:test space:pending-open:editor', JSON.stringify(intent))
+		await views.claim('editor')
+		views.handleMessage(
+			makeMessage({
+				from: { tabId: 'attacker', instanceId: 'attacker-instance' },
+				type: 'view:intent-state',
+				payload: { intentId: intent.intentId, name: 'editor', token: token(999), operations: [] },
+			}),
+		)
+		expect(applyIntentState).not.toHaveBeenCalled()
 	})
 
-	// ── Reconciliation (wake-up) ──────────────────────────────────────────
+	it('lets a late child claim normally without consuming an expired open intent', async () => {
+		const { views, channel } = createViews()
+		const intent: StoredOpenIntent = {
+			intentId: 'expired-intent',
+			view: 'editor',
+			requester: { tabId: 'tab-opener', instanceId: 'opener-instance' },
+			syncKeys: ['document'],
+			createdAt: 1,
+			expiresAt: 2,
+		}
+		localStorage.setItem('tabula:test space:pending-open:editor', JSON.stringify(intent))
 
-	describe('reconciliation (wake-up)', () => {
-		let mockDoc: ReturnType<typeof installMockDocument>
-
-		beforeEach(() => {
-			mockDoc = installMockDocument('hidden')
-		})
-
-		afterEach(() => {
-			mockDoc.restore()
-		})
-
-		it('after visibility change to visible, reconcile runs', () => {
-			const { views } = setup()
-
-			views.start()
-
-			const handlers = mockDoc.getHandlers('visibilitychange')
-			expect(handlers.length).toBeGreaterThan(0)
-
-			// Trigger visibility change
-			mockDoc.setVisibility('visible')
-			handlers[0]()
-
-			// reconcile was called -- it reads the registry
-			// No assertion on internal, just verify no error
-		})
-
-		it('reconcile: our view taken while sleeping yields it', () => {
-			const { views, registry, presence, onVacant } = setup()
-
-			views.start()
-
-			// Claim a view first
-			views.claim('editor')
-			onVacant.mockClear()
-
-			// Simulate another tab taking our view while we were sleeping
-			registry._store.set('editor', {
-				tabId: 'tab-other',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-
-			// Trigger wake-up
-			mockDoc.setVisibility('visible')
-			const handlers = mockDoc.getHandlers('visibilitychange')
-			handlers[0]()
-
-			// Our view should have been yielded
-			expect(onVacant).toHaveBeenCalledWith('editor')
-			expect(presence.setView).toHaveBeenCalledWith(null)
-		})
-
-		it('reconcile: dead tab view cleaned up', () => {
-			const { views, registry, onVacant } = setup()
-
-			views.start()
-
-			// Seed registry with a dead tab's view
-			registry._store.set('stale-view', {
-				tabId: 'tab-dead',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-
-			// Trigger wake-up
-			mockDoc.setVisibility('visible')
-			const handlers = mockDoc.getHandlers('visibilitychange')
-			handlers[0]()
-
-			// Dead tab's view should be cleaned up
-			expect(registry.delete).toHaveBeenCalledWith('stale-view')
-			expect(onVacant).toHaveBeenCalledWith('stale-view')
-		})
+		expect((await views.claim('editor')).status).toBe('claimed')
+		expect(localStorage.getItem('tabula:test space:pending-open:editor')).toBeNull()
+		expect(channel.send).not.toHaveBeenCalledWith(
+			'view:intent-claim',
+			expect.anything(),
+			expect.anything(),
+		)
 	})
 
-	// ── Query methods ─────────────────────────────────────────────────────
+	it('restores and reclaims the remembered view with a new generation', async () => {
+		sessionStorage.setItem('tabula:test%20space:view-name', 'editor')
+		localStorage.setItem('tabula:test%20space:view-generation:editor', '3')
+		const { views } = createViews()
 
-	describe('query methods', () => {
-		it('get returns TabMeta or null', () => {
-			const { views } = setup()
+		await views.restoreRememberedView()
 
-			expect(views.get('nonexistent')).toBeNull()
-
-			views.claim('editor')
-			expect(views.get('editor')).toEqual(expect.objectContaining({ id: 'tab-1' }))
-		})
-
-		it('listAll returns all view entries', () => {
-			const otherTab = makeTab({ id: 'tab-2' })
-			const { views, registry } = setup({ tabs: [otherTab] })
-
-			views.claim('editor')
-
-			registry._store.set('dashboard', {
-				tabId: 'tab-2',
-				claimedAt: Date.now(),
-				epoch: 'epoch-1',
-				meta: {},
-			})
-			views.loadFromRegistry()
-
-			const all = views.listAll()
-			expect(all).toEqual({
-				editor: expect.objectContaining({ id: 'tab-1' }),
-				dashboard: expect.objectContaining({ id: 'tab-2' }),
-			})
-		})
-
-		it('has returns boolean', () => {
-			const { views } = setup()
-
-			expect(views.has('editor')).toBe(false)
-			views.claim('editor')
-			expect(views.has('editor')).toBe(true)
-		})
-
-		it('focus sends view:focus message', () => {
-			const { views, channel } = setup()
-
-			views.focus('editor')
-
-			expect(channel.send).toHaveBeenCalledWith('view:focus', { name: 'editor' })
-		})
+		expect(views.getAuthority('editor')?.token.generation).toBe(4)
 	})
 
-	// ── stop() ────────────────────────────────────────────────────────────
+	it('keeps its held lock when listeners stop for bfcache suspension', async () => {
+		const { views } = createViews()
+		await views.claim('editor')
+		views.start()
+		views.stop()
 
-	describe('stop()', () => {
-		it('removes visibility handler', () => {
-			const mockDoc = installMockDocument()
-			try {
-				const { views } = setup()
+		expect(windowMock.locks.isHeld('tabula-js:v1:test%20space:view:editor')).toBe(true)
+	})
 
-				views.start()
+	it('loads modern registry projections and ignores older-token announcements', () => {
+		const remote = makeTab({ id: 'tab-remote' })
+		const { views, registry } = createViews('tab-self', [remote])
+		registry._store.set('editor', entry(remote.id, token(5)))
+		views.loadFromRegistry()
+		views.handleMessage(
+			makeMessage({
+				from: remote.id,
+				type: 'view:claimed',
+				payload: {
+					name: 'editor',
+					tabId: remote.id,
+					instanceId: `${remote.id}-instance`,
+					token: token(4),
+				},
+			}),
+		)
 
-				const handlersBefore = mockDoc.getHandlers('visibilitychange')
-				expect(handlersBefore.length).toBe(1)
-
-				views.stop()
-
-				const handlersAfter = mockDoc.getHandlers('visibilitychange')
-				expect(handlersAfter.length).toBe(0)
-			} finally {
-				mockDoc.restore()
-			}
-		})
+		expect(views.getAuthority('editor')?.token).toEqual(token(5))
 	})
 })

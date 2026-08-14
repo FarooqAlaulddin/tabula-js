@@ -41,10 +41,12 @@ function Dashboard() {
 	}
 
 	const expandCanvas = () => {
-		workspace.open('canvas', {
-			url: '/canvas.html',
-			syncKeys: ['elements', 'theme'],
-		})
+		void workspace
+			.open('canvas', {
+				url: '/canvas.html',
+				syncKeys: ['elements', 'theme'],
+			})
+			.catch(console.error)
 	}
 
 	return (

@@ -33,11 +33,11 @@ const app = createWorkspace(NS, { heartbeat: 1000, timeout: 4000 })
 const statusEl = document.getElementById('status')
 const editorEl = document.getElementById('editor')
 
-// Claim after init — synced state applied automatically via pending-open
-app.ready.then(() => {
+// Claim after init; selected open() state arrives through the protocol handshake.
+app.ready.then(async () => {
 	try {
-		app.claim('editor')
-		statusEl.textContent = 'Claimed "editor"'
+		const result = await app.claim('editor')
+		statusEl.textContent = result.status === 'claimed' ? 'Claimed "editor"' : 'Editor already open'
 	} catch (e) {
 		statusEl.textContent = 'Claim failed: ' + e.message
 	}

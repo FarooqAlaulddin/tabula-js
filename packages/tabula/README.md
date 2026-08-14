@@ -113,11 +113,12 @@ const handle = await app.open('editor', {
 })
 
 // Tab B (at /editor): claim the view
-app.claim('editor')
+const claim = await app.claim('editor')
+if (claim.status === 'conflict') console.log('Already owned by', claim.owner)
 
 // React to view lifecycle
-app.on('view:claimed', ({ name, tab }) => { })
-app.on('view:vacant', ({ name }) => { })
+app.on('view:claimed', ({ name, tab, token }) => { })
+app.on('view:vacant', ({ name, token }) => { })
 app.on('view:conflict', ({ name, existing, incoming }) => { })
 ```
 
@@ -261,7 +262,7 @@ Features demonstrated:
 Tabula uses three browser APIs for coordination:
 
 - **BroadcastChannel** — real-time messaging between tabs (namespaced per workspace)
-- **localStorage** — durable view registry, presence heartbeats, and pending-open data for new tabs
+- **localStorage** — view/presence projections, fenced generations, and expiring open-intent metadata
 - **Web Locks** — exclusive leadership authority
 
 No WebSocket. No server. No polling. Everything happens client-side within the same origin.
@@ -283,7 +284,7 @@ Tabula uses 13 domain message types plus identity and compatibility control mess
 identity:probe · identity:claim
 tab:announce · tab:heartbeat · tab:leave
 state:sync-request · state:sync · state:set · state:delete · state:batch
-view:claim · view:claimed · view:release · view:conflict · view:focus
+view:claim · view:claimed · view:release · view:conflict · view:focus · view:intent-claim · view:intent-state
 leader:query · leader:change
 protocol:reject
 ```
@@ -306,6 +307,7 @@ matching rounds can change synchronization status.
 | `options.heartbeat` | `number` | Presence heartbeat interval in ms. Default: `1500`. |
 | `options.timeout` | `number` | Time before a silent tab is pruned. Default: `5000`. |
 | `options.readyTimeout` | `number` | Total initial discovery/sync budget in runnable ms. Default: `1000`. |
+| `options.openTimeout` | `number` | Open-intent claim timeout in ms. Default: `10000`. |
 
 Returns `Workspace<S>`.
 
@@ -318,7 +320,7 @@ Returns `Workspace<S>`.
 | `state` | `WorkspaceState<S>` | Shared state API. |
 | `views` | `WorkspaceViews` | View registry queries. |
 | `tabs` | `WorkspaceTabs` | Presence information. |
-| `claim(name)` | `void` | Claim a view for this tab. |
+| `claim(name)` | `Promise<ViewClaimResult>` | Atomically claim a view or return its projected owner. |
 | `open(name, opts)` | `Promise<ViewHandle>` | Open a view in a new tab. |
 | `focus(name)` | `void` | Focus the tab holding a view. |
 | `onLeader(setup)` | `() => void` | Register leader callback. Returns unsubscribe. |
@@ -339,6 +341,17 @@ Returns `Workspace<S>`.
 | `entries()` | Returns `[key, value]` pairs. |
 | `setAll(partial)` | Atomically set multiple keys before ordered notifications. |
 
+### `ViewClaimResult` and `ViewHandle`
+
+`claim(name)` resolves to `{ status: 'claimed', handle }` or
+`{ status: 'conflict', owner }`. Conflict is expected; claiming a different view
+while the tab owns one rejects with `ViewAlreadyClaimedError`.
+
+Both successful `claim()` and `open()` return a handle with readonly `name`, `owner`,
+and `{ generation, claimId }` token properties. `release()` and `focus()` target only
+that token, so stale handles cannot control a replacement claim. `on('vacant', cb)`
+and `on('conflict', cb)` return unsubscribe functions.
+
 ### Events
 
 | Event | Payload | When |
@@ -346,9 +359,9 @@ Returns `Workspace<S>`.
 | `tab:join` | `TabMeta` | A tab connects to the workspace. |
 | `tab:leave` | `TabMeta` | A tab disconnects (close, crash, timeout). |
 | `leader:change` | `{ tab: TabMeta, isMe: boolean }` | Leadership changes. |
-| `view:claimed` | `{ name: string, tab: TabMeta }` | A view is claimed by a tab. |
-| `view:vacant` | `{ name: string }` | A view is released or its holder disconnected. |
-| `view:conflict` | `{ name, existing, incoming }` | Two tabs claim the same view. |
+| `view:claimed` | `{ name, tab, token }` | A fenced view claim is projected. |
+| `view:vacant` | `{ name, token }` | That exact ownership term becomes vacant. |
+| `view:conflict` | `{ name, existing, incoming, token? }` | A claim encounters an owner projection. |
 
 ### `TabMeta`
 

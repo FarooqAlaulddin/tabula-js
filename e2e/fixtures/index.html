@@ -12,6 +12,7 @@ const ns = params.get('ns') || 'e2e-default'
 const heartbeat = Number(params.get('heartbeat')) || 200
 const timeout = Number(params.get('timeout')) || 1000
 const readyTimeout = Number(params.get('readyTimeout')) || 1000
+const openTimeout = Number(params.get('openTimeout')) || 10000
 
 window.__tabulaModule = { createWorkspace }
 window.__focusCallCount = 0
@@ -21,7 +22,7 @@ window.focus = () => {
 	originalFocus()
 }
 
-const app = createWorkspace(ns, { heartbeat, timeout, readyTimeout })
+const app = createWorkspace(ns, { heartbeat, timeout, readyTimeout, openTimeout })
 
 // expose for Playwright
 window.__tabula = app

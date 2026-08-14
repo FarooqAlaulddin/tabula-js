@@ -477,8 +477,68 @@ describe('workspace lifecycle and capabilities', () => {
 		vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
 			throw new DOMException('quota', 'QuotaExceededError')
 		})
-		expect(() => workspace.claim('editor')).toThrow(StorageOperationError)
+		await expect(workspace.claim('editor')).rejects.toBeInstanceOf(StorageOperationError)
 		expect(workspace.views.has('editor')).toBe(false)
 		workspace.destroy()
+	})
+
+	it('removes open intent metadata when the popup is blocked', async () => {
+		const workspace = await initialize()
+		windowMock.open.mockReturnValueOnce(null)
+
+		await expect(
+			workspace.open('editor', { url: '/claim.html', syncKeys: ['document'] }),
+		).rejects.toThrow('blocked the popup')
+		expect(localStorage.getItem('tabula:lifecycle:pending-open:editor')).toBeNull()
+		workspace.destroy()
+	})
+
+	it('stores metadata only and removes it when open times out', async () => {
+		const workspace = createWorkspace<Record<string, unknown>>('open-timeout', {
+			openTimeout: 250,
+		})
+		await vi.advanceTimersByTimeAsync(1000)
+		await workspace.ready
+		const opened = workspace.open('editor', { url: '/claim.html', syncKeys: ['document'] })
+		const timedOut = expect(opened).rejects.toThrow('within 250ms')
+		await Promise.resolve()
+		const key = 'tabula:open-timeout:pending-open:editor'
+		const stored = JSON.parse(localStorage.getItem(key) ?? '{}')
+		expect(stored).toMatchObject({ view: 'editor', syncKeys: ['document'] })
+		expect(stored).not.toHaveProperty('syncedState')
+
+		await vi.advanceTimersByTimeAsync(250)
+		await timedOut
+		expect(localStorage.getItem(key)).toBeNull()
+		workspace.destroy()
+	})
+
+	it('removes a pending open intent and rejects it on destroy', async () => {
+		const workspace = await initialize()
+		const opened = workspace.open('editor', { url: '/claim.html' })
+		await Promise.resolve()
+		expect(localStorage.getItem('tabula:lifecycle:pending-open:editor')).not.toBeNull()
+
+		workspace.destroy()
+		await expect(opened).rejects.toBeInstanceOf(WorkspaceDestroyedError)
+		expect(localStorage.getItem('tabula:lifecycle:pending-open:editor')).toBeNull()
+	})
+
+	it('supersedes an older open for the same view without deleting the newer intent', async () => {
+		const workspace = await initialize()
+		const first = workspace.open('editor', { url: '/first' })
+		const firstRejected = expect(first).rejects.toThrow('superseded')
+		await Promise.resolve()
+		const firstIntent = JSON.parse(
+			localStorage.getItem('tabula:lifecycle:pending-open:editor') ?? '{}',
+		).intentId
+		const second = workspace.open('editor', { url: '/second' })
+		await Promise.resolve()
+
+		await firstRejected
+		const current = JSON.parse(localStorage.getItem('tabula:lifecycle:pending-open:editor') ?? '{}')
+		expect(current.intentId).not.toBe(firstIntent)
+		workspace.destroy()
+		await expect(second).rejects.toBeInstanceOf(WorkspaceDestroyedError)
 	})
 })

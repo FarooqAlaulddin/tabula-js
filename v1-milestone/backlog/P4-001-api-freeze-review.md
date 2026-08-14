@@ -52,4 +52,15 @@ FEATURE-COMPLETE, and tests required by accepted decisions.
 
 ## Outcome
 
-(pending)
+P1-007 candidate changes to review before API freeze:
+
+- `claim(name)` changed from fire-and-forget `void` to `Promise<ViewClaimResult>` with
+  explicit `claimed` and expected `conflict` branches.
+- Successful claims and `open()` return the same token-fenced `ViewHandle`, exposing
+  readonly `name`, `owner`, and `token`; stale handle actions are no-ops.
+- `ViewAlreadyClaimedError` is public and identifies `currentView`.
+- `view:claimed` and `view:vacant` include the exact token; `view:conflict` may include
+  the existing projected token.
+- `WorkspaceOptions.openTimeout` is public and defaults to 10 seconds.
+- `ViewClaimToken` and `ViewClaimResult` are exported; storage intent/correlation
+  shapes remain internal and must stay absent from the packed declaration surface.

@@ -327,11 +327,10 @@ describe('State operation convergence', () => {
 		expect(channel.send).not.toHaveBeenCalled()
 	})
 
-	it('requests sync and returns selected live values only', () => {
+	it('requests sync after local set and delete operations', () => {
 		const { state, channel } = createState()
 		state.setAll({ theme: 'dark', count: 2 })
 		state.delete('count')
-		expect(state.getKeysForSync(['theme', 'count', 'missing'])).toEqual({ theme: 'dark' })
 		channel.send.mockClear()
 		state.requestSync()
 		expect(channel.send).toHaveBeenCalledWith('state:sync-request', null)

@@ -210,7 +210,7 @@ describe('Integration: multi-tab scenarios', () => {
 		it('claim in tab A, views.has in tab B returns true', async () => {
 			const { tabA, tabB } = await createTwoTabs()
 
-			tabA.claim('editor')
+			await tabA.claim('editor')
 			// Give time for the view:claimed message to propagate
 			await vi.advanceTimersByTimeAsync(50)
 

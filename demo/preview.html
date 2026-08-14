@@ -34,10 +34,10 @@ const statusEl = document.getElementById('status')
 const previewEl = document.getElementById('preview')
 
 // Claim after init
-app.ready.then(() => {
+app.ready.then(async () => {
 	try {
-		app.claim('preview')
-		statusEl.textContent = 'Claimed "preview"'
+		const result = await app.claim('preview')
+		statusEl.textContent = result.status === 'claimed' ? 'Claimed "preview"' : 'Preview already open'
 	} catch (e) {
 		statusEl.textContent = 'Claim failed: ' + e.message
 	}

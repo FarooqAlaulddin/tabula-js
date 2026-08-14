@@ -43,19 +43,20 @@ describe('createMockWorkspace', () => {
 		expect(app.state.get('theme')).toBeUndefined()
 	})
 
-	it('claims a view', () => {
+	it('claims a view', async () => {
 		const app = createMockWorkspace<TestState>()
 		const cb = vi.fn()
 		app.on('view:claimed', cb)
-		app.claim('writer')
+		const result = await app.claim('writer')
+		expect(result.status).toBe('claimed')
 		expect(app.views.has('writer')).toBe(true)
 		expect(cb).toHaveBeenCalledWith(expect.objectContaining({ name: 'writer' }))
 	})
 
-	it('throws on double claim', () => {
+	it('throws on double claim', async () => {
 		const app = createMockWorkspace<TestState>()
-		app.claim('writer')
-		expect(() => app.claim('editor')).toThrow('already holds')
+		await app.claim('writer')
+		await expect(app.claim('editor')).rejects.toThrow('already owns')
 	})
 
 	it('is leader by default in standalone mode', () => {
@@ -127,17 +128,44 @@ describe('createTestCluster', () => {
 		expect(cb).toHaveBeenCalledWith('light')
 	})
 
-	it('propagates view claims across tabs', () => {
+	it('propagates view claims across tabs', async () => {
 		const cluster = createTestCluster<TestState>('test')
 		const tabA = cluster.createTab()
 		const tabB = cluster.createTab()
 
 		const cb = vi.fn()
 		tabA.on('view:claimed', cb)
-		tabB.claim('writer')
+		await tabB.claim('writer')
 
 		expect(cb).toHaveBeenCalledWith(expect.objectContaining({ name: 'writer' }))
 		expect(tabA.views.has('writer')).toBe(true)
+	})
+
+	it('returns one winner and one conflict for a shared view', async () => {
+		const cluster = createTestCluster<TestState>('test')
+		const tabA = cluster.createTab()
+		const tabB = cluster.createTab()
+
+		const [first, second] = await Promise.all([tabA.claim('writer'), tabB.claim('writer')])
+		expect(first.status).toBe('claimed')
+		expect(second).toEqual({
+			status: 'conflict',
+			owner: expect.objectContaining({ id: tabA.tabs.current().id }),
+		})
+	})
+
+	it('fences a stale testing handle from a replacement claim', async () => {
+		const cluster = createTestCluster<TestState>('test')
+		const tabA = cluster.createTab()
+		const tabB = cluster.createTab()
+		const first = await tabA.claim('writer')
+		if (first.status !== 'claimed') throw new Error('Expected the first claim to win.')
+		first.handle.release()
+		const replacement = await tabB.claim('writer')
+		expect(replacement.status).toBe('claimed')
+
+		first.handle.release()
+		expect(tabA.views.get('writer')?.id).toBe(tabB.tabs.current().id)
 	})
 
 	it('emits tab:join when new tab joins', () => {

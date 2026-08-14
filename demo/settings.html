@@ -60,12 +60,11 @@ const NS = 'tabula-demo'
 const app = createWorkspace(NS, { heartbeat: 1000, timeout: 4000 })
 const statusEl = document.getElementById('status')
 
-// Claim the view after init — app.claim() reads pending-open data from localStorage
-// (written by the opener's app.open()) and applies synced state automatically.
-app.ready.then(() => {
+// Claim after init; selected open() state arrives through the protocol handshake.
+app.ready.then(async () => {
 	try {
-		app.claim('settings')
-		statusEl.textContent = 'Claimed "settings"'
+		const result = await app.claim('settings')
+		statusEl.textContent = result.status === 'claimed' ? 'Claimed "settings"' : 'Settings already open'
 	} catch (e) {
 		statusEl.textContent = 'Claim failed: ' + e.message
 	}

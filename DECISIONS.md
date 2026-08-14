@@ -328,3 +328,26 @@ app.state.on('*', () => {
   continue with bounded backoff and on peer activity.
 - Sixteen recent correlations retain late-response repair without unbounded memory.
   Destroy and bfcache suspension cancel retry timers, waiters, and correlation state.
+
+## 2026-08-14 — atomic and fenced named views
+
+- An exclusive `tabula-js:v1:<encoded namespace>:view:<encoded view>` Web Lock is the
+  only named-view authority. `claim()` uses `ifAvailable`, returns a promise for a
+  claimed/conflict result, and never queues behind an ordinary conflict.
+- One tab owns at most one view in v1. A different second claim rejects with
+  `ViewAlreadyClaimedError`; repeating the same claim returns a handle for the same
+  ownership term.
+- Every ownership term carries a persistent generation and random claim id. Registry
+  projections, control messages, events, and handles are token-fenced, so stale
+  release and focus actions cannot affect a replacement owner.
+- Registry and presence data are discovery projections. Registry deletion cannot
+  release authority, frozen holders are not stolen, and crash vacancy requires proof
+  that the browser has released the Web Lock.
+- `open()` stores only expiring intent metadata. Selected state operations move over
+  directed, validated `view:intent-claim` and `view:intent-state` messages, preserving
+  structured-clone types without placing application values in URLs or storage.
+- `openTimeout` defaults to 10 seconds. Popup block, timeout, supersession, destroy,
+  terminal failure, and successful claim all clean the exact pending correlation.
+- Refresh remembers the view name but reacquires with a fresh token. bfcache suspension
+  retains the held lock. Focus success means the exact holder called `window.focus()`;
+  browser foreground policy remains outside Tabula's guarantee.

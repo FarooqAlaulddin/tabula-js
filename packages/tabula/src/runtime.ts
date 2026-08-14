@@ -60,6 +60,16 @@ export class WorkspaceFailedError extends Error {
 	}
 }
 
+export class ViewAlreadyClaimedError extends Error {
+	readonly currentView: string
+
+	constructor(currentView: string) {
+		super(`This tab already owns the '${currentView}' view; release it before claiming another.`)
+		this.name = 'ViewAlreadyClaimedError'
+		this.currentView = currentView
+	}
+}
+
 interface DocumentIdentity {
 	instanceId: string
 	startedAt: number

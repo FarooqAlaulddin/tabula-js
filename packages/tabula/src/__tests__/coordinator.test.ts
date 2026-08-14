@@ -84,11 +84,9 @@ describe('Coordinator (via createWorkspace)', () => {
 			expect(sessionStorage.getItem('tabula:tab-id')).toBe('test-uuid-1234')
 		})
 
-		it('stores session epoch in sessionStorage', async () => {
+		it('does not write the obsolete global session epoch', async () => {
 			await createAndInit()
-			const epoch = sessionStorage.getItem('tabula:epoch')
-			expect(epoch).toBeTruthy()
-			expect(Number(epoch)).toBeGreaterThan(0)
+			expect(sessionStorage.getItem('tabula:epoch')).toBeNull()
 		})
 
 		it('tab ID persists across calls (uses sessionStorage)', async () => {
@@ -183,23 +181,23 @@ describe('Coordinator (via createWorkspace)', () => {
 	describe('views and claim', () => {
 		it('claim() works after init', async () => {
 			const ws = await createAndInit<TestState>()
-			ws.claim('editor')
-			// claim is enqueued but we are already ready, so it runs immediately
+			const result = await ws.claim('editor')
+			expect(result.status).toBe('claimed')
 			expect(ws.views.has('editor')).toBe(true)
 			ws.destroy()
 		})
 
 		it('claim() throws if tab already holds a view', async () => {
 			const ws = await createAndInit<TestState>()
-			ws.claim('editor')
+			await ws.claim('editor')
 
-			expect(() => ws.claim('writer')).toThrow('already holds')
+			await expect(ws.claim('writer')).rejects.toThrow('already owns')
 			ws.destroy()
 		})
 
 		it('views.get returns TabMeta after claim', async () => {
 			const ws = await createAndInit<TestState>()
-			ws.claim('editor')
+			await ws.claim('editor')
 
 			const tab = ws.views.get('editor')
 			expect(tab).not.toBeNull()
@@ -211,14 +209,14 @@ describe('Coordinator (via createWorkspace)', () => {
 			const ws = await createAndInit<TestState>()
 			expect(ws.views.has('editor')).toBe(false)
 
-			ws.claim('editor')
+			await ws.claim('editor')
 			expect(ws.views.has('editor')).toBe(true)
 			ws.destroy()
 		})
 
 		it('views.list returns all claimed views', async () => {
 			const ws = await createAndInit<TestState>()
-			ws.claim('editor')
+			await ws.claim('editor')
 
 			const list = ws.views.list()
 			expect(Object.keys(list)).toContain('editor')
@@ -333,7 +331,7 @@ describe('Coordinator (via createWorkspace)', () => {
 			const cb = vi.fn()
 			const unsub = ws.on('view:claimed', cb)
 
-			ws.claim('editor')
+			await ws.claim('editor')
 			expect(cb).toHaveBeenCalledWith(expect.objectContaining({ name: 'editor' }))
 
 			cb.mockClear()
@@ -351,7 +349,7 @@ describe('Coordinator (via createWorkspace)', () => {
 			ws.on('view:claimed', cb)
 
 			ws.off('view:claimed', cb)
-			ws.claim('editor')
+			await ws.claim('editor')
 
 			expect(cb).not.toHaveBeenCalled()
 			ws.destroy()
@@ -408,11 +406,12 @@ describe('Coordinator (via createWorkspace)', () => {
 			const ws = createWorkspace<TestState>('test-ns')
 
 			// Claim before init completes
-			ws.claim('editor')
+			const claim = ws.claim('editor')
 
 			// Advance timers to complete init
 			await vi.advanceTimersByTimeAsync(1000)
 			await ws.ready
+			await claim
 
 			expect(ws.views.has('editor')).toBe(true)
 			ws.destroy()

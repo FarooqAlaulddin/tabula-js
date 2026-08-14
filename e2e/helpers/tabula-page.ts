@@ -41,8 +41,26 @@ export async function isLeader(page: Page): Promise<boolean> {
 	return page.evaluate(() => (window as any).__tabula.isLeader())
 }
 
-export async function claimView(page: Page, viewName: string): Promise<void> {
-	await page.evaluate((name) => (window as any).__tabula.claim(name), viewName)
+export interface BrowserClaimResult {
+	status: 'claimed' | 'conflict'
+	ownerId: string | null
+	token: { generation: number; claimId: string } | null
+}
+
+export async function claimView(page: Page, viewName: string): Promise<BrowserClaimResult> {
+	return page.evaluate(async (name) => {
+		const result = await (window as any).__tabula.claim(name)
+		if (result.status === 'conflict') {
+			return { status: result.status, ownerId: result.owner?.id ?? null, token: null }
+		}
+		;(window as any).__viewHandles ??= {}
+		;(window as any).__viewHandles[name] = result.handle
+		return {
+			status: result.status,
+			ownerId: result.handle.owner.id,
+			token: result.handle.token,
+		}
+	}, viewName)
 }
 
 export async function hasView(page: Page, viewName: string): Promise<boolean> {

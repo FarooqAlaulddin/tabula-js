@@ -16,17 +16,21 @@ import {
 	type StateOperation,
 	type StateSyncRequestPayload,
 	type StateSyncResponsePayload,
+	type StoredOpenIntent,
+	type ViewClaimToken,
 	isValidId,
 	isValidName,
 	isValidStateKey,
 	structuralBudgetIsValid,
 	validateInboundMessage,
+	validateStoredOpenIntent,
 	validateStoredPresence,
 	validateStoredViewRegistryEntry,
 } from './protocol'
 import {
 	StorageCorruptionError,
 	StorageOperationError,
+	ViewAlreadyClaimedError,
 	WorkspaceDestroyedError,
 	WorkspaceFailedError,
 	type WorkspaceLifecycle,
@@ -53,11 +57,13 @@ export type {
 	StateSetOperation,
 	StateSyncRequestPayload,
 	StateSyncResponsePayload,
+	ViewClaimToken,
 } from './protocol'
 export {
 	CapabilityError,
 	StorageCorruptionError,
 	StorageOperationError,
+	ViewAlreadyClaimedError,
 	WorkspaceDestroyedError,
 	WorkspaceFailedError,
 } from './runtime'
@@ -82,15 +88,16 @@ export interface StateEntry<V = unknown> {
 
 export interface ViewRegistryEntry {
 	tabId: string
+	instanceId: string
 	claimedAt: number
-	epoch: string
-	meta: Record<string, unknown>
+	token: ViewClaimToken
 }
 
 export interface WorkspaceOptions {
 	heartbeat?: number
 	timeout?: number
 	readyTimeout?: number
+	openTimeout?: number
 }
 
 export interface ViewOpenOptions<S> {
@@ -101,16 +108,19 @@ export interface ViewOpenOptions<S> {
 export interface ViewClaimedEvent {
 	name: string
 	tab: TabMeta
+	token: ViewClaimToken
 }
 
 export interface ViewVacantEvent {
 	name: string
+	token: ViewClaimToken
 }
 
 export interface ViewConflictEvent {
 	name: string
 	existing: TabMeta
 	incoming: TabMeta
+	token?: ViewClaimToken
 }
 
 export interface LeaderChangeEvent {
@@ -130,11 +140,18 @@ export interface WorkspaceEventMap {
 }
 
 export interface ViewHandle {
+	readonly name: string
+	readonly token: ViewClaimToken
+	readonly owner: TabMeta
 	on(event: 'vacant', cb: () => void): () => void
 	on(event: 'conflict', cb: (e: { existing: TabMeta; incoming: TabMeta }) => void): () => void
 	release(): void
 	focus(): void
 }
+
+export type ViewClaimResult =
+	| { status: 'claimed'; handle: ViewHandle }
+	| { status: 'conflict'; owner: TabMeta | null }
 
 export interface Workspace<S extends object = Record<string, unknown>> {
 	readonly state: WorkspaceState<S>
@@ -143,7 +160,7 @@ export interface Workspace<S extends object = Record<string, unknown>> {
 	/** Resolves when the workspace has completed init (presence discovery, state sync, leader election). */
 	readonly ready: Promise<void>
 	status(): WorkspaceStatus
-	claim(viewName: string): void
+	claim(viewName: string): Promise<ViewClaimResult>
 	open(viewName: string, options: ViewOpenOptions<S>): Promise<ViewHandle>
 	focus(viewName: string): void
 	destroy(): void
@@ -195,14 +212,6 @@ export interface WorkspaceTabs {
 
 function replaceTabId(id: string): void {
 	storageSet(sessionStorage, 'sessionStorage', 'tabula:tab-id', id)
-}
-
-/** @internal */ export function getSessionEpoch(): string {
-	const existing = storageGet(sessionStorage, 'sessionStorage', 'tabula:epoch')
-	if (isValidId(existing)) return existing
-	const epoch = Date.now().toString()
-	storageSet(sessionStorage, 'sessionStorage', 'tabula:epoch', epoch)
-	return epoch
 }
 
 /** @internal — exported for testing only */
@@ -444,19 +453,6 @@ type MsgHandler = (msg: Message) => void
 			}
 		}
 		return out
-	}
-
-	clearStale(epoch: string): string[] {
-		this.ensureScanned()
-		const cleared: string[] = []
-		for (const view of this.knownViews) {
-			const entry = this.get(view)
-			if (!entry || entry.epoch !== epoch) {
-				this.delete(view)
-				cleared.push(view)
-			}
-		}
-		return cleared
 	}
 
 	startListening(): void {
@@ -1135,13 +1131,17 @@ interface LeaderProjection {
 		this.applyOperations(operations)
 	}
 
-	getKeysForSync(keys: string[]): Record<string, unknown> {
-		const out: Record<string, unknown> = {}
-		for (const key of keys) {
+	getOperationsForSync(keys: string[]): StateOperation[] {
+		const operations: StateOperation[] = []
+		for (const key of [...new Set(keys)].sort((left, right) => this.compareStrings(left, right))) {
 			const operation = this.entries.get(key)
-			if (operation?.kind === 'set') out[key] = operation.value
+			if (operation) operations.push(operation)
 		}
-		return out
+		return operations
+	}
+
+	mergeIntentOperations(operations: StateOperation[], sender: MessageIdentity): void {
+		this.acceptRemoteOperations(operations, sender, false)
 	}
 
 	private assertKey(key: string): void {
@@ -1322,177 +1322,244 @@ interface LeaderProjection {
 
 // ── Layer 2: Views ────────────────────────────────────────────────────────
 
+interface ViewProjection {
+	tab: TabMeta
+	instanceId: string
+	token: ViewClaimToken
+}
+
+interface ViewAuthority {
+	name: string
+	owner: TabMeta
+	token: ViewClaimToken
+}
+
+type InternalViewClaimResult =
+	| { status: 'claimed'; authority: ViewAuthority }
+	| { status: 'conflict'; owner: TabMeta | null }
+
+interface ViewIntentClaim {
+	intentId: string
+	name: string
+	token: ViewClaimToken
+	claimant: MessageIdentity
+}
+
+interface IncomingViewIntent extends ViewIntentClaim {
+	requester: MessageIdentity
+	timer: ReturnType<typeof setTimeout>
+}
+
 /** @internal */ export class Views {
-	private registry: Registry
-	private channel: Channel
-	private presence: Presence
-	private epoch: string
-	private inMemory = new Map<string, TabMeta>()
-	private onClaimed: (name: string, tab: TabMeta) => void
-	private onVacant: (name: string) => void
-	private onConflict: (name: string, existing: TabMeta, incoming: TabMeta) => void
+	private readonly registry: Registry
+	private readonly channel: Channel
+	private readonly presence: Presence
+	private readonly lockPrefix: string
+	private readonly generationPrefix: string
+	private readonly rememberedViewKey: string
+	private readonly pendingOpenPrefix: string
+	private readonly onClaimed: (name: string, tab: TabMeta, token: ViewClaimToken) => void
+	private readonly onVacant: (name: string, token: ViewClaimToken) => void
+	private readonly onConflict: (
+		name: string,
+		existing: TabMeta,
+		incoming: TabMeta,
+		token?: ViewClaimToken,
+	) => void
+	private readonly onIntentClaim: (claim: ViewIntentClaim) => void
+	private readonly applyIntentState: (operations: StateOperation[], sender: MessageIdentity) => void
+	private readonly onError: (error: unknown) => void
+	private projections = new Map<string, ViewProjection>()
+	private activeClaim: (ViewAuthority & { releaseLock: () => void }) | null = null
+	private claimInFlight: { name: string; promise: Promise<InternalViewClaimResult> } | null = null
+	private incomingIntents = new Map<string, IncomingViewIntent>()
 	private visibilityHandler: (() => void) | null = null
 	private registryUnsubscribe: (() => void) | null = null
 	private started = false
+	private warnedIntentCorruption = false
 
 	constructor(
+		namespace: string,
 		registry: Registry,
 		channel: Channel,
 		presence: Presence,
-		epoch: string,
-		onClaimed: (name: string, tab: TabMeta) => void,
-		onVacant: (name: string) => void,
-		onConflict: (name: string, existing: TabMeta, incoming: TabMeta) => void,
+		onClaimed: (name: string, tab: TabMeta, token: ViewClaimToken) => void,
+		onVacant: (name: string, token: ViewClaimToken) => void,
+		onConflict: (
+			name: string,
+			existing: TabMeta,
+			incoming: TabMeta,
+			token?: ViewClaimToken,
+		) => void,
+		onIntentClaim: (claim: ViewIntentClaim) => void,
+		applyIntentState: (operations: StateOperation[], sender: MessageIdentity) => void,
+		onError: (error: unknown) => void = () => undefined,
 	) {
+		const encodedNamespace = encodeURIComponent(namespace)
 		this.registry = registry
 		this.channel = channel
 		this.presence = presence
-		this.epoch = epoch
+		this.lockPrefix = `tabula-js:v1:${encodedNamespace}:view:`
+		this.generationPrefix = `tabula:${encodedNamespace}:view-generation:`
+		this.rememberedViewKey = `tabula:${encodedNamespace}:view-name`
+		this.pendingOpenPrefix = `tabula:${namespace}:pending-open:`
 		this.onClaimed = onClaimed
 		this.onVacant = onVacant
 		this.onConflict = onConflict
+		this.onIntentClaim = onIntentClaim
+		this.applyIntentState = applyIntentState
+		this.onError = onError
 	}
 
 	start(): void {
 		if (this.started) return
 		this.started = true
-		// listen for storage events as secondary sync
 		this.registryUnsubscribe = this.registry.onChange((viewName, entry) => {
-			if (!entry) {
-				// deleted externally
-				if (this.inMemory.has(viewName)) {
-					this.inMemory.delete(viewName)
-					this.onVacant(viewName)
-				}
-			} else {
-				const tab = this.presence.getTab(entry.tabId)
-				if (tab) {
-					this.inMemory.set(viewName, tab)
-				}
-			}
+			if (entry) this.acceptRegistryProjection(viewName, entry)
 		})
-
-		// wake-up reconciliation
 		if (typeof document !== 'undefined') {
 			this.visibilityHandler = () => {
-				if (document.visibilityState === 'visible') {
-					this.reconcile()
-				}
+				if (document.visibilityState === 'visible') this.reconcile()
 			}
 			document.addEventListener('visibilitychange', this.visibilityHandler)
+		}
+		if (this.activeClaim) {
+			this.writeLocalProjection(this.activeClaim)
+			this.announceClaim(this.activeClaim)
 		}
 	}
 
 	loadFromRegistry(): void {
-		const entries = this.registry.list()
-		for (const [viewName, entry] of Object.entries(entries)) {
-			const tab = this.presence.getTab(entry.tabId)
-			if (tab) {
-				this.inMemory.set(viewName, tab)
-			}
+		for (const [viewName, entry] of Object.entries(this.registry.list())) {
+			this.acceptRegistryProjection(viewName, entry)
 		}
 	}
 
 	validateAgainstPresence(): void {
-		for (const [viewName, tab] of this.inMemory) {
-			if (!this.presence.isAlive(tab.id)) {
-				this.inMemory.delete(viewName)
-				this.registry.delete(viewName)
-				this.onVacant(viewName)
+		for (const [viewName, projection] of this.projections) {
+			if (!this.presence.isAlive(projection.tab.id)) {
+				this.verifyVacancy(viewName, projection)
 			}
 		}
 	}
 
-	claim(viewName: string): boolean {
-		const existing = this.registry.get(viewName)
-
-		if (existing && this.presence.isAlive(existing.tabId)) {
-			// conflict — someone else holds it
-			const existingTab = this.presence.getTab(existing.tabId)
-			const incomingTab = this.presence.getSelf()
-			if (existingTab) {
-				this.onConflict(viewName, existingTab, incomingTab)
-			}
-			return false
+	async claim(viewName: string): Promise<InternalViewClaimResult> {
+		if (!isValidName(viewName)) {
+			throw new TypeError('View names must be safe strings of at most 128 bytes.')
 		}
-
-		// claim it
-		this.registry.set(viewName, {
-			tabId: this.presence.tabId,
-			claimedAt: Date.now(),
-			epoch: this.epoch,
-			meta: {},
-		})
-
-		const self = this.presence.getSelf()
-		this.inMemory.set(viewName, self)
-		this.presence.setView(viewName)
-		this.channel.send('view:claimed', { name: viewName, tabId: this.presence.tabId })
-		this.onClaimed(viewName, self)
-		return true
+		if (this.activeClaim) {
+			if (this.activeClaim.name === viewName) {
+				return { status: 'claimed', authority: this.activeClaim }
+			}
+			throw new ViewAlreadyClaimedError(this.activeClaim.name)
+		}
+		if (this.claimInFlight) {
+			if (this.claimInFlight.name === viewName) return this.claimInFlight.promise
+			throw new ViewAlreadyClaimedError(this.claimInFlight.name)
+		}
+		const promise = this.acquire(viewName)
+		this.claimInFlight = { name: viewName, promise }
+		const clearInFlight = () => {
+			if (this.claimInFlight?.promise === promise) this.claimInFlight = null
+		}
+		void promise.then(clearInFlight, clearInFlight)
+		return promise
 	}
 
-	release(viewName: string): void {
-		this.registry.delete(viewName)
-		this.inMemory.delete(viewName)
-		if (this.presence.getSelf().view === viewName) {
-			this.presence.setView(null)
+	async restoreRememberedView(): Promise<void> {
+		const remembered = storageGet(sessionStorage, 'sessionStorage', this.rememberedViewKey)
+		if (!remembered) return
+		if (!isValidName(remembered)) {
+			storageRemove(sessionStorage, 'sessionStorage', this.rememberedViewKey)
+			return
 		}
-		this.channel.send('view:release', { name: viewName })
-		this.onVacant(viewName)
+		const result = await this.claim(remembered)
+		if (result.status === 'conflict') {
+			storageRemove(sessionStorage, 'sessionStorage', this.rememberedViewKey)
+		}
+	}
+
+	release(viewName: string, token: ViewClaimToken, forget = true): void {
+		if (
+			this.activeClaim &&
+			this.activeClaim.name === viewName &&
+			this.tokensEqual(this.activeClaim.token, token)
+		) {
+			this.releaseLocal(forget)
+			return
+		}
+		const projection = this.projections.get(viewName)
+		if (!projection || !this.tokensEqual(projection.token, token)) return
+		this.channel.send(
+			'view:release',
+			{ name: viewName, token, request: true },
+			{ tabId: projection.tab.id, instanceId: projection.instanceId },
+		)
+	}
+
+	releaseCurrent(forget = true): void {
+		if (this.activeClaim) this.releaseLocal(forget)
 	}
 
 	handleMessage(msg: Message): void {
 		if (msg.type === 'view:claimed') {
-			const { name, tabId } = msg.payload as { name: string; tabId: string }
-			const tab = this.presence.getTab(tabId) ?? {
-				id: tabId,
-				view: name,
-				visible: true,
-				firstSeenAt: Date.now(),
-				lastSeenAt: Date.now(),
-			}
-			this.inMemory.set(name, tab)
-			this.onClaimed(name, tab)
+			this.handleClaimedMessage(msg)
 		} else if (msg.type === 'view:release') {
-			const { name } = msg.payload as { name: string }
-			this.inMemory.delete(name)
-			this.onVacant(name)
+			this.handleReleaseMessage(msg)
 		} else if (msg.type === 'view:focus') {
-			const { name } = msg.payload as { name: string }
-			// if we hold this view, bring ourselves to front
-			if (this.presence.getSelf().view === name) {
-				window.focus()
-			}
+			this.handleFocusMessage(msg)
+		} else if (msg.type === 'view:intent-claim') {
+			this.handleIntentClaimMessage(msg)
+		} else if (msg.type === 'view:intent-state') {
+			this.handleIntentStateMessage(msg)
 		}
 	}
 
 	get(viewName: string): TabMeta | null {
-		return this.inMemory.get(viewName) ?? null
+		return this.projections.get(viewName)?.tab ?? null
+	}
+
+	getAuthority(viewName: string): ViewAuthority | null {
+		const projection = this.projections.get(viewName)
+		return projection
+			? { name: viewName, owner: projection.tab, token: { ...projection.token } }
+			: null
 	}
 
 	listAll(): Record<string, TabMeta> {
 		const out: Record<string, TabMeta> = {}
-		for (const [k, v] of this.inMemory) out[k] = v
+		for (const [name, projection] of this.projections) out[name] = projection.tab
 		return out
 	}
 
 	has(viewName: string): boolean {
-		return this.inMemory.has(viewName)
+		return this.projections.has(viewName)
 	}
 
-	focus(viewName: string): void {
-		this.channel.send('view:focus', { name: viewName })
+	focus(viewName: string, token?: ViewClaimToken): void {
+		const projection = this.projections.get(viewName)
+		if (!projection) return
+		const requestedToken = token ?? projection.token
+		if (!this.tokensEqual(projection.token, requestedToken)) return
+		this.channel.send(
+			'view:focus',
+			{ name: viewName, token: requestedToken },
+			{ tabId: projection.tab.id, instanceId: projection.instanceId },
+		)
 	}
 
 	cleanupForTab(tabId: string): void {
-		for (const [viewName, tab] of this.inMemory) {
-			if (tab.id === tabId) {
-				this.inMemory.delete(viewName)
-				this.registry.delete(viewName)
-				this.onVacant(viewName)
-			}
+		for (const [viewName, projection] of this.projections) {
+			if (projection.tab.id === tabId) this.verifyVacancy(viewName, projection)
 		}
+	}
+
+	sendIntentState(claim: ViewIntentClaim, operations: StateOperation[]): void {
+		this.channel.send(
+			'view:intent-state',
+			{ intentId: claim.intentId, name: claim.name, token: claim.token, operations },
+			claim.claimant,
+		)
 	}
 
 	stop(): void {
@@ -1502,6 +1569,8 @@ interface LeaderProjection {
 		this.visibilityHandler = null
 		this.registryUnsubscribe?.()
 		this.registryUnsubscribe = null
+		for (const intent of this.incomingIntents.values()) clearTimeout(intent.timer)
+		this.incomingIntents.clear()
 		this.started = false
 	}
 
@@ -1509,33 +1578,397 @@ interface LeaderProjection {
 		this.reconcile()
 	}
 
+	private acquire(viewName: string): Promise<InternalViewClaimResult> {
+		return new Promise((resolve, reject) => {
+			let settled = false
+			const settle = (result: InternalViewClaimResult) => {
+				if (settled) return
+				settled = true
+				resolve(result)
+			}
+			void navigator.locks
+				.request(
+					this.lockName(viewName),
+					{ mode: 'exclusive', ifAvailable: true },
+					async (lock) => {
+						if (!lock) {
+							const owner = this.get(viewName)
+							if (owner) {
+								this.onConflict(
+									viewName,
+									owner,
+									this.presence.getSelf(),
+									this.projections.get(viewName)?.token,
+								)
+							}
+							settle({ status: 'conflict', owner })
+							return
+						}
+
+						let authority: (ViewAuthority & { releaseLock: () => void }) | null = null
+						try {
+							const identity = this.channel.getIdentity()
+							const token = {
+								generation: this.incrementGeneration(viewName),
+								claimId: crypto.randomUUID(),
+							}
+							this.presence.setView(viewName)
+							const owner = this.presence.getSelf()
+							let releaseLock: () => void = () => undefined
+							const released = new Promise<void>((release) => {
+								releaseLock = release
+							})
+							authority = { name: viewName, owner, token, releaseLock }
+							this.activeClaim = authority
+							this.writeLocalProjection(authority)
+							storageSet(sessionStorage, 'sessionStorage', this.rememberedViewKey, viewName)
+							this.acceptProjection(viewName, {
+								tab: owner,
+								instanceId: identity.instanceId,
+								token,
+							})
+							this.announceClaim(authority)
+							this.consumePendingIntent(viewName, token)
+							settle({ status: 'claimed', authority })
+							await released
+						} catch (error) {
+							if (authority) this.rollbackLocalClaim(authority)
+							if (!settled) {
+								settled = true
+								reject(error)
+							} else {
+								this.onError(error)
+							}
+						}
+					},
+				)
+				.catch((error: unknown) => {
+					if (settled) {
+						this.onError(error)
+						return
+					}
+					settled = true
+					reject(error)
+				})
+		})
+	}
+
+	private rollbackLocalClaim(claim: ViewAuthority & { releaseLock: () => void }): void {
+		if (!this.activeClaim || !this.tokensEqual(this.activeClaim.token, claim.token)) return
+		this.activeClaim = null
+		try {
+			this.removeRegistryProjection(claim.name, claim.token)
+		} catch {
+			// Preserve the original claim failure.
+		}
+		const current = this.projections.get(claim.name)
+		if (current && this.tokensEqual(current.token, claim.token)) {
+			this.projections.delete(claim.name)
+			try {
+				this.onVacant(claim.name, claim.token)
+			} catch {
+				// Preserve the original claim failure.
+			}
+		}
+		if (this.presence.getSelf().view === claim.name) this.presence.setView(null)
+		try {
+			storageRemove(sessionStorage, 'sessionStorage', this.rememberedViewKey)
+		} catch {
+			// Preserve the original claim failure.
+		}
+		this.channel.send('view:release', { name: claim.name, token: claim.token })
+	}
+
+	private releaseLocal(forget: boolean): void {
+		const claim = this.activeClaim
+		if (!claim) return
+		this.activeClaim = null
+		this.removeRegistryProjection(claim.name, claim.token)
+		const current = this.projections.get(claim.name)
+		if (current && this.tokensEqual(current.token, claim.token)) {
+			this.projections.delete(claim.name)
+			this.onVacant(claim.name, claim.token)
+		}
+		if (this.presence.getSelf().view === claim.name) this.presence.setView(null)
+		if (forget) storageRemove(sessionStorage, 'sessionStorage', this.rememberedViewKey)
+		this.channel.send('view:release', { name: claim.name, token: claim.token })
+		claim.releaseLock()
+	}
+
+	private handleClaimedMessage(msg: Message): void {
+		const payload = msg.payload as {
+			name: string
+			tabId: string
+			instanceId?: string
+			token?: ViewClaimToken
+		}
+		if (payload.instanceId && payload.token) {
+			if (payload.tabId !== msg.from.tabId || payload.instanceId !== msg.from.instanceId) return
+			this.acceptProjection(payload.name, {
+				tab: this.tabFor(payload.tabId, payload.name),
+				instanceId: payload.instanceId,
+				token: payload.token,
+			})
+			return
+		}
+		const current = this.projections.get(payload.name)
+		if (current?.token.generation) return
+		this.acceptProjection(payload.name, {
+			tab: this.tabFor(payload.tabId, payload.name),
+			instanceId: msg.from.instanceId,
+			token: { generation: 0, claimId: `legacy:${msg.id}` },
+		})
+	}
+
+	private handleReleaseMessage(msg: Message): void {
+		const payload = msg.payload as { name: string; token?: ViewClaimToken; request?: boolean }
+		if (!payload.token) {
+			const current = this.projections.get(payload.name)
+			if (current?.token.generation === 0 && current.tab.id === msg.from.tabId) {
+				this.applyVacancy(payload.name, current.token)
+			}
+			return
+		}
+		if (payload.request) {
+			if (
+				this.activeClaim?.name === payload.name &&
+				this.tokensEqual(this.activeClaim.token, payload.token)
+			) {
+				this.releaseLocal(true)
+			}
+			return
+		}
+		this.applyVacancy(payload.name, payload.token)
+	}
+
+	private handleFocusMessage(msg: Message): void {
+		const payload = msg.payload as { name: string; token?: ViewClaimToken }
+		if (!this.activeClaim || this.activeClaim.name !== payload.name) return
+		if (!payload.token) {
+			if (this.activeClaim.token.generation === 0) window.focus()
+			return
+		}
+		if (this.tokensEqual(this.activeClaim.token, payload.token)) window.focus()
+	}
+
+	private handleIntentClaimMessage(msg: Message): void {
+		const payload = msg.payload as { intentId: string; name: string; token: ViewClaimToken }
+		const projection = this.projections.get(payload.name)
+		if (
+			!projection ||
+			projection.tab.id !== msg.from.tabId ||
+			projection.instanceId !== msg.from.instanceId ||
+			!this.tokensEqual(projection.token, payload.token)
+		) {
+			return
+		}
+		this.onIntentClaim({ ...payload, claimant: msg.from })
+	}
+
+	private handleIntentStateMessage(msg: Message): void {
+		const payload = msg.payload as {
+			intentId: string
+			name: string
+			token: ViewClaimToken
+			operations: StateOperation[]
+		}
+		const pending = this.incomingIntents.get(payload.intentId)
+		if (
+			!pending ||
+			pending.name !== payload.name ||
+			!this.tokensEqual(pending.token, payload.token) ||
+			pending.requester.tabId !== msg.from.tabId ||
+			pending.requester.instanceId !== msg.from.instanceId
+		) {
+			return
+		}
+		clearTimeout(pending.timer)
+		this.incomingIntents.delete(payload.intentId)
+		this.applyIntentState(payload.operations, msg.from)
+	}
+
+	private consumePendingIntent(viewName: string, token: ViewClaimToken): void {
+		const key = this.pendingOpenPrefix + viewName
+		const raw = storageGet(localStorage, 'localStorage', key)
+		if (!raw) return
+		let intent: StoredOpenIntent | null = null
+		try {
+			intent = validateStoredOpenIntent(JSON.parse(raw))
+		} catch {
+			// The invalid projection is removed below.
+		}
+		if (!intent || intent.view !== viewName || intent.expiresAt < Date.now()) {
+			storageRemove(localStorage, 'localStorage', key)
+			if (!intent && !this.warnedIntentCorruption) {
+				this.warnedIntentCorruption = true
+				console.warn('Tabula removed a corrupt pending-open intent from localStorage.')
+			}
+			return
+		}
+		const acceptedIntent = intent
+		this.removeIntentIfCurrent(key, acceptedIntent.intentId)
+		const timer = setTimeout(
+			() => {
+				this.incomingIntents.delete(acceptedIntent.intentId)
+			},
+			Math.max(0, acceptedIntent.expiresAt - Date.now()),
+		)
+		this.incomingIntents.set(acceptedIntent.intentId, {
+			intentId: acceptedIntent.intentId,
+			name: viewName,
+			token,
+			claimant: this.channel.getIdentity(),
+			requester: acceptedIntent.requester,
+			timer,
+		})
+		while (this.incomingIntents.size > 16) {
+			const oldest = this.incomingIntents.entries().next().value as
+				| [string, IncomingViewIntent]
+				| undefined
+			if (!oldest) break
+			clearTimeout(oldest[1].timer)
+			this.incomingIntents.delete(oldest[0])
+		}
+		this.channel.send(
+			'view:intent-claim',
+			{ intentId: acceptedIntent.intentId, name: viewName, token },
+			acceptedIntent.requester,
+		)
+	}
+
+	private removeIntentIfCurrent(key: string, intentId: string): void {
+		const current = storageGet(localStorage, 'localStorage', key)
+		if (!current) return
+		try {
+			const parsed = validateStoredOpenIntent(JSON.parse(current))
+			if (parsed?.intentId !== intentId) return
+		} catch {
+			return
+		}
+		storageRemove(localStorage, 'localStorage', key)
+	}
+
+	private acceptRegistryProjection(viewName: string, entry: ViewRegistryEntry): void {
+		this.acceptProjection(viewName, {
+			tab: this.tabFor(entry.tabId, viewName),
+			instanceId: entry.instanceId,
+			token: entry.token,
+		})
+	}
+
+	private acceptProjection(viewName: string, incoming: ViewProjection): void {
+		const current = this.projections.get(viewName)
+		if (current) {
+			if (incoming.token.generation < current.token.generation) return
+			if (
+				incoming.token.generation === current.token.generation &&
+				!this.tokensEqual(incoming.token, current.token)
+			) {
+				return
+			}
+			if (
+				this.tokensEqual(incoming.token, current.token) &&
+				incoming.tab.id === current.tab.id &&
+				incoming.instanceId === current.instanceId
+			) {
+				return
+			}
+		}
+		this.projections.set(viewName, incoming)
+		this.onClaimed(viewName, incoming.tab, incoming.token)
+	}
+
+	private applyVacancy(viewName: string, token: ViewClaimToken): void {
+		const current = this.projections.get(viewName)
+		if (!current || !this.tokensEqual(current.token, token)) return
+		this.projections.delete(viewName)
+		this.onVacant(viewName, token)
+	}
+
+	private verifyVacancy(viewName: string, expected: ViewProjection): void {
+		void navigator.locks
+			.request(this.lockName(viewName), { mode: 'exclusive', ifAvailable: true }, (lock) => {
+				if (!lock) return
+				const current = this.projections.get(viewName)
+				if (!current || !this.tokensEqual(current.token, expected.token)) return
+				this.removeRegistryProjection(viewName, expected.token)
+				this.applyVacancy(viewName, expected.token)
+				this.channel.send('view:release', { name: viewName, token: expected.token })
+			})
+			.catch(this.onError)
+	}
+
 	private reconcile(): void {
-		// re-read localStorage and compare against in-memory
-		const entries = this.registry.list()
+		for (const [viewName, entry] of Object.entries(this.registry.list())) {
+			this.acceptRegistryProjection(viewName, entry)
+		}
+		if (this.activeClaim) {
+			this.writeLocalProjection(this.activeClaim)
+			this.announceClaim(this.activeClaim)
+		}
+		this.validateAgainstPresence()
+	}
 
-		// check if our views were reassigned
-		const self = this.presence.getSelf()
-		if (self.view) {
-			const regEntry = entries[self.view]
-			if (regEntry && regEntry.tabId !== self.id) {
-				// our view was taken while we were sleeping — yield
-				this.inMemory.delete(self.view)
-				this.presence.setView(null)
-				this.onVacant(self.view)
+	private writeLocalProjection(authority: ViewAuthority): void {
+		const identity = this.channel.getIdentity()
+		this.registry.set(authority.name, {
+			tabId: identity.tabId,
+			instanceId: identity.instanceId,
+			claimedAt: Date.now(),
+			token: authority.token,
+		})
+	}
+
+	private removeRegistryProjection(viewName: string, token: ViewClaimToken): void {
+		const entry = this.registry.get(viewName)
+		if (!entry || !this.tokensEqual(entry.token, token)) return
+		this.registry.delete(viewName)
+	}
+
+	private announceClaim(authority: ViewAuthority): void {
+		const identity = this.channel.getIdentity()
+		this.channel.send('view:claimed', {
+			name: authority.name,
+			tabId: identity.tabId,
+			instanceId: identity.instanceId,
+			token: authority.token,
+		})
+	}
+
+	private incrementGeneration(viewName: string): number {
+		const key = this.generationPrefix + encodeURIComponent(viewName)
+		const raw = storageGet(localStorage, 'localStorage', key)
+		let current = 0
+		if (raw !== null) {
+			if (!/^(0|[1-9]\d*)$/.test(raw)) throw new StorageCorruptionError(key)
+			current = Number(raw)
+			if (!Number.isSafeInteger(current) || current < 0 || current >= Number.MAX_SAFE_INTEGER) {
+				throw new StorageCorruptionError(key)
 			}
 		}
+		const next = current + 1
+		storageSet(localStorage, 'localStorage', key, String(next))
+		return next
+	}
 
-		// update in-memory from registry
-		for (const [viewName, entry] of Object.entries(entries)) {
-			const tab = this.presence.getTab(entry.tabId)
-			if (tab) {
-				this.inMemory.set(viewName, tab)
-			} else if (!this.presence.isAlive(entry.tabId)) {
-				this.registry.delete(viewName)
-				this.inMemory.delete(viewName)
-				this.onVacant(viewName)
+	private tabFor(tabId: string, viewName: string): TabMeta {
+		return (
+			this.presence.getTab(tabId) ?? {
+				id: tabId,
+				view: viewName,
+				visible: true,
+				firstSeenAt: Date.now(),
+				lastSeenAt: Date.now(),
 			}
-		}
+		)
+	}
+
+	private lockName(viewName: string): string {
+		return this.lockPrefix + encodeURIComponent(viewName)
+	}
+
+	private tokensEqual(left: ViewClaimToken, right: ViewClaimToken): boolean {
+		return left.generation === right.generation && left.claimId === right.claimId
 	}
 }
 
@@ -1572,7 +2005,6 @@ class Coordinator<S extends object> {
 	private tabId: string
 	private readonly instanceId: string
 	private readonly startedAt: number
-	private epoch: string
 	private options: Required<WorkspaceOptions>
 	private lifecycle: WorkspaceLifecycle = 'initializing'
 	private sync: WorkspaceSyncState = 'pending'
@@ -1593,6 +2025,7 @@ class Coordinator<S extends object> {
 	private syncProgressWaiters = new Set<() => void>()
 	private syncRetryTimer: ReturnType<typeof setTimeout> | null = null
 	private syncRetryDelay = SYNC_RETRY_BASE_MS
+	private preserveViewOnDestroy = false
 
 	// event system
 	private eventListeners = new Map<string, Set<(payload: unknown) => void>>()
@@ -1618,13 +2051,13 @@ class Coordinator<S extends object> {
 			heartbeat: opts.heartbeat ?? 1500,
 			timeout: opts.timeout ?? 5000,
 			readyTimeout: opts.readyTimeout ?? 1000,
+			openTimeout: opts.openTimeout ?? 10_000,
 		}
 
 		const documentIdentity = getDocumentIdentity()
 		this.instanceId = documentIdentity.instanceId
 		this.startedAt = documentIdentity.startedAt
 		this.tabId = getTabId()
-		this.epoch = getSessionEpoch()
 		this.channel = new Channel(namespace, this.tabId, this.instanceId)
 		this.registry = new Registry(namespace)
 
@@ -1635,6 +2068,7 @@ class Coordinator<S extends object> {
 			if (event.persisted) {
 				this.suspendForBfcache()
 			} else {
+				this.preserveViewOnDestroy = true
 				this.destroy()
 			}
 		}
@@ -1686,13 +2120,17 @@ class Coordinator<S extends object> {
 		this.state = new State<S>(this.channel, this.tabId)
 
 		this.views = new Views(
+			this.namespace,
 			this.registry,
 			this.channel,
 			this.presence,
-			this.epoch,
-			(name, tab) => this.emit('view:claimed', { name, tab }),
-			(name) => this.emit('view:vacant', { name }),
-			(name, existing, incoming) => this.emit('view:conflict', { name, existing, incoming }),
+			(name, tab, token) => this.emit('view:claimed', { name, tab, token }),
+			(name, token) => this.emit('view:vacant', { name, token }),
+			(name, existing, incoming, token) =>
+				this.emit('view:conflict', { name, existing, incoming, token }),
+			(claim) => this.emit('view:intent-claim', claim),
+			(operations, sender) => this.state.mergeIntentOperations(operations, sender),
+			(error) => this.fail(error),
 		)
 
 		this.channel.onMessage((msg) => {
@@ -1742,6 +2180,8 @@ class Coordinator<S extends object> {
 		this.ensureRunning(signal)
 
 		this.views.loadFromRegistry()
+		await this.views.restoreRememberedView()
+		this.ensureRunning(signal)
 		this.views.validateAgainstPresence()
 		this.views.start()
 
@@ -2131,8 +2571,7 @@ class Coordinator<S extends object> {
 		this.lifecycle = 'initializing'
 		this.stopLeaderCallbacks()
 		this.leader.stop()
-		const self = this.presence.getSelf()
-		if (self.view) this.views.release(self.view)
+		this.views.releaseCurrent(false)
 		this.presence.broadcastLeave()
 		this.presence.stop()
 		this.views.stop()
@@ -2347,6 +2786,14 @@ class Coordinator<S extends object> {
 		return this.tabId
 	}
 
+	getIdentity(): MessageIdentity {
+		return this.channel.getIdentity()
+	}
+
+	getOpenTimeout(): number {
+		return this.options.openTimeout
+	}
+
 	isReady(): boolean {
 		return this.lifecycle === 'ready'
 	}
@@ -2371,8 +2818,7 @@ class Coordinator<S extends object> {
 		this.leaderSetups = []
 		if (this.domainsAttached) {
 			try {
-				const self = this.presence.getSelf()
-				if (self.view) this.views.release(self.view)
+				this.views.releaseCurrent(!this.preserveViewOnDestroy)
 				this.presence.broadcastLeave()
 			} catch {
 				// Terminal cleanup is best effort after a storage/runtime failure.
@@ -2409,6 +2855,7 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 		['heartbeat', options.heartbeat],
 		['timeout', options.timeout],
 		['readyTimeout', options.readyTimeout],
+		['openTimeout', options.openTimeout],
 	] as const) {
 		if (value !== undefined && (!Number.isFinite(value) || value <= 0)) {
 			throw new TypeError(`createWorkspace() option ${name} must be a positive finite number.`)
@@ -2481,6 +2928,57 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 		},
 	}
 
+	const tokensEqual = (left: ViewClaimToken, right: ViewClaimToken): boolean =>
+		left.generation === right.generation && left.claimId === right.claimId
+
+	const createViewHandle = (authority: ViewAuthority): ViewHandle => {
+		const on = (event: string, cb: (...args: any[]) => void): (() => void) => {
+			coord.assertActive()
+			if (event === 'vacant') {
+				return coord.on('view:vacant', (payload: unknown) => {
+					const vacancy = payload as ViewVacantEvent
+					if (vacancy.name === authority.name && tokensEqual(vacancy.token, authority.token)) cb()
+				})
+			}
+			return coord.on('view:conflict', (payload: unknown) => {
+				const conflict = payload as ViewConflictEvent
+				if (
+					conflict.name === authority.name &&
+					(!conflict.token || tokensEqual(conflict.token, authority.token))
+				) {
+					cb({ existing: conflict.existing, incoming: conflict.incoming })
+				}
+			})
+		}
+		return {
+			name: authority.name,
+			token: { ...authority.token },
+			owner: { ...authority.owner },
+			on: on as ViewHandle['on'],
+			release() {
+				coord.enqueue(() => coord.getViews().release(authority.name, authority.token))
+			},
+			focus() {
+				coord.enqueue(() => coord.getViews().focus(authority.name, authority.token))
+			},
+		}
+	}
+
+	type PendingOpen = { cancel: (error: Error) => void }
+	const pendingOpens = new Map<string, PendingOpen>()
+	const pendingOpenPrefix = `tabula:${namespace}:pending-open:`
+	const removeIntentIfCurrent = (key: string, intentId: string): void => {
+		const raw = storageGet(localStorage, 'localStorage', key)
+		if (!raw) return
+		let current: StoredOpenIntent | null = null
+		try {
+			current = validateStoredOpenIntent(JSON.parse(raw))
+		} catch {
+			return
+		}
+		if (current?.intentId === intentId) storageRemove(localStorage, 'localStorage', key)
+	}
+
 	const workspace: Workspace<S> = {
 		state: stateApi,
 		views: viewsApi,
@@ -2488,45 +2986,23 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 		ready: coord.readyPromise,
 		status: () => coord.status(),
 
-		claim(viewName: string) {
-			coord.assertActive()
-			const currentView = coord.getPresence().getSelf().view
-			if (currentView) {
-				throw new Error(
-					`app.claim('${viewName}') was called, but this tab already holds the '${currentView}' view. A tab can hold only one view at a time.`,
-				)
-			}
-			coord.enqueue(() => {
-				// Check for pending-open data written by the opener tab.
-				// Key is per-view so two concurrent open() calls for different views
-				// never overwrite each other's data.
-				const pendingKey = `tabula:${namespace}:pending-open:${viewName}`
-				const raw = storageGet(localStorage, 'localStorage', pendingKey)
-				if (raw) {
-					try {
-						const pending = JSON.parse(raw) as {
-							view?: string
-							syncedState?: Record<string, unknown>
-						}
-						// Apply pre-synced state from the opener (instant, no round-trip)
-						if (pending.syncedState && pending.view === viewName) {
-							for (const [key, value] of Object.entries(pending.syncedState)) {
-								if (coord.getState().get(key as keyof S & string) === undefined) {
-									coord.getState().set(key as keyof S & string, value as S[keyof S & string])
-								}
-							}
-						}
-					} catch {
-						console.warn('Tabula removed a corrupt pending-open projection from localStorage.')
-					}
-					storageRemove(localStorage, 'localStorage', pendingKey)
-				}
-				coord.getViews().claim(viewName)
+		claim(viewName: string): Promise<ViewClaimResult> {
+			return coord.runWhenReady(async () => {
+				const result = await coord.getViews().claim(viewName)
+				return result.status === 'claimed'
+					? { status: 'claimed', handle: createViewHandle(result.authority) }
+					: { status: 'conflict', owner: result.owner }
 			})
 		},
 
 		open(viewName: string, opts: ViewOpenOptions<S>): Promise<ViewHandle> {
 			return coord.runWhenReady(async () => {
+				if (!isValidName(viewName)) {
+					throw new TypeError('View names must be safe strings of at most 128 bytes.')
+				}
+				if (!opts || typeof opts.url !== 'string') {
+					throw new TypeError('app.open() requires a URL string.')
+				}
 				const existing = coord.getViews().get(viewName)
 				if (existing) {
 					const self = coord.getPresence().getSelf()
@@ -2537,103 +3013,89 @@ export function createWorkspace<S extends object = Record<string, unknown>>(
 					})
 				}
 
-				// Write pending-open intent to localStorage so the new tab can read it
-				// without polluting the URL. The new tab reads this on init via app.claim().
-				// Key is per-view so two concurrent open() calls for different views
-				// never overwrite each other's data.
-				const pendingKey = `tabula:${namespace}:pending-open:${viewName}`
-				const pendingData: Record<string, unknown> = { view: viewName }
-				if (opts.syncKeys) {
-					pendingData.syncedState = coord.getState().getKeysForSync(opts.syncKeys)
+				const syncKeys = [...new Set(opts.syncKeys ?? [])]
+				if (syncKeys.some((key) => !isValidStateKey(key))) {
+					throw new TypeError('syncKeys must contain safe state key strings.')
 				}
-				storageSet(localStorage, 'localStorage', pendingKey, JSON.stringify(pendingData))
-
-				const opened = window.open(new URL(opts.url, window.location.href).toString())
-				if (!opened) {
-					storageRemove(localStorage, 'localStorage', pendingKey)
-					throw new Error(
-						`Failed to open tab for view '${viewName}'. The browser may have blocked the popup. app.open() must be called in direct response to a user gesture (click, keyboard).`,
-					)
+				if (syncKeys.length > MAX_STATE_KEYS) {
+					throw new RangeError(`syncKeys is limited to ${MAX_STATE_KEYS} keys.`)
 				}
+				const url = new URL(opts.url, window.location.href).toString()
+				const timeout = coord.getOpenTimeout()
+				const createdAt = Date.now()
+				const intent: StoredOpenIntent = {
+					intentId: crypto.randomUUID(),
+					view: viewName,
+					requester: coord.getIdentity(),
+					syncKeys,
+					createdAt,
+					expiresAt: createdAt + timeout,
+				}
+				const pendingKey = pendingOpenPrefix + viewName
 
-				// wait for the new tab to claim the view
-				const claimed = await new Promise<boolean>((resolve) => {
+				pendingOpens
+					.get(viewName)
+					?.cancel(new Error(`A newer app.open('${viewName}') call superseded this request.`))
+
+				const authority = await new Promise<ViewAuthority>((resolve, reject) => {
 					let settled = false
-					const resources: { timeout?: ReturnType<typeof setTimeout> } = {}
-					let unsub: () => void = () => undefined
+					let timeoutId: ReturnType<typeof setTimeout> | null = null
+					let unsubscribe: () => void = () => undefined
 					let untrack: () => void = () => undefined
-					const finish = (result: boolean) => {
+					const request: PendingOpen = { cancel: (error) => finish(error) }
+					const cleanup = () => {
+						if (timeoutId) clearTimeout(timeoutId)
+						unsubscribe()
+						untrack()
+						if (pendingOpens.get(viewName) === request) pendingOpens.delete(viewName)
+						try {
+							removeIntentIfCurrent(pendingKey, intent.intentId)
+						} catch {
+							// The original completion result remains primary.
+						}
+					}
+					function finish(error: Error | null, value?: ViewAuthority): void {
 						if (settled) return
 						settled = true
-						if (resources.timeout) clearTimeout(resources.timeout)
-						unsub()
-						untrack()
-						if (!result) {
-							try {
-								storageRemove(localStorage, 'localStorage', pendingKey)
-							} catch {
-								// The terminal or timeout error remains primary.
-							}
-						}
-						resolve(result)
+						cleanup()
+						if (error) reject(error)
+						else resolve(value as ViewAuthority)
 					}
-					resources.timeout = setTimeout(() => finish(false), 5000)
-					unsub = coord.on('view:claimed', (payload: unknown) => {
-						const e = payload as ViewClaimedEvent
-						if (e.name === viewName) {
-							finish(true)
-						}
+
+					pendingOpens.set(viewName, request)
+					unsubscribe = coord.on('view:intent-claim', (payload: unknown) => {
+						const claim = payload as ViewIntentClaim
+						if (claim.intentId !== intent.intentId || claim.name !== viewName) return
+						const claimedAuthority = coord.getViews().getAuthority(viewName)
+						if (!claimedAuthority || !tokensEqual(claimedAuthority.token, claim.token)) return
+						coord.getViews().sendIntentState(claim, coord.getState().getOperationsForSync(syncKeys))
+						finish(null, claimedAuthority)
 					})
-					untrack = coord.trackResource(() => finish(false))
+					untrack = coord.trackResource(() => finish(new WorkspaceDestroyedError()))
+					timeoutId = setTimeout(
+						() =>
+							finish(
+								new Error(
+									`View '${viewName}' was not claimed by the new tab within ${timeout}ms. Make sure the opened page calls app.claim('${viewName}').`,
+								),
+							),
+						timeout,
+					)
+					try {
+						storageSet(localStorage, 'localStorage', pendingKey, JSON.stringify(intent))
+						if (!window.open(url)) {
+							finish(
+								new Error(
+									`Failed to open tab for view '${viewName}'. The browser may have blocked the popup. app.open() must be called in direct response to a user gesture (click, keyboard).`,
+								),
+							)
+						}
+					} catch (error) {
+						finish(error instanceof Error ? error : new Error(String(error)))
+					}
 				})
 
-				if (!claimed) {
-					coord.assertActive()
-					throw new Error(
-						`View '${viewName}' was not claimed by the new tab within 5 seconds. Make sure the opened page calls app.claim('${viewName}').`,
-					)
-				}
-
-				// return handle
-				const handleListeners = new Map<string, Set<(...args: unknown[]) => void>>()
-
-				const handle: ViewHandle = {
-					on(event: string, cb: (...args: unknown[]) => void) {
-						coord.assertActive()
-						let set = handleListeners.get(event)
-						if (!set) {
-							set = new Set()
-							handleListeners.set(event, set)
-						}
-						set.add(cb)
-
-						let unsub: (() => void) | undefined
-						if (event === 'vacant') {
-							unsub = coord.on('view:vacant', (payload: unknown) => {
-								const e = payload as ViewVacantEvent
-								if (e.name === viewName) cb()
-							})
-						} else if (event === 'conflict') {
-							unsub = coord.on('view:conflict', (payload: unknown) => {
-								const e = payload as ViewConflictEvent
-								if (e.name === viewName) cb({ existing: e.existing, incoming: e.incoming })
-							})
-						}
-
-						return () => {
-							set.delete(cb)
-							unsub?.()
-						}
-					},
-					release() {
-						coord.enqueue(() => coord.getViews().release(viewName))
-					},
-					focus() {
-						coord.enqueue(() => coord.getViews().focus(viewName))
-					},
-				} as ViewHandle
-
-				return handle
+				return createViewHandle(authority)
 			})
 		},
 

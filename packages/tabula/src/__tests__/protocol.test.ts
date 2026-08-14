@@ -1,4 +1,10 @@
-import { LOCAL_PROTOCOL, MAX_MESSAGE_BYTES, validateInboundMessage } from '@tabula/protocol'
+import {
+	LOCAL_PROTOCOL,
+	MAX_MESSAGE_BYTES,
+	validateInboundMessage,
+	validateStoredOpenIntent,
+	validateStoredViewRegistryEntry,
+} from '@tabula/protocol'
 import { Channel } from '@tabula/tabula'
 import { describe, expect, it, vi } from 'vitest'
 import { installMockBroadcastChannel, installMockStorage } from './helpers'
@@ -41,6 +47,8 @@ const stateTombstone = {
 	operationId: 'operation-2',
 }
 
+const viewToken = { generation: 2, claimId: 'view-claim-2' }
+
 describe('protocol validation', () => {
 	it.each([
 		['identity:probe', { startedAt: 1 }],
@@ -81,9 +89,25 @@ describe('protocol validation', () => {
 		],
 		['view:claim', { name: 'editor' }],
 		['view:claimed', { name: 'editor', tabId: 'remote-tab' }],
+		[
+			'view:claimed',
+			{
+				name: 'editor',
+				tabId: 'remote-tab',
+				instanceId: 'remote-instance',
+				token: viewToken,
+			},
+		],
 		['view:release', { name: 'editor' }],
+		['view:release', { name: 'editor', token: viewToken, request: true }],
 		['view:conflict', { name: 'editor', existingTabId: 'tab-a', incomingTabId: 'tab-b' }],
 		['view:focus', { name: 'editor' }],
+		['view:focus', { name: 'editor', token: viewToken }],
+		['view:intent-claim', { intentId: 'intent-1', name: 'editor', token: viewToken }],
+		[
+			'view:intent-state',
+			{ intentId: 'intent-1', name: 'editor', token: viewToken, operations: [stateOperation] },
+		],
 		['leader:query', null],
 		['leader:change', { tabId: 'remote-tab' }],
 		['leader:change', { generation: 2, tabId: 'remote-tab', instanceId: 'remote-instance' }],
@@ -151,6 +175,66 @@ describe('protocol validation', () => {
 			validateInboundMessage(envelope('leader:change', { generation: 1, tabId: 'remote-tab' }))
 				.kind,
 		).toBe('invalid')
+	})
+
+	it.each([
+		['zero generation', { generation: 0, claimId: 'claim' }],
+		['fractional generation', { generation: 1.5, claimId: 'claim' }],
+		['missing claim id', { generation: 1 }],
+		['unsafe claim id', { generation: 1, claimId: 'claim\u0000id' }],
+	])('rejects view messages with a malformed token: %s', (_label, token) => {
+		expect(validateInboundMessage(envelope('view:release', { name: 'editor', token })).kind).toBe(
+			'invalid',
+		)
+	})
+
+	it('requires modern view claims to provide instance and token together', () => {
+		expect(
+			validateInboundMessage(
+				envelope('view:claimed', {
+					name: 'editor',
+					tabId: 'remote-tab',
+					instanceId: 'remote-instance',
+				}),
+			).kind,
+		).toBe('invalid')
+		expect(
+			validateInboundMessage(
+				envelope('view:claimed', { name: 'editor', tabId: 'remote-tab', token: viewToken }),
+			).kind,
+		).toBe('invalid')
+	})
+
+	it('validates fenced registry projections and metadata-only open intents', () => {
+		expect(
+			validateStoredViewRegistryEntry({
+				tabId: 'remote-tab',
+				instanceId: 'remote-instance',
+				claimedAt: 1,
+				token: viewToken,
+			}),
+		).not.toBeNull()
+		expect(
+			validateStoredOpenIntent({
+				intentId: 'intent-1',
+				view: 'editor',
+				requester: { tabId: 'remote-tab', instanceId: 'remote-instance' },
+				syncKeys: ['theme'],
+				createdAt: 1,
+				expiresAt: 2,
+			}),
+		).not.toBeNull()
+		expect(
+			validateStoredOpenIntent({
+				intentId: 'intent-1',
+				view: 'editor',
+				requester: { tabId: 'remote-tab', instanceId: 'remote-instance' },
+				syncKeys: ['theme'],
+				syncedState: { theme: 'dark' },
+				createdAt: 1,
+				expiresAt: 2,
+			}),
+		).toBeNull()
 	})
 
 	it.each(['__proto__', 'prototype', 'constructor'])(

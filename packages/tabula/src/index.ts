@@ -10,6 +10,8 @@ export type {
 	StateSetOperation,
 	StateSyncRequestPayload,
 	StateSyncResponsePayload,
+	ViewClaimToken,
+	ViewClaimResult,
 	ViewRegistryEntry,
 	WorkspaceOptions,
 	ViewOpenOptions,
@@ -35,6 +37,7 @@ export {
 	CapabilityError,
 	StorageCorruptionError,
 	StorageOperationError,
+	ViewAlreadyClaimedError,
 	WorkspaceDestroyedError,
 	WorkspaceFailedError,
 } from '@tabula/tabula'

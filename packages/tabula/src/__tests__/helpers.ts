@@ -147,7 +147,7 @@ export function installMockDocument(initialVisibility = 'visible'): {
 interface QueuedLockRequest {
 	name: string
 	signal?: AbortSignal
-	callback: (lock: Lock) => unknown
+	callback: (lock: Lock | null) => unknown
 	resolve: (value: unknown) => void
 	reject: (reason: unknown) => void
 	granted: boolean
@@ -160,8 +160,15 @@ export class MockLockManager {
 	activeCount = 0
 	maxActiveCount = 0
 
-	request(name: string, options: LockOptions, callback: (lock: Lock) => unknown): Promise<unknown> {
+	request(
+		name: string,
+		options: LockOptions,
+		callback: (lock: Lock | null) => unknown,
+	): Promise<unknown> {
 		this.requestedNames.push(name)
+		if (options.ifAvailable && this.held.has(name)) {
+			return Promise.resolve().then(() => callback(null))
+		}
 		return new Promise((resolve, reject) => {
 			const request: QueuedLockRequest = {
 				name,
@@ -227,6 +234,7 @@ export class MockLockManager {
 export function installMockWindow(): {
 	getHandlers: (event: string) => Array<(...args: unknown[]) => void>
 	locks: MockLockManager
+	open: ReturnType<typeof vi.fn>
 	restore: () => void
 } {
 	const handlers = new Map<string, Array<(...args: unknown[]) => void>>()
@@ -236,10 +244,13 @@ export function installMockWindow(): {
 
 	const mockWin: Record<string, unknown> & {
 		focus: ReturnType<typeof vi.fn>
+		open: ReturnType<typeof vi.fn>
 		addEventListener: (event: string, handler: (...args: unknown[]) => void) => void
 		removeEventListener: (event: string, handler: (...args: unknown[]) => void) => void
 	} = {
 		focus: vi.fn(),
+		open: vi.fn(() => ({})),
+		location: { href: 'https://example.test/' },
 		addEventListener(event: string, handler: (...args: unknown[]) => void) {
 			if (!handlers.has(event)) handlers.set(event, [])
 			handlers.get(event)?.push(handler)
@@ -266,6 +277,7 @@ export function installMockWindow(): {
 	return {
 		getHandlers: (event: string) => handlers.get(event) ?? [],
 		locks,
+		open: mockWin.open,
 		restore: () => {
 			Object.defineProperty(globalThis, 'window', { value: origWindow, writable: true })
 			if (secureContextDescriptor) {

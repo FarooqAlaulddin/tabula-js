@@ -2,7 +2,7 @@
 id: P1-007
 title: Make named-view ownership atomic and fenced
 phase: 1
-status: todo
+status: done
 depends_on: [P1-002]
 owner: agent
 scope: view authority/registry/open protocol + unit/browser tests
@@ -43,13 +43,13 @@ rule, claim result, fencing token, release authority, and intent TTL are authori
 
 ## Acceptance criteria
 
-- [ ] Repeated simultaneous claims across 8 tabs produce exactly one lock holder and one converged owner projection.
-- [ ] Stale/delayed handles and messages cannot release, focus, or overwrite a newer claim.
-- [ ] Popup-block, unclaimed timeout, late claim, competing open, and destroy paths leave no pending intent or listener.
-- [ ] Refresh/crash/freeze/bfcache tests match CONTRACT and leave no ghost registry entry.
-- [ ] Focus delivery is directly instrumented; browser refusal to foreground is documented separately.
-- [ ] `open`, `claim`, conflict, vacancy, registry queries, and ViewHandle semantics have unit and three-tab browser coverage.
-- [ ] Public API changes needed for claim results/tokens are recorded for P4-001 rather than hidden.
+- [x] Repeated simultaneous claims across 8 tabs produce exactly one lock holder and one converged owner projection.
+- [x] Stale/delayed handles and messages cannot release, focus, or overwrite a newer claim.
+- [x] Popup-block, unclaimed timeout, late claim, competing open, and destroy paths leave no pending intent or listener.
+- [x] Refresh/crash/freeze/bfcache tests match CONTRACT and leave no ghost registry entry.
+- [x] Focus delivery is directly instrumented; browser refusal to foreground is documented separately.
+- [x] `open`, `claim`, conflict, vacancy, registry queries, and ViewHandle semantics have unit and three-tab browser coverage.
+- [x] Public API changes needed for claim results/tokens are recorded for P4-001 rather than hidden.
 
 ## Files
 
@@ -58,4 +58,26 @@ testing adapter, README/package docs, `docs/CONTRACT.md`, and `DECISIONS.md`.
 
 ## Outcome
 
-(pending)
+- Replaced registry read/write ownership with the exact encoded per-view exclusive Web
+  Lock and non-waiting `ifAvailable` claim. Persistent generations plus random claim
+  ids fence registry projections, claim/release/focus/vacancy traffic, and handles.
+- `claim()` now returns `Promise<ViewClaimResult>`; successful claim and `open()` paths
+  share token-bearing handles. `ViewAlreadyClaimedError` enforces one view per tab.
+- Rebuilt `open()` around expiring metadata-only intents and directed, validated state
+  operation handoff. Exact cleanup covers popup block, 10-second configurable timeout,
+  successful claim, supersession, destroy/failure, corrupt/expired metadata, and late
+  ordinary claims without leaking structured-clone values into storage or URLs.
+- Refresh reclaims remembered names with a fresh generation; bfcache retains the exact
+  lock. Vacancy repair probes the Web Lock, so dead projections clear only after lock
+  release and frozen holders are not stolen. Focus delivery is exact-token targeted.
+- Updated the testing adapter, public declarations, root/package docs, demos, direct
+  React example, contract/decisions, and the P4 API-freeze review record.
+- Unit evidence: view, protocol, lifecycle/open cleanup, registry, coordinator,
+  integration, regression, and testing-adapter suites; final run 241/241 passed.
+- Browser evidence: `e2e/tests/views.spec.ts` covers eight-tab contention, three-tab
+  convergence/vacancy, stale handles, exact focus delivery, refresh, frozen holder,
+  bfcache, abrupt close/registry cleanup, and typed `open()` handoff. Final full run:
+  47/47 Chromium tests passed.
+- Final gates: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`,
+  `node v1-milestone/validate.mjs`, and the complete Playwright suite passed. The
+  Excalidraw build retains its pre-existing large-chunk warnings.

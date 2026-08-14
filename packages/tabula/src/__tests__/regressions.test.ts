@@ -136,13 +136,15 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 		const onConflict = vi.fn()
 
 		const views = new Views(
+			'regression',
 			registry as any,
 			channel as any,
 			presence as any,
-			'epoch-1',
 			onClaimed,
 			onVacant,
 			onConflict,
+			vi.fn(),
+			vi.fn(),
 		)
 
 		// Verify the unknown tab is truly not in presence
@@ -153,7 +155,12 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 			makeMessage({
 				type: 'view:claimed',
 				from: unknownTabId,
-				payload: { name: 'editor', tabId: unknownTabId },
+				payload: {
+					name: 'editor',
+					tabId: unknownTabId,
+					instanceId: `${unknownTabId}-instance`,
+					token: { generation: 1, claimId: 'unknown-claim' },
+				},
 			}),
 		)
 
@@ -171,6 +178,7 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 				view: 'editor',
 				visible: true,
 			}),
+			{ generation: 1, claimId: 'unknown-claim' },
 		)
 
 		// The synthetic TabMeta should have firstSeenAt and lastSeenAt
@@ -186,11 +194,13 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 		const onClaimed = vi.fn()
 
 		const views = new Views(
+			'regression',
 			registry as any,
 			channel as any,
 			presence as any,
-			'epoch-1',
 			onClaimed,
+			vi.fn(),
+			vi.fn(),
 			vi.fn(),
 			vi.fn(),
 		)
@@ -199,7 +209,12 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 			makeMessage({
 				type: 'view:claimed',
 				from: 'phantom-tab',
-				payload: { name: 'dashboard', tabId: 'phantom-tab' },
+				payload: {
+					name: 'dashboard',
+					tabId: 'phantom-tab',
+					instanceId: 'phantom-tab-instance',
+					token: { generation: 1, claimId: 'phantom-claim' },
+				},
 			}),
 		)
 

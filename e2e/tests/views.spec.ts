@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
 	claimView,
-	destroyWorkspace,
 	getEvents,
 	getViews,
 	hasView,
@@ -72,9 +71,9 @@ test.describe('Views', () => {
 		})
 
 		// attempting to claim a second view should throw
-		const error = await pageA.evaluate(() => {
+		const error = await pageA.evaluate(async () => {
 			try {
-				;(window as any).__tabula.claim('preview')
+				await (window as any).__tabula.claim('preview')
 				return null
 			} catch (e: any) {
 				return e.message
@@ -82,10 +81,10 @@ test.describe('Views', () => {
 		})
 
 		expect(error).not.toBeNull()
-		expect(error).toContain('already holds')
+		expect(error).toContain('already owns')
 	})
 
-	test('view becomes vacant on tab close', async ({ context }) => {
+	test('abrupt tab close releases authority and leaves no registry ghost', async ({ context }) => {
 		const ns = uniqueNs()
 		const pageA = await context.newPage()
 		const pageB = await context.newPage()
@@ -100,8 +99,7 @@ test.describe('Views', () => {
 			timeout: 5000,
 		})
 
-		// close A which holds the view
-		await destroyWorkspace(pageA)
+		// Close without an explicit workspace destroy call.
 		await pageA.close()
 
 		// B should see the view become vacant
@@ -109,6 +107,12 @@ test.describe('Views', () => {
 			timeout: 10000,
 		})
 		expect(await hasView(pageB, 'editor')).toBe(false)
+		expect(
+			await pageB.evaluate(
+				(namespace) => localStorage.getItem(`tabula:${namespace}:view:editor`),
+				ns,
+			),
+		).toBeNull()
 	})
 
 	test('view claim via companion page (claim.html)', async ({ context }) => {
@@ -162,9 +166,11 @@ test.describe('Views', () => {
 		})
 
 		// B tries to claim 'editor' — the internal claim returns false and fires view:conflict
-		await pageB.evaluate(() => {
-			;(window as any).__tabula.claim('editor')
+		const result = await pageB.evaluate(async () => {
+			const claim = await (window as any).__tabula.claim('editor')
+			return { status: claim.status, ownerId: claim.owner?.id ?? null }
 		})
+		expect(result.status).toBe('conflict')
 
 		// Wait for the view:conflict event on B
 		await waitForEvent(pageB, 'view:conflict')
@@ -205,5 +211,201 @@ test.describe('Views', () => {
 
 		expect(await pageA.evaluate(() => (window as any).__focusCallCount)).toBe(1)
 		expect(await pageB.evaluate(() => (window as any).__focusCallCount)).toBe(0)
+	})
+
+	test('eight simultaneous claimers produce one owner and one converged projection', async ({
+		context,
+	}) => {
+		const ns = uniqueNs('view-contention')
+		const pages = await Promise.all(Array.from({ length: 8 }, () => context.newPage()))
+		await Promise.all(pages.map((page) => openTab(page, ns)))
+
+		const results = await Promise.all(pages.map((page) => claimView(page, 'editor')))
+		const winners = results.filter((result) => result.status === 'claimed')
+		expect(winners).toHaveLength(1)
+		const winnerId = winners[0].ownerId
+		expect(winnerId).not.toBeNull()
+		expect(results.filter((result) => result.status === 'conflict')).toHaveLength(7)
+
+		await Promise.all(
+			pages.map((page) =>
+				page.waitForFunction(
+					(expected) => (window as any).__tabula.views.get('editor')?.id === expected,
+					winnerId,
+				),
+			),
+		)
+		const heldLocks = await pages[0].evaluate(
+			async (lockName) => {
+				const snapshot = await navigator.locks.query()
+				return snapshot.held?.filter((lock) => lock.name === lockName).length ?? 0
+			},
+			`tabula-js:v1:${encodeURIComponent(ns)}:view:editor`,
+		)
+		expect(heldLocks).toBe(1)
+	})
+
+	test('three tabs converge on claim, fenced handle release, and vacancy', async ({ context }) => {
+		const ns = uniqueNs('three-tab-view')
+		const [pageA, pageB, pageC] = await Promise.all([
+			context.newPage(),
+			context.newPage(),
+			context.newPage(),
+		])
+		await Promise.all([openTab(pageA, ns), openTab(pageB, ns), openTab(pageC, ns)])
+		const claimed = await claimView(pageA, 'editor')
+		expect(claimed.status).toBe('claimed')
+
+		await Promise.all(
+			[pageB, pageC].map((page) =>
+				page.waitForFunction(() => (window as any).__tabula.views.has('editor')),
+			),
+		)
+		const owners = await Promise.all(
+			[pageA, pageB, pageC].map((page) =>
+				page.evaluate(() => (window as any).__tabula.views.get('editor')?.id ?? null),
+			),
+		)
+		expect(new Set(owners).size).toBe(1)
+
+		await pageA.evaluate(() => (window as any).__viewHandles.editor.release())
+		await Promise.all(
+			[pageA, pageB, pageC].map((page) =>
+				page.waitForFunction(() => !(window as any).__tabula.views.has('editor')),
+			),
+		)
+	})
+
+	test('a stale handle cannot release or focus a replacement claim', async ({ context }) => {
+		const ns = uniqueNs('stale-handle')
+		const pageA = await context.newPage()
+		const pageB = await context.newPage()
+		await Promise.all([openTab(pageA, ns), openTab(pageB, ns)])
+		await claimView(pageA, 'editor')
+		await pageA.evaluate(() => {
+			;(window as any).__staleHandle = (window as any).__viewHandles.editor
+			;(window as any).__staleHandle.release()
+		})
+		await pageB.waitForFunction(() => !(window as any).__tabula.views.has('editor'))
+		const replacement = await claimView(pageB, 'editor')
+		expect(replacement.status).toBe('claimed')
+		await pageA.waitForFunction(() => (window as any).__tabula.views.has('editor'))
+
+		await pageA.evaluate(() => {
+			;(window as any).__staleHandle.release()
+			;(window as any).__staleHandle.focus()
+		})
+		await pageB.waitForTimeout(250)
+		expect(await hasView(pageB, 'editor')).toBe(true)
+		expect(await pageB.evaluate(() => (window as any).__focusCallCount)).toBe(0)
+	})
+
+	test('refresh remembers and reclaims a held view with a newer generation', async ({ page }) => {
+		const ns = uniqueNs('view-refresh')
+		await openTab(page, ns)
+		const first = await claimView(page, 'editor')
+		expect(first.status).toBe('claimed')
+		const firstGeneration = first.token?.generation ?? 0
+
+		await page.reload()
+		await page.waitForFunction(() => document.getElementById('status')?.textContent === 'ready')
+		await page.waitForFunction(() => (window as any).__tabula.views.has('editor'))
+		const storedGeneration = await page.evaluate((namespace) => {
+			const raw = localStorage.getItem(`tabula:${namespace}:view:editor`)
+			return raw ? JSON.parse(raw).token.generation : 0
+		}, ns)
+		expect(storedGeneration).toBeGreaterThan(firstGeneration)
+	})
+
+	test('a frozen view holder is not replaced while its lock remains held', async ({ context }) => {
+		const ns = uniqueNs('view-frozen')
+		const holder = await context.newPage()
+		const contender = await context.newPage()
+		await Promise.all([openTab(holder, ns), openTab(contender, ns)])
+		const claimed = await claimView(holder, 'editor')
+		expect(claimed.status).toBe('claimed')
+		await contender.waitForFunction(() => (window as any).__tabula.views.has('editor'))
+
+		const session = await context.newCDPSession(holder)
+		await session.send('Page.setWebLifecycleState', { state: 'frozen' })
+		await contender.waitForTimeout(1200)
+		const conflict = await claimView(contender, 'editor')
+		expect(conflict.status).toBe('conflict')
+		expect(await hasView(contender, 'editor')).toBe(true)
+		const held = await contender.evaluate(
+			async (name) => {
+				const snapshot = await navigator.locks.query()
+				return snapshot.held?.filter((lock) => lock.name === name).length ?? 0
+			},
+			`tabula-js:v1:${encodeURIComponent(ns)}:view:editor`,
+		)
+		expect(held).toBe(1)
+
+		await session.send('Page.setWebLifecycleState', { state: 'active' })
+	})
+
+	test('bfcache suspension retains the exact view authority', async ({ context }) => {
+		const ns = uniqueNs('view-bfcache')
+		const holder = await context.newPage()
+		const contender = await context.newPage()
+		await Promise.all([openTab(holder, ns), openTab(contender, ns)])
+		const claimed = await claimView(holder, 'editor')
+		if (!claimed.token) throw new Error('Expected a fenced claim token.')
+		await contender.waitForFunction(() => (window as any).__tabula.views.has('editor'))
+
+		await holder.evaluate(() => {
+			window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
+		})
+		await expect
+			.poll(() => holder.evaluate(() => (window as any).__tabula.status().lifecycle))
+			.toBe('bfcache-suspended')
+		expect((await claimView(contender, 'editor')).status).toBe('conflict')
+
+		await holder.evaluate(() => {
+			window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+		})
+		await expect
+			.poll(() => holder.evaluate(() => (window as any).__tabula.status().lifecycle))
+			.toBe('ready')
+		const tokenAfter = await holder.evaluate((namespace) => {
+			const raw = localStorage.getItem(`tabula:${namespace}:view:editor`)
+			return raw ? JSON.parse(raw).token : null
+		}, ns)
+		expect(tokenAfter).toEqual(claimed.token)
+	})
+
+	test('open transfers selected structured-clone state by protocol and clears its intent', async ({
+		context,
+	}) => {
+		const ns = uniqueNs('view-open')
+		const opener = await context.newPage()
+		await openTab(opener, ns)
+		await opener.evaluate(() => {
+			;(window as any).__tabula.state.set('document', new Map([['title', 'Typed state']]))
+		})
+
+		const popupPromise = context.waitForEvent('page')
+		const opened = opener.evaluate(async (namespace) => {
+			const handle = await (window as any).__tabula.open('settings', {
+				url: `/claim.html?ns=${namespace}&view=settings&heartbeat=200&timeout=1000`,
+				syncKeys: ['document'],
+			})
+			;(window as any).__openedHandle = handle
+			return { name: handle.name, ownerId: handle.owner.id, token: handle.token }
+		}, ns)
+		const popup = await popupPromise
+		await popup.waitForFunction(() => document.getElementById('status')?.textContent === 'claimed')
+		const handle = await opened
+		expect(handle.name).toBe('settings')
+		await popup.waitForFunction(() => (window as any).__tabula.state.get('document') instanceof Map)
+		expect(
+			await popup.evaluate(() => (window as any).__tabula.state.get('document').get('title')),
+		).toBe('Typed state')
+		expect(
+			await opener.evaluate(
+				(namespace) => localStorage.getItem(`tabula:${namespace}:pending-open:settings`),
+				ns,
+			),
+		).toBeNull()
 	})
 })

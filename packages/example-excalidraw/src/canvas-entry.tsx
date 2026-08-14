@@ -4,8 +4,10 @@ import { SharedCanvas } from './SharedCanvas'
 import { workspace } from './workspace'
 import './style.css'
 
-// Claim the 'canvas' view — queued until workspace is ready
-workspace.claim('canvas')
+// Claim the 'canvas' view; a conflict means another canvas tab won.
+void workspace.claim('canvas').then((result) => {
+	if (result.status === 'conflict') console.warn('Canvas view is already open.', result.owner)
+})
 
 const subscribeTheme = (onStoreChange: () => void) => workspace.state.on('theme', onStoreChange)
 const getTheme = () => workspace.state.get('theme') ?? 'light'

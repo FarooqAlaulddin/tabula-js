@@ -29,6 +29,8 @@ export type MessageType =
 	| 'view:release'
 	| 'view:conflict'
 	| 'view:focus'
+	| 'view:intent-claim'
+	| 'view:intent-state'
 	| 'leader:query'
 	| 'leader:change'
 	| 'protocol:reject'
@@ -49,6 +51,8 @@ const MESSAGE_TYPES = new Set<MessageType>([
 	'view:release',
 	'view:conflict',
 	'view:focus',
+	'view:intent-claim',
+	'view:intent-state',
 	'leader:query',
 	'leader:change',
 	'protocol:reject',
@@ -103,6 +107,20 @@ export interface StateDeleteOperation extends StateOperationBase {
 }
 
 export type StateOperation<V = unknown> = StateSetOperation<V> | StateDeleteOperation
+
+export interface ViewClaimToken {
+	generation: number
+	claimId: string
+}
+
+export interface StoredOpenIntent {
+	intentId: string
+	view: string
+	requester: MessageIdentity
+	syncKeys: string[]
+	createdAt: number
+	expiresAt: number
+}
 
 export interface StateSyncRequestPayload {
 	requestId: string
@@ -363,6 +381,26 @@ function isStateBatch(value: unknown): boolean {
 	return true
 }
 
+function isStateOperationList(value: unknown): value is StateOperation[] {
+	if (!Array.isArray(value) || value.length > MAX_STATE_KEYS) return false
+	const keys = new Set<string>()
+	for (const operation of value) {
+		if (!isStateOperation(operation) || keys.has(operation.key)) return false
+		keys.add(operation.key)
+	}
+	return true
+}
+
+export function isViewClaimToken(value: unknown): value is ViewClaimToken {
+	return (
+		isRecord(value) &&
+		hasSafeOwnKeys(value) &&
+		Number.isSafeInteger(value.generation) &&
+		(value.generation as number) > 0 &&
+		isValidId(value.claimId)
+	)
+}
+
 function hasName(value: unknown): boolean {
 	return isRecord(value) && hasSafeOwnKeys(value) && isValidName(value.name)
 }
@@ -435,17 +473,44 @@ function validatePayload(type: MessageType, payload: unknown): boolean {
 						payload.complete === true))
 			)
 		case 'view:claim':
-		case 'view:release':
-		case 'view:focus':
 			return hasName(payload)
 		case 'view:claimed':
-			return isRecord(payload) && hasName(payload) && isValidId(payload.tabId)
+			return (
+				isRecord(payload) &&
+				hasName(payload) &&
+				isValidId(payload.tabId) &&
+				((payload.instanceId === undefined && payload.token === undefined) ||
+					(isValidId(payload.instanceId) && isViewClaimToken(payload.token)))
+			)
+		case 'view:release':
+		case 'view:focus':
+			return (
+				isRecord(payload) &&
+				hasName(payload) &&
+				(payload.token === undefined || isViewClaimToken(payload.token)) &&
+				(payload.request === undefined || typeof payload.request === 'boolean')
+			)
 		case 'view:conflict':
 			return (
 				isRecord(payload) &&
 				hasName(payload) &&
 				isValidId(payload.existingTabId) &&
 				isValidId(payload.incomingTabId)
+			)
+		case 'view:intent-claim':
+			return (
+				isRecord(payload) &&
+				hasName(payload) &&
+				isValidId(payload.intentId) &&
+				isViewClaimToken(payload.token)
+			)
+		case 'view:intent-state':
+			return (
+				isRecord(payload) &&
+				hasName(payload) &&
+				isValidId(payload.intentId) &&
+				isViewClaimToken(payload.token) &&
+				isStateOperationList(payload.operations)
 			)
 		case 'leader:query':
 			return payload === null
@@ -546,9 +611,9 @@ export function validateStoredPresence(value: unknown): StoredPresence | null {
 
 export interface StoredViewRegistryEntry {
 	tabId: string
+	instanceId: string
 	claimedAt: number
-	epoch: string
-	meta: Record<string, unknown>
+	token: ViewClaimToken
 }
 
 export function validateStoredViewRegistryEntry(value: unknown): StoredViewRegistryEntry | null {
@@ -556,18 +621,48 @@ export function validateStoredViewRegistryEntry(value: unknown): StoredViewRegis
 		!isRecord(value) ||
 		!hasSafeOwnKeys(value) ||
 		!isValidId(value.tabId) ||
+		!isValidId(value.instanceId) ||
 		!isFiniteTimestamp(value.claimedAt) ||
-		!isValidId(value.epoch) ||
-		!isRecord(value.meta) ||
-		!hasSafeOwnKeys(value.meta) ||
-		!structuralBudgetIsValid(value.meta)
+		!isViewClaimToken(value.token)
 	) {
 		return null
 	}
 	return {
 		tabId: value.tabId,
+		instanceId: value.instanceId,
 		claimedAt: value.claimedAt,
-		epoch: value.epoch,
-		meta: Object.assign(Object.create(null) as Record<string, unknown>, value.meta),
+		token: value.token,
+	}
+}
+
+export function validateStoredOpenIntent(value: unknown): StoredOpenIntent | null {
+	if (
+		!isRecord(value) ||
+		!hasSafeOwnKeys(value) ||
+		Object.keys(value).length !== 6 ||
+		!isValidId(value.intentId) ||
+		!isValidName(value.view) ||
+		!isRecord(value.requester) ||
+		!hasSafeOwnKeys(value.requester) ||
+		Object.keys(value.requester).length !== 2 ||
+		!isValidId(value.requester.tabId) ||
+		!isValidId(value.requester.instanceId) ||
+		!Array.isArray(value.syncKeys) ||
+		value.syncKeys.length > MAX_STATE_KEYS ||
+		!value.syncKeys.every(isValidStateKey) ||
+		new Set(value.syncKeys).size !== value.syncKeys.length ||
+		!isFiniteTimestamp(value.createdAt) ||
+		!isFiniteTimestamp(value.expiresAt) ||
+		(value.expiresAt as number) < (value.createdAt as number)
+	) {
+		return null
+	}
+	return {
+		intentId: value.intentId,
+		view: value.view,
+		requester: { tabId: value.requester.tabId, instanceId: value.requester.instanceId },
+		syncKeys: [...value.syncKeys],
+		createdAt: value.createdAt,
+		expiresAt: value.expiresAt,
 	}
 }

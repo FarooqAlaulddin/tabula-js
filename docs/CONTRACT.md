@@ -396,6 +396,10 @@ supersede the older pending intent before either claim completes.
 
 Selected design: expiring metadata intent plus protocol state handoff.
 
+The child sends `view:intent-claim` only after acquiring the target view token. The
+requester replies with token-targeted `view:intent-state`; the child accepts it only
+for the exact intent, requester document identity, view name, and claim token.
+
 Rejected alternatives: state in URL, JSON state in localStorage, and unbounded pending
 records. Those respectively leak data, lose structured-clone types, or leave ghosts.
 
