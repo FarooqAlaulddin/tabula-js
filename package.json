@@ -3,6 +3,10 @@
 	"packageManager": "pnpm@11.5.0",
 	"scripts": {
 		"build": "pnpm -r build",
+		"changeset": "changeset",
+		"changeset:status": "changeset status",
+		"changeset:version": "changeset version",
+		"changeset:pre": "changeset pre",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"typecheck": "pnpm -r typecheck",
@@ -13,10 +17,12 @@
 		"demo:build": "node scripts/build-demo.mjs",
 		"demo:test": "pnpm exec playwright test --config demo/playwright.config.ts",
 		"demo": "pnpm build && vite --config demo/vite.config.ts",
-		"example:excalidraw": "pnpm build && pnpm --filter example-excalidraw dev"
+		"example:excalidraw": "pnpm build && pnpm --filter example-excalidraw dev",
+		"release:publish:next": "changeset publish --tag next"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.0",
+		"@changesets/cli": "3.0.0",
 		"@playwright/test": "^1.58.2",
 		"@vitest/coverage-v8": "^3.2.4",
 		"typescript": "^5.7.0",
