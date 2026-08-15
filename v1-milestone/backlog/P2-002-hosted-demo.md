@@ -2,7 +2,7 @@
 id: P2-002
 title: Deploy a semantically accurate live demo
 phase: 2
-status: in-progress
+status: done
 depends_on: [P1-003]
 owner: agent
 scope: multi-page demo + Pages workflow + browser smoke
@@ -30,12 +30,12 @@ present LWW state as collaborative document editing.
 
 ## Acceptance criteria
 
-- [ ] Workflow deploys all pages and the public URL is linked from the root/package docs.
-- [ ] Two windows and three tabs visibly demonstrate every listed capability without unsupported claims.
-- [ ] View URLs, assets, refresh, and open/focus work under the Pages base path.
-- [ ] The production-base browser smoke passes on all three engines.
-- [ ] Manual deployed check and screenshots are linked in Outcome.
-- [ ] GitHub Pages human setup, if still required, is recorded as a concrete prerequisite.
+- [x] Workflow deploys all pages and the public URL is linked from the root/package docs.
+- [x] Two windows and three tabs visibly demonstrate every listed capability without unsupported claims.
+- [x] View URLs, assets, refresh, and open/focus work under the Pages base path.
+- [x] The production-base browser smoke passes on all three engines.
+- [x] Manual deployed check and screenshots are linked in Outcome.
+- [x] GitHub Pages human setup, if still required, is recorded as a concrete prerequisite.
 
 ## Files
 
@@ -43,4 +43,21 @@ Demo sources/config, deploy workflow, demo browser tests, and README links.
 
 ## Outcome
 
-(pending)
+- The public demo is deployed at <https://farooqalaulddin.github.io/tabula-js/> from
+  the packed package through the GitHub Pages workflow. Root and package documentation
+  link the same URL, and direct requests to the dashboard, editor, preview, and settings
+  routes return successfully under the `/tabula-js/` base path.
+- GitHub Actions run [31879880540](https://github.com/FarooqAlaulddin/tabula-js/actions/runs/31879880540)
+  passed the production-base demo suite, deployed the tested artifact, and then passed
+  the deployed smoke suite on Chromium, Firefox, and WebKit. The run also passed lint,
+  build, typecheck, unit, portable E2E, packed-package, and compatibility jobs.
+- A manual deployed check opened the exclusive editor and read-only preview, entered
+  content in the editor, and observed the dashboard and preview mirror it. The dashboard
+  reported the editor claim, both connected tabs, active leader work, and no editable
+  control in the preview.
+- Retained deployed-run screenshots: [Chromium](../evidence/P2-002/chromium.png),
+  [Firefox](../evidence/P2-002/firefox.png), and
+  [WebKit](../evidence/P2-002/webkit.png).
+- The repository is public, Pages uses GitHub Actions with HTTPS enforcement, and the
+  `github-pages` environment allows `main` plus the milestone branch used for this
+  verification. No remaining human Pages setup prerequisite blocks this gate.

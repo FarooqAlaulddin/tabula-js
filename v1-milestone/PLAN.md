@@ -193,7 +193,7 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 | P1-004 | Run the browser matrix on the final coordination protocol | agent | done |
 | P1-003 | Prove adversarial lifecycle and concurrency behavior | agent | done |
 | P2-001 | Publish honest alternatives and product boundaries | agent | done |
-| P2-002 | Deploy a semantically accurate live demo | agent | in-progress |
+| P2-002 | Deploy a semantically accurate live demo | agent | done |
 | P2-003 | Publish the browser behavior and support contract | agent | done |
 | P2-004 | Align npm package documentation and executable examples | agent | todo |
 | P3-002 | Adopt changesets and seed changelogs | agent | done |
