@@ -20,11 +20,47 @@ Do not combine unrelated consumer changes in one summary.
 ## Dist-tags
 
 All prereleases and normal `0.x` previews use `next`. Nothing publishes to `latest`
-before the final `1.0.0` promotion. The repository-pinned publish command is:
+before the final `1.0.0` promotion. The repository-pinned publish command consumes
+an already validated tarball:
 
 ```bash
 pnpm release:publish:next
 ```
+
+## Trusted publisher setup
+
+Before P4-002, the maintainer must complete this checklist in npm and GitHub:
+
+- [ ] Make `FarooqAlaulddin/tabula-js` public; npm provenance is unavailable for a
+  private source repository.
+- [ ] Create or claim the public npm package `@farooqalaulddin/tabula-js`.
+- [ ] Configure its GitHub Actions trusted publisher for owner `FarooqAlaulddin`,
+  repository `tabula-js`, workflow `release.yml`, environment `npm`, with
+  `npm publish` allowed.
+- [ ] Create the protected GitHub `npm` environment and require maintainer approval.
+- [ ] Confirm no `NPM_TOKEN` or `NODE_AUTH_TOKEN` repository/environment secret exists.
+- [ ] Confirm the package repository URL exactly matches the public GitHub repository.
+
+Trusted publishing requires npm CLI 11.5.1 or newer and Node 22.14.0 or newer. The
+workflow pins Node 22.14.0 and npm 11.12.1, grants `id-token: write` only to the final
+publish job, and explicitly requests public access and provenance. See npm's
+[trusted publishing](https://docs.npmjs.com/trusted-publishers/) and
+[provenance](https://docs.npmjs.com/generating-provenance-statements/) documentation.
+
+## Workflow operation
+
+Pushes to `main` create or update the Changesets version pull request. Pull requests
+that change release inputs run the complete unprivileged candidate pipeline. A manual
+dispatch defaults to dry-run and performs lint, build, typecheck, unit, three-engine
+browser, packed demo, compatibility, and package gates before running the exact
+`npm publish` command with `--dry-run` against one retained tarball.
+
+After reviewing the version PR and dry-run artifact, dispatch `Release` on `main` with
+`dry_run=false`. The separate `npm` environment job downloads and checksum-verifies
+those same bytes, publishes through OIDC, creates an annotated package/version tag,
+and attaches the tarball and machine-readable manifest to the GitHub release. A dry
+run does not prove the OIDC exchange or registry provenance attestation; P4-002's
+`0.2.0-alpha.0` publish is that first integration proof.
 
 ## 0.2.0 alpha and preview
 

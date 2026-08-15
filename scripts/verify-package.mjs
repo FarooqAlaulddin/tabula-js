@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -244,6 +244,16 @@ try {
 	const latest = await installConsumer('consumer-typescript-latest', policy.typescript.latest)
 	await compileDeclarations(latest)
 	const bundle = await browserBundleSmoke(minimum)
+	const packageOutput = process.env.TABULA_PACKAGE_OUTPUT
+	if (packageOutput) {
+		const normalizedOutput = path.resolve(packageOutput)
+		const allowedDirectory = path.join(root, 'release-artifacts')
+		if (path.dirname(normalizedOutput) !== allowedDirectory || !normalizedOutput.endsWith('.tgz')) {
+			throw new Error(`invalid validated-package output path: ${normalizedOutput}`)
+		}
+		await mkdir(allowedDirectory, { recursive: true })
+		await copyFile(tarball, normalizedOutput)
+	}
 
 	console.log(
 		JSON.stringify({
@@ -252,6 +262,7 @@ try {
 			typescript: policy.typescript,
 			bundle,
 			gzipBudgetBytes: policy.gzipBudgetBytes,
+			...(packageOutput ? { validatedPackage: path.resolve(packageOutput) } : {}),
 		}),
 	)
 } finally {

@@ -1,5 +1,6 @@
 # Playwright
 test-results/
+release-artifacts/
 playwright-report/
 
 # Coverage

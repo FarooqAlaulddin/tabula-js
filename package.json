@@ -21,7 +21,10 @@
 		"demo:test": "pnpm exec playwright test --config demo/playwright.config.ts",
 		"demo": "pnpm build && vite --config demo/vite.config.ts",
 		"example:excalidraw": "pnpm build && pnpm --filter example-excalidraw dev",
-		"release:publish:next": "changeset publish --tag next"
+		"release:prepare": "node scripts/release.mjs prepare",
+		"release:dry-run": "node scripts/release.mjs dry-run",
+		"release:verify": "node scripts/release.mjs verify",
+		"release:publish:next": "node scripts/release.mjs publish --tag next"
 	},
 	"devDependencies": {
 		"@arethetypeswrong/cli": "0.18.5",

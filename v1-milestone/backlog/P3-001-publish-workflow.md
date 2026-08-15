@@ -2,7 +2,7 @@
 id: P3-001
 title: Prove the provenance-backed release workflow
 phase: 3
-status: todo
+status: in-progress
 depends_on: [P3-002, P3-003, P3-004]
 owner: agent
 scope: version-PR + publish workflow + dry-run evidence
