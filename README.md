@@ -569,7 +569,7 @@ Tabula trusts all scripts on the same origin. Keep in mind:
 
 | Package | Description | Size |
 |---------|-------------|------|
-| [`@farooqalaulddin/tabula-js`](./packages/tabula) | Core library. Zero dependencies. | Gated before preview publication |
+| [`@farooqalaulddin/tabula-js`](./packages/tabula) | Core library. Zero dependencies. | <= 16 KiB minified + gzip |
 | [`@farooqalaulddin/tabula-js/testing`](./packages/tabula/src/testing.ts) | Test utilities. In-memory multi-tab simulation. | Included in core |
 
 ## Development

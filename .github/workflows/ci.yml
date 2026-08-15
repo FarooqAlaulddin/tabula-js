@@ -82,6 +82,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  package:
+    name: Packed package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm package:check
+
   demo:
     name: Production demo
     if: github.event_name == 'push' || inputs.deploy_demo

@@ -407,7 +407,7 @@ Tabula trusts all scripts on the same origin. Keep in mind:
 
 | Package | Description | Size |
 |---------|-------------|------|
-| `@farooqalaulddin/tabula-js` | Core library. Zero dependencies. | Gated before preview publication |
+| `@farooqalaulddin/tabula-js` | Core library. Zero dependencies. | <= 16 KiB minified + gzip |
 | `@farooqalaulddin/tabula-js/testing` | Test utilities. In-memory multi-tab simulation. | Included in core |
 
 ## License
