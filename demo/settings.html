@@ -28,19 +28,11 @@
 		</div>
 
 		<div class="settings-group">
-			<h3>Counter</h3>
+			<h3>Leader-owned work</h3>
 			<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
-				Current value: <strong id="counter-display">0</strong>
+				Current ticks: <strong id="notif-display">0</strong>
 			</p>
-			<button class="btn btn-sm" id="btn-reset-counter">Reset to 0</button>
-		</div>
-
-		<div class="settings-group">
-			<h3>Notifications</h3>
-			<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
-				Current count: <strong id="notif-display">0</strong>
-			</p>
-			<button class="btn btn-sm" id="btn-reset-notif">Reset Notifications</button>
+			<button class="btn btn-sm" id="btn-reset-notif">Reset Ticks</button>
 		</div>
 	</div>
 </div>
@@ -98,14 +90,6 @@ document.getElementById('btn-login').onclick = () => {
 	app.state.set('auth', 'logged-in')
 }
 
-// Counter display — reactive
-function applyCounter(val) {
-	document.getElementById('counter-display').textContent = String(val ?? 0)
-}
-app.state.on('counter', applyCounter)
-
-document.getElementById('btn-reset-counter').onclick = () => app.state.set('counter', 0)
-
 // Notification display — reactive
 function applyNotif(val) {
 	document.getElementById('notif-display').textContent = String(val ?? 0)
@@ -117,7 +101,6 @@ document.getElementById('btn-reset-notif').onclick = () => app.state.set('notifi
 // Init: apply state once coordinator is ready
 app.ready.then(() => {
 	applyTheme(app.state.get('theme'))
-	applyCounter(app.state.get('counter'))
 	applyNotif(app.state.get('notificationCount'))
 })
 </script>

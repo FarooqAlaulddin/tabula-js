@@ -107,23 +107,36 @@ body {
 	color: var(--accent);
 }
 
-.header-badge {
+.runtime-group {
 	display: inline-flex;
 	align-items: center;
-	justify-content: center;
-	min-width: 20px;
-	height: 20px;
-	padding: 0 6px;
-	border-radius: 10px;
-	background: var(--accent);
-	color: #fff;
-	font-size: 11px;
-	font-weight: 600;
-	line-height: 1;
+	gap: 6px;
+	min-width: 0;
 }
 
-.header-badge[data-count='0'] {
-	display: none;
+.runtime-status,
+.leader-status,
+.leader-work {
+	display: inline-flex;
+	align-items: center;
+	height: 24px;
+	padding: 0 8px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--bg-surface-alt);
+	color: var(--text-muted);
+	font-size: 11px;
+	white-space: nowrap;
+}
+
+.runtime-status {
+	font-family: var(--mono);
+}
+
+.leader-work strong {
+	margin-left: 5px;
+	color: var(--text);
+	font-family: var(--mono);
 }
 
 /* ── Buttons ───────────────────────────────────────────────────────────── */
@@ -245,8 +258,13 @@ body {
 	white-space: nowrap;
 }
 
-.tab-crown {
-	font-size: 12px;
+.tab-leader-badge {
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: var(--yellow-bg);
+	color: var(--yellow);
+	font-size: 9px;
+	font-weight: 600;
 	flex-shrink: 0;
 }
 
@@ -708,4 +726,66 @@ body {
 	font-size: 12px;
 	font-style: italic;
 	padding: 8px;
+}
+
+@media (max-width: 960px) {
+	.dashboard {
+		grid-template-columns: 180px minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr) 220px;
+		height: auto;
+		min-height: 100vh;
+		overflow: visible;
+	}
+
+	.header {
+		flex-wrap: wrap;
+	}
+
+	.runtime-group {
+		order: 3;
+		width: 100%;
+		overflow-x: auto;
+	}
+
+	.sidebar-right {
+		grid-column: 1 / -1;
+		border-top: 1px solid var(--border);
+		border-left: 0;
+	}
+
+	.view-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 640px) {
+	.dashboard {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.header-title {
+		width: 100%;
+	}
+
+	.header .btn {
+		flex: 1 1 auto;
+		justify-content: center;
+	}
+
+	.runtime-group {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.runtime-status,
+	.leader-status,
+	.leader-work {
+		width: 100%;
+	}
+
+	.sidebar,
+	.main {
+		overflow: visible;
+	}
 }

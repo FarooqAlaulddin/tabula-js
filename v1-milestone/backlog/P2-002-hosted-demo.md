@@ -2,7 +2,7 @@
 id: P2-002
 title: Deploy a semantically accurate live demo
 phase: 2
-status: todo
+status: in-progress
 depends_on: [P1-003]
 owner: agent
 scope: multi-page demo + Pages workflow + browser smoke

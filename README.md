@@ -40,6 +40,8 @@ If your app is a single-surface SPA, you don't need Tabula — until the day one
 npm install @farooqalaulddin/tabula-js
 ```
 
+[Open the live multi-tab demo](https://farooqalaulddin.github.io/tabula-js/).
+
 ## Quick start
 
 ```ts
@@ -54,7 +56,7 @@ const app = createWorkspace<AppState>('my-app')
 
 await app.ready
 
-// Shared state — syncs to all tabs
+// Shared UI state — converges across live tabs
 app.state.set('theme', 'dark')
 app.state.on('theme', (value) => {
   document.body.dataset.theme = value

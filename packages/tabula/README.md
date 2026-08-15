@@ -23,6 +23,8 @@ Tabula solves all of these with a single primitive: the **workspace**.
 npm install @farooqalaulddin/tabula-js
 ```
 
+[Open the live multi-tab demo](https://farooqalaulddin.github.io/tabula-js/).
+
 ## Quick start
 
 ```ts

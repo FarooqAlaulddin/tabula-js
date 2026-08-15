@@ -11,10 +11,14 @@
 	<!-- ── Header ─────────────────────────────────────────────────────── -->
 	<header class="header">
 		<div class="header-title">Tabula <span>Demo</span></div>
-		<span class="header-badge" id="notif-badge" data-count="0">0</span>
+		<div class="runtime-group" aria-live="polite">
+			<span class="runtime-status" id="runtime-status">initializing</span>
+			<span class="leader-status" id="leader-status">Electing leader...</span>
+			<span class="leader-work">Leader ticks <strong id="leader-count">0</strong></span>
+		</div>
+		<button class="btn btn-sm" id="btn-new-dashboard">Open Another Tab</button>
 		<button class="btn btn-sm" id="btn-theme">Theme</button>
 		<button class="btn btn-sm btn-danger" id="btn-logout">Logout All Tabs</button>
-		<button class="btn btn-sm" id="btn-clean">Clean Storage</button>
 	</header>
 
 	<!-- ── Left sidebar: Presence ─────────────────────────────────────── -->
@@ -58,19 +62,9 @@
 		</div>
 
 		<div>
-			<div class="section-label">Shared State</div>
+			<div class="section-label">Read-only editor mirror</div>
 			<div class="state-panel">
-				<div class="counter-row">
-					<span style="font-size:12px;font-weight:600;color:var(--text-muted)">Counter</span>
-					<div class="counter-btns">
-						<button class="btn" id="btn-dec">&minus;</button>
-					</div>
-					<span class="counter-value" id="counter-val">0</span>
-					<div class="counter-btns">
-						<button class="btn" id="btn-inc">+</button>
-					</div>
-				</div>
-				<div class="editor-preview-label">Editor Content</div>
+				<div class="editor-preview-label">Content from the claimed editor</div>
 				<div class="editor-preview" id="editor-preview">No content yet</div>
 			</div>
 		</div>
@@ -106,30 +100,7 @@ const app = createWorkspace(NS, { heartbeat: 1000, timeout: 4000 })
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-// ── Persistence (app-level, not library-level) ──────────────────────────
-// Tabula keeps state in memory only. The app persists to localStorage
-// so state survives when all tabs close.
-const PERSIST_KEY = 'tabula-demo:state'
-
-function saveState() {
-	const snapshot = {}
-	for (const key of ['counter', 'theme', 'editorContent', 'auth']) {
-		const val = app.state.get(key)
-		if (val !== undefined) snapshot[key] = val
-	}
-	try { localStorage.setItem(PERSIST_KEY, JSON.stringify(snapshot)) } catch {}
-}
-
-function loadPersistedState() {
-	try {
-		const raw = localStorage.getItem(PERSIST_KEY)
-		if (!raw) return null
-		return JSON.parse(raw)
-	} catch { return null }
-}
-
-// Save on every state change
-app.state.on('*', saveState)
+globalThis.__tabulaDemo = app
 
 function shortId(id) {
 	return id.slice(0, 8)
@@ -183,13 +154,13 @@ function renderTabs() {
 		const isSelf = tab.id === me.id
 		const isLeader = leader && tab.id === leader.id
 		const viewHtml = tab.view ? `<span class="tab-view-pill">${tab.view}</span>` : ''
-		const crownHtml = isLeader ? '<span class="tab-crown" title="Leader">&#x1f451;</span>' : ''
+		const leaderHtml = isLeader ? '<span class="tab-leader-badge">Leader</span>' : ''
 		const selfHtml = isSelf ? '<span class="tab-self-badge">You</span>' : ''
 
 		return `<li class="tab-item ${isSelf ? 'is-self' : ''}">
 			<span class="tab-dot ${tab.visible ? 'visible' : ''}"></span>
 			<span class="tab-id">${shortId(tab.id)}</span>
-			${crownHtml}${viewHtml}${selfHtml}
+			${leaderHtml}${viewHtml}${selfHtml}
 		</li>`
 	}).join('')
 }
@@ -222,11 +193,6 @@ function renderViews() {
 
 // ── State rendering ─────────────────────────────────────────────────────
 
-function renderCounter() {
-	const val = app.state.get('counter') ?? 0
-	document.getElementById('counter-val').textContent = String(val)
-}
-
 function renderEditorPreview() {
 	const content = app.state.get('editorContent')
 	const el = document.getElementById('editor-preview')
@@ -237,6 +203,16 @@ function renderEditorPreview() {
 		el.textContent = 'No content yet'
 		el.style.color = ''
 	}
+}
+
+function renderRuntime() {
+	const status = app.status()
+	document.getElementById('runtime-status').textContent = `${status.lifecycle} / ${status.sync}`
+	document.getElementById('leader-status').textContent = app.isLeader()
+		? 'You hold the leader lock'
+		: app.tabs.leader()
+			? 'Another tab holds the leader lock'
+			: 'Electing leader...'
 }
 
 function applyTheme() {
@@ -261,6 +237,7 @@ app.on('tab:leave', tab => {
 app.on('leader:change', e => {
 	logEvent('LEADER', 'leader', `${shortId(e.tab.id)}${e.isMe ? ' (you)' : ''} is leader`)
 	renderTabs()
+	renderRuntime()
 })
 
 app.on('view:claimed', e => {
@@ -290,12 +267,6 @@ app.on('view:conflict', e => {
 	toast(`Conflict on "${e.name}"!`, 'red')
 })
 
-// State watchers
-app.state.on('counter', () => {
-	renderCounter()
-	logEvent('SET', 'state', `counter = ${app.state.get('counter')}`)
-})
-
 app.state.on('editorContent', () => {
 	renderEditorPreview()
 })
@@ -315,9 +286,7 @@ app.state.on('auth', val => {
 
 app.state.on('notificationCount', () => {
 	const count = app.state.get('notificationCount') ?? 0
-	const badge = document.getElementById('notif-badge')
-	badge.textContent = String(count)
-	badge.dataset.count = String(count)
+	document.getElementById('leader-count').textContent = String(count)
 })
 
 // ── onLeader: mock notification counter ─────────────────────────────────
@@ -340,32 +309,9 @@ app.onLeader(() => {
 
 // ── Button handlers ─────────────────────────────────────────────────────
 
-document.getElementById('btn-inc').onclick = () => {
-	const cur = app.state.get('counter') ?? 0
-	app.state.set('counter', cur + 1)
-}
-
-document.getElementById('btn-dec').onclick = () => {
-	const cur = app.state.get('counter') ?? 0
-	app.state.set('counter', cur - 1)
-}
-
 document.getElementById('btn-theme').onclick = () => {
 	const cur = app.state.get('theme') || 'light'
 	app.state.set('theme', cur === 'light' ? 'dark' : 'light')
-}
-
-document.getElementById('btn-clean').onclick = () => {
-	// Clear persisted demo state
-	localStorage.removeItem(PERSIST_KEY)
-	// Clear all tabula keys from localStorage (view registry, pending-open)
-	for (let i = localStorage.length - 1; i >= 0; i--) {
-		const key = localStorage.key(i)
-		if (key?.startsWith('tabula:')) localStorage.removeItem(key)
-	}
-	// Clear session
-	sessionStorage.clear()
-	location.reload()
 }
 
 document.getElementById('btn-logout').onclick = () => {
@@ -376,59 +322,59 @@ document.getElementById('btn-login').onclick = () => {
 	app.state.set('auth', 'logged-in')
 }
 
+document.getElementById('btn-new-dashboard').onclick = () => {
+	window.open(new URL('./', window.location.href), '_blank')
+}
+
 document.getElementById('btn-open-editor').onclick = () => {
 	void app.open('editor', {
-		url: 'editor.html',
+		url: new URL('editor.html', window.location.href).href,
 		syncKeys: ['theme', 'editorContent']
 	}).catch(console.error)
 }
 
 document.getElementById('btn-open-preview').onclick = () => {
 	void app.open('preview', {
-		url: 'preview.html',
+		url: new URL('preview.html', window.location.href).href,
 		syncKeys: ['theme', 'editorContent']
 	}).catch(console.error)
 }
 
 document.getElementById('btn-open-settings').onclick = () => {
 	void app.open('settings', {
-		url: 'settings.html',
-		syncKeys: ['theme', 'counter']
+		url: new URL('settings.html', window.location.href).href,
+		syncKeys: ['theme', 'notificationCount']
 	}).catch(console.error)
 }
 
 // ── Presence poll (1s) ──────────────────────────────────────────────────
 
 setInterval(renderTabs, 1000)
+setInterval(renderRuntime, 1000)
 
 // ── Init ────────────────────────────────────────────────────────────────
 
-// Wait for workspace init, then apply state from: sync > persisted > defaults.
+// Wait for workspace init, then establish ephemeral defaults if no peer supplied them.
 app.ready.then(() => {
-	const persisted = loadPersistedState() || {}
-
-	// For each key: if sync provided it, keep it. Otherwise try persisted. Otherwise default.
-	if (app.state.get('counter') === undefined)
-		app.state.set('counter', persisted.counter ?? 0)
 	if (app.state.get('theme') === undefined)
-		app.state.set('theme', persisted.theme ?? 'light')
+		app.state.set('theme', 'light')
 	if (app.state.get('editorContent') === undefined)
-		app.state.set('editorContent', persisted.editorContent ?? '')
+		app.state.set('editorContent', '')
 	if (app.state.get('notificationCount') === undefined)
-		app.state.set('notificationCount', persisted.notificationCount ?? 0)
+		app.state.set('notificationCount', 0)
 	if (app.state.get('auth') === undefined)
-		app.state.set('auth', persisted.auth ?? 'logged-in')
+		app.state.set('auth', 'logged-in')
 
 	applyTheme()
-	renderCounter()
 	renderEditorPreview()
 	renderTabs()
 	renderViews()
+	renderRuntime()
 
 	const count = app.state.get('notificationCount') ?? 0
-	const badge = document.getElementById('notif-badge')
-	badge.textContent = String(count)
-	badge.dataset.count = String(count)
+	document.getElementById('leader-count').textContent = String(count)
+}).catch(error => {
+	document.getElementById('runtime-status').textContent = `failed: ${error.message}`
 })
 </script>
 </body>
