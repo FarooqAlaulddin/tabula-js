@@ -198,7 +198,7 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 | P2-004 | Align npm package documentation and executable examples | agent | todo |
 | P3-002 | Adopt changesets and seed changelogs | agent | done |
 | P3-003 | Gate packed exports, declarations, dependencies, and size | agent | done |
-| P3-004 | Add frozen-version and mixed-protocol compatibility fixtures | agent | todo |
+| P3-004 | Add frozen-version and mixed-protocol compatibility fixtures | agent | done |
 | P3-001 | Prove the provenance-backed release workflow | agent | todo |
 | P4-001 | Complete the feature matrix and freeze the API candidate | agent | todo |
 | P4-002 | Publish 0.2.0 alpha and technical preview | human | todo |

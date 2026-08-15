@@ -1,0 +1,21 @@
+{
+	"schemaVersion": 1,
+	"fixtures": [
+		{
+			"id": "synthetic-v1-rev0",
+			"kind": "compatible",
+			"packageVersion": "synthetic-pre-0.2.0",
+			"protocol": { "major": 1, "revision": 0, "minRevision": 0 },
+			"file": "v1-rev0/participant.js",
+			"sha256": "2d8d2e2980cd8e922f9e88d526c66bd3b3ae2bc105ffc7a4ab4e2e468194898d"
+		},
+		{
+			"id": "synthetic-unsupported-v2",
+			"kind": "unsupported",
+			"packageVersion": "synthetic-future-major",
+			"protocol": { "major": 2, "revision": 0, "minRevision": 0 },
+			"file": "unsupported-v2/participant.js",
+			"sha256": "a531d64912114426146d57da1b5fb4bf9579d3190053d182655c774e2173fc35"
+		}
+	]
+}

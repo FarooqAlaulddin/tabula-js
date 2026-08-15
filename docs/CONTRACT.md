@@ -468,6 +468,10 @@ The revision-0 fixture uses the same envelope with
 all other envelope fields remain required. Unversioned traffic is not a revision-0
 fixture and is rejected.
 
+Frozen compatibility participants and their checksums live in
+[`compat/fixtures`](../compat/README.md). Candidate builds consume those committed
+bytes directly; compatibility CI must never resolve a mutable registry dist-tag.
+
 Peers are compatible only when majors match and their revision ranges overlap. An
 additive change increments revision and preserves an overlap window. A breaking
 change increments major and requires a release that can read both old and new majors
