@@ -1,21 +1,13 @@
 # Tabula
 
-**Coordinate browser tabs as views of a single workspace.**
+**Coordinate browser tabs as views of one workspace.**
 
-Tabula lets you build web apps that treat multiple tabs as one surface. Shared state, presence tracking, leader election, and named views through modern browser coordination APIs, with zero dependencies.
+`@farooqalaulddin/tabula-js` is a framework-neutral browser coordination library
+with zero runtime dependencies. It provides typed ephemeral state, presence,
+Web-Lock-authorized leader work, and exclusive named views for same-origin desktop
+web applications.
 
----
-
-## Why
-
-Every multi-tab web app reinvents the same coordination problems:
-
-- User logs out in one tab — other tabs don't know.
-- Two tabs poll the same API independently — wasted resources.
-- User opens a settings panel that should only exist once.
-- Background work (WebSocket, polling) runs in every tab instead of one.
-
-Tabula solves all of these with a single primitive: the **workspace**.
+[Open the live multi-tab demo](https://farooqalaulddin.github.io/tabula-js/).
 
 ## Install
 
@@ -23,392 +15,390 @@ Tabula solves all of these with a single primitive: the **workspace**.
 npm install @farooqalaulddin/tabula-js
 ```
 
-[Open the live multi-tab demo](https://farooqalaulddin.github.io/tabula-js/).
+The package ships ESM, CommonJS, TypeScript declarations, source maps, and the
+`@farooqalaulddin/tabula-js/testing` subpath.
 
 ## Quick start
 
-```ts
+```ts verify=browser
 import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
 interface AppState {
-  theme: 'light' | 'dark'
-  filter: 'all' | 'open'
+	theme: 'light' | 'dark'
+	filter: 'all' | 'open'
 }
 
-const app = createWorkspace<AppState>('my-app')
+const workspace = createWorkspace<AppState>('my-app')
+await workspace.ready
 
-await app.ready
+workspace.state.on('theme', (theme) => {
+	document.documentElement.dataset.theme = theme
+})
+workspace.state.set('theme', 'dark')
 
-// Shared UI state — converges across live tabs
-app.state.set('theme', 'dark')
-app.state.on('theme', (value) => {
-  document.body.dataset.theme = value
+workspace.onLeader(() => {
+	document.documentElement.dataset.backgroundOwner = workspace.tabs.current().id
+	return () => {
+		delete document.documentElement.dataset.backgroundOwner
+	}
 })
 
-// Leader election — only one tab runs background work
-app.onLeader(() => {
-  const ws = new WebSocket('/events')
-  return () => ws.close() // cleanup when leadership changes
-})
-
-// Presence — know which tabs are connected
-app.on('tab:join', (tab) => console.log(`${tab.id} joined`))
-app.on('tab:leave', (tab) => console.log(`${tab.id} left`))
+workspace.on('tab:join', (tab) => console.log(`${tab.id} joined`))
+workspace.on('tab:leave', (tab) => console.log(`${tab.id} left`))
 ```
 
-## Core concepts
+Tabs coordinate when they use the same workspace namespace on the same origin.
 
-### Workspace
+## Behavioral contract
 
-A workspace is a coordination scope. All tabs that create a workspace with the same namespace share state, presence, and views.
+### Workspace and lifecycle
 
-```ts
-const app = createWorkspace<MyState>('my-app', {
-  heartbeat: 1500,  // presence heartbeat interval (ms)
-  timeout: 5000,    // time before a silent tab is considered dead
-})
+`createWorkspace(namespace, options?)` validates the runtime before attaching any
+resources. Mutations issued while initialization or bfcache suspension is in progress
+are queued in call order.
 
-await app.ready // resolves when init is complete
-```
+`ready` has one bounded initial budget (`readyTimeout`, 1000 ms by default). It means
+the workspace is usable, not necessarily that every suspended peer replied. Inspect
+`status().sync` or subscribe to `sync:status`; a `repairing` workspace continues bounded
+multi-peer synchronization until live responders reply or leave.
+
+`destroy()` is terminal and idempotent. Destroy before readiness rejects `ready` with
+`WorkspaceDestroyedError`; asynchronous coordination failure rejects it with
+`WorkspaceFailedError`. After either terminal state, only `status()` and repeated
+`destroy()` are valid.
 
 ### Shared state
 
-A typed key-value store that syncs across tabs in real time. Set and delete operations
-use a hybrid logical clock plus actor and operation-id tie breakers, so delivery order
-does not change the winner. Deletes retain in-memory tombstones to prevent stale
-traffic from resurrecting values.
+State is typed, in memory, and same-origin. `set` and `delete` use a hybrid logical
+clock plus actor and operation-id tie breakers, so peers receiving the same validated
+operations choose the same last-write-wins result. Deletes retain cohort-lifetime
+tombstones so delayed messages cannot resurrect removed values.
 
-```ts
-app.state.set('theme', 'dark')
-app.state.get('theme')           // 'dark'
-app.state.delete('theme')
+Values follow structured-clone semantics within protocol bounds. `undefined` means
+absence and is rejected by `set`; use `delete`. Clone or transport failure leaves local
+state unchanged. `setAll` validates and sends one atomic batch, installs all keys, then
+notifies key listeners in lexical order followed by wildcard listeners.
 
-app.state.on('theme', (value) => { /* reactive */ })
-app.state.on('*', (key, value) => { /* wildcard */ })
+```ts verify=ts
+import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
-app.state.keys()                 // ['theme', 'filter']
-app.state.entries()              // [['theme', 'dark'], ['filter', 'open']]
-app.state.setAll({ theme: 'dark', filter: 'open' })
+interface UiState {
+	theme: 'light' | 'dark'
+	filter: 'all' | 'open'
+}
+
+const workspace = createWorkspace<UiState>('state-example')
+workspace.state.set('theme', 'dark')
+workspace.state.get('theme')
+workspace.state.delete('filter')
+workspace.state.setAll({ theme: 'light', filter: 'open' })
+workspace.state.on('theme', (theme) => console.log(theme))
+workspace.state.on('*', (key, value) => console.log(key, value))
+workspace.state.keys()
+workspace.state.entries()
 ```
 
-Values follow structured-clone semantics within bounded message limits. Use `delete`
-for absence because `set(key, undefined)` is rejected. `setAll` validates and sends one
-atomic batch; all keys are installed before ordered key and wildcard notifications.
+State is not durable and is not a collaborative document data type. Do not use
+multiple LWW writers for rich text, drawing scenes, or other merge-sensitive content.
 
-State lives in memory only. Persistence is your responsibility:
+### Named views
 
-```ts
-app.state.on('*', () => {
-  localStorage.setItem('my-state', JSON.stringify(Object.fromEntries(app.state.entries())))
-})
-```
+A named view such as `editor`, `preview`, or `settings` has at most one Web Lock holder.
+`claim()` resolves with a claimed handle or an expected conflict result. `open()` creates
+a pending handoff, transfers only selected validated state operations, and rejects if
+the browser blocks the popup or the claim misses `openTimeout` (10 seconds by default).
 
-### Views
+Successful handles contain an ownership token. `release()`, `focus()`, vacancy, and
+conflict observation are fenced to that term, so stale handles cannot control a newer
+claim. The localStorage registry is a discovery projection, not authority.
 
-A view is a named region that one tab holds at a time. Think "editor", "preview", "settings" — each can only be claimed by a single tab.
+```ts verify=ts
+import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
-```ts
-// Tab A: open a view in a new tab
-const handle = await app.open('editor', {
-  url: '/editor',
-  syncKeys: ['theme']  // pre-sync selected UI state to the new tab
-})
+interface EditorState {
+	theme: 'light' | 'dark'
+	draftTitle: string
+}
 
-// Tab B (at /editor): claim the view
-const claim = await app.claim('editor')
-if (claim.status === 'conflict') console.log('Already owned by', claim.owner)
+const workspace = createWorkspace<EditorState>('views-example')
 
-// React to view lifecycle
-app.on('view:claimed', ({ name, tab, token }) => { })
-app.on('view:vacant', ({ name, token }) => { })
-app.on('view:conflict', ({ name, existing, incoming }) => { })
-```
-
-### Presence
-
-Every tab is tracked. Presence combines announcements with bounded storage leases and
-remains an eventual liveness estimate under browser suspension.
-
-```ts
-app.tabs.list()      // TabMeta[] — all connected tabs
-app.tabs.current()   // TabMeta — this tab
-app.tabs.leader()    // TabMeta | null — current leader
-
-app.on('tab:join', (tab) => { })
-app.on('tab:leave', (tab) => { })
-```
-
-### Leader election
-
-One tab holds an exclusive, namespace-scoped Web Lock for its complete leader interval.
-The browser controls contender ordering; Tabula does not promise oldest-tab or FIFO
-selection. Presence and `tabs.leader()` expose the latest fenced holder projection,
-but only the held lock authorizes leader work.
-
-```ts
-app.onLeader(() => {
-  // Runs when this tab becomes leader
-  const interval = setInterval(fetchNotifications, 30000)
-  return () => clearInterval(interval) // cleanup on demotion
+document.querySelector<HTMLButtonElement>('#open-editor')?.addEventListener('click', async () => {
+	if (workspace.views.has('editor')) {
+		workspace.focus('editor')
+		return
+	}
+	const handle = await workspace.open('editor', {
+		url: '/editor',
+		syncKeys: ['theme', 'draftTitle'],
+	})
+	handle.on('vacant', () => console.log('editor closed'))
 })
 
-app.isLeader()  // boolean
-app.on('leader:change', ({ tab, isMe }) => { })
+async function initializeEditorPage() {
+	await workspace.ready
+	const claim = await workspace.claim('editor')
+	if (claim.status === 'conflict') console.log('owned by', claim.owner)
+	else claim.handle.on('conflict', (event) => console.log(event.incoming))
+}
+
+void initializeEditorPage()
 ```
 
-`onLeader` setup runs only while that tab holds the lock, and voluntary release runs its
-cleanup before the lock is released. A frozen holder may retain its lock, so Tabula does
-not steal leadership after a timeout. Crashes cannot run JavaScript cleanup, and
-exactly-once effects still require server-side idempotency or locking.
+Call `open()` from a direct user gesture. `focus()` is a request; the browser decides
+whether another tab is foregrounded.
 
-### Lifecycle
+### Presence and leadership
 
-```ts
-await app.ready
+Presence combines announcements with bounded storage leases. It is an eventual
+liveness estimate, not an instantaneous crash detector. Browser suspension, sleep,
+and scheduling delay extend observation time.
 
-const status = app.status()
-// { lifecycle: 'ready', sync: 'complete', missingPeerIds: [] }
-
-app.on('sync:status', (nextStatus) => { })
-app.destroy()
-```
-
-Initialization uses one bounded readiness budget (default `1000` ms of runnable timer
-time). `ready` can resolve with `sync: 'repairing'`; inspect `status()` or subscribe to
-`sync:status` when completeness matters. Mutations made while initializing or suspended
-in the back/forward cache are queued in call order.
-
-State startup uses correlated rounds and merges complete snapshots from every known
-live responder. A delayed, busy, or suspended peer cannot hold usability past the
-readiness budget: repair continues with bounded backoff and on peer activity, and late
-retained replies still merge values and tombstones before status becomes `complete`.
-
-`destroy()` is terminal and idempotent. Destroying before readiness rejects `ready` with
-`WorkspaceDestroyedError`; asynchronous startup failure rejects it with
-`WorkspaceFailedError`. All operations except `status()` and repeated `destroy()` throw
-the matching terminal error afterward.
+Leadership is authoritative only while one tab holds the namespace Web Lock. Browser
+lock scheduling does not promise oldest-tab or FIFO selection. `onLeader` setup runs
+only for the holder; voluntary transfer runs cleanup before releasing the lock. A
+frozen holder may retain authority. External side effects must be restartable and
+idempotent; exactly-once work requires server authority.
 
 ## Framework integration
 
-Tabula v1 is framework-neutral and does not ship framework wrappers. React
-applications can subscribe directly with React's built-in external-store API:
+Tabula v1 has no React wrapper. React applications subscribe directly to the core
+using React's external-store API:
 
-```tsx
-import { useSyncExternalStore } from 'react'
+```tsx verify=react
 import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import { useSyncExternalStore } from 'react'
+import { createRoot } from 'react-dom/client'
 
-const workspace = createWorkspace<AppState>('my-app')
+interface AppState {
+	theme: 'light' | 'dark'
+}
+
+const workspace = createWorkspace<AppState>('react-example')
+const subscribeTheme = (notify: () => void) => workspace.state.on('theme', notify)
+const readTheme = () => workspace.state.get('theme') ?? 'light'
 
 function ThemeToggle() {
-  const theme = useSyncExternalStore(
-    onStoreChange => workspace.state.on('theme', onStoreChange),
-    () => workspace.state.get('theme') ?? 'light',
-  )
-  return (
-    <button onClick={() => workspace.state.set('theme', theme === 'dark' ? 'light' : 'dark')}>
-      {theme}
-    </button>
-  )
+	const theme = useSyncExternalStore(subscribeTheme, readTheme, readTheme)
+	return (
+		<button
+			type="button"
+			onClick={() => workspace.state.set('theme', theme === 'dark' ? 'light' : 'dark')}
+		>
+			{theme}
+		</button>
+	)
 }
+
+const root = document.getElementById('root')
+if (root) createRoot(root).render(<ThemeToggle />)
 ```
+
+The same subscription boundary works with other frameworks. Components receive normal
+values and callbacks; no Tabula-specific UI layer is required.
 
 ## Testing
 
-Tabula ships test utilities that simulate multi-tab coordination in Node.js — no browser required.
+The `testing` subpath provides a deterministic in-memory workspace and multi-tab
+cluster for Node.js tests. It simulates state, presence, leader identity, named views,
+and events. The oldest-created mock tab is leader; real browsers use Web Locks and do
+not promise that ordering.
 
-```bash
-import { createMockWorkspace, createTestCluster } from '@farooqalaulddin/tabula-js/testing'
+### ESM
+
+```mjs verify=esm
+import assert from 'node:assert/strict'
+import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import {
+	createMockWorkspace,
+	createTestCluster,
+} from '@farooqalaulddin/tabula-js/testing'
+
+assert.equal(typeof createWorkspace, 'function')
+const single = createMockWorkspace()
+single.state.set('theme', 'dark')
+assert.equal(single.state.get('theme'), 'dark')
+
+const cluster = createTestCluster('esm-example')
+const first = cluster.createTab()
+const second = cluster.createTab()
+first.state.set('count', 1)
+assert.equal(second.state.get('count'), 1)
+assert.equal(first.isLeader(), true)
 ```
 
-### Single tab
+### CommonJS
 
-```ts
-const workspace = createMockWorkspace<MyState>()
-workspace.state.set('theme', 'dark')
-expect(workspace.state.get('theme')).toBe('dark')
+```cjs verify=cjs
+const assert = require('node:assert/strict')
+const { createWorkspace } = require('@farooqalaulddin/tabula-js')
+const {
+	createMockWorkspace,
+	createTestCluster,
+} = require('@farooqalaulddin/tabula-js/testing')
+
+assert.equal(typeof createWorkspace, 'function')
+const single = createMockWorkspace()
+single.state.set('theme', 'light')
+assert.equal(single.state.get('theme'), 'light')
+assert.equal(typeof createTestCluster('cjs-example').createTab, 'function')
 ```
 
-### Multi-tab
+Use real browser tests as well for Web Locks, popup/focus policy, storage events,
+bfcache, and scheduling behavior.
 
-```ts
-const cluster = createTestCluster<MyState>('test')
-const tab1 = cluster.createTab()
-const tab2 = cluster.createTab()
+## Canonical API reference
 
-tab1.state.set('count', 1)
-expect(tab2.state.get('count')).toBe(1)
-expect(tab1.isLeader()).toBe(true)   // deterministic oldest-created test simulation
-expect(tab2.isLeader()).toBe(false)
-```
+This section is the single canonical reference for package exports. Protocol message
+envelopes, synchronization payloads, storage records, and state-operation internals
+are intentionally not exported.
 
-The test cluster deliberately chooses the oldest-created mock tab. Browser workspaces
-use Web Locks, whose request ordering is controlled by the browser.
+### Main export
 
-## Real-world example
+<!-- api-table:main:start -->
+| Symbol | Kind | Purpose |
+|--------|------|---------|
+| `createWorkspace` | function | Create and synchronously validate a browser workspace. |
+| `Workspace` | type | Complete workspace interface. |
+| `WorkspaceOptions` | type | Heartbeat, timeout, readiness, and open-timeout options. |
+| `WorkspaceState` | type | Typed state reads, writes, deletion, batching, and subscriptions. |
+| `WorkspaceViews` | type | Named-view registry queries. |
+| `WorkspaceTabs` | type | Presence and projected leader queries. |
+| `WorkspaceEventMap` | type | Payload map used by `on` and `off`. |
+| `WorkspaceStatus` | type | Immutable lifecycle, sync, and missing-peer snapshot. |
+| `WorkspaceLifecycle` | type | Workspace lifecycle state union. |
+| `WorkspaceSyncState` | type | `pending`, `repairing`, or `complete`. |
+| `TabMeta` | type | Public tab identity, visibility, view, and liveness metadata. |
+| `ViewOpenOptions` | type | URL and selected state keys for `open()`. |
+| `ViewClaimResult` | type | Claimed-handle or expected-conflict result. |
+| `ViewHandle` | type | Token-fenced view control and event subscriptions. |
+| `ViewClaimToken` | type | Generation and claim identifier for one ownership term. |
+| `ViewClaimedEvent` | type | Projected view claim payload. |
+| `ViewVacantEvent` | type | Token-fenced vacancy payload. |
+| `ViewConflictEvent` | type | Existing and incoming claimant payload. |
+| `LeaderChangeEvent` | type | Projected leader identity and local-holder flag. |
+| `ProtocolVersion` | type | Major/revision compatibility range. |
+| `ProtocolIncompatibleEvent` | type | Peer/version/recovery payload for incompatible deployments. |
+| `CapabilityError` | class | Required browser capability is unavailable. |
+| `StorageOperationError` | class | A storage read/write/remove failed atomically. |
+| `StorageCorruptionError` | class | An authoritative storage record is corrupt. |
+| `ViewAlreadyClaimedError` | class | This tab attempted to own a second named view. |
+| `WorkspaceDestroyedError` | class | An operation targeted a destroyed workspace. |
+| `WorkspaceFailedError` | class | Coordination entered a terminal failed state. |
+<!-- api-table:main:end -->
 
-The [`example-excalidraw`](./packages/example-excalidraw) package demonstrates one
-exclusive named canvas editor feeding a read-only dashboard mirror. The scene is not
-collaboratively merged; allowing multiple editors to write it would be unsafe LWW use.
+### Testing export
 
-```
-pnpm example:excalidraw
-```
+<!-- api-table:testing:start -->
+| Symbol | Kind | Purpose |
+|--------|------|---------|
+| `createMockWorkspace` | function | Create one synchronous in-memory workspace. |
+| `createTestCluster` | function | Create deterministic coordinated mock tabs. |
+| `TestCluster` | type | Cluster interface exposing `createTab()`. |
+<!-- api-table:testing:end -->
 
-Features demonstrated:
+### Workspace methods
 
-- One claimed full-screen canvas edits the scene
-- The dashboard renders a read-only scene mirror
-- Theme, presence, leadership, and view state use the core directly
+| Member | Contract |
+|--------|----------|
+| `ready` | Resolves after the bounded initial readiness round; may resolve while sync repairs. |
+| `status()` | Returns an immutable lifecycle/synchronization snapshot. |
+| `state` | Typed shared-state interface. |
+| `views` | Named-view discovery projection. |
+| `tabs` | Presence and projected leader interface. |
+| `claim(name)` | Atomically acquire a named view or return a conflict. |
+| `open(name, options)` | Open/focus a named page and await its fenced claim. |
+| `focus(name)` | Request focus from the current projected owner. |
+| `onLeader(setup)` | Register holder-only work; returns unsubscribe. |
+| `isLeader()` | Whether this tab currently holds the leader lock. |
+| `on(event, callback)` | Subscribe to a typed workspace event; returns unsubscribe. |
+| `off(event, callback)` | Remove a specific workspace event callback. |
+| `destroy()` | Terminal, idempotent teardown. |
 
-## How it works
+### State methods
 
-Tabula uses three browser APIs for coordination:
+| Member | Contract |
+|--------|----------|
+| `set(key, value)` | Validate, clone, commit, and broadcast one value. |
+| `get(key)` | Read the current local value. |
+| `delete(key)` | Commit and broadcast a convergent tombstone. |
+| `setAll(partial)` | Atomically commit a validated multi-key batch. |
+| `on(key, callback)` | Subscribe to one key; returns unsubscribe. |
+| `on('*', callback)` | Subscribe to all key changes; returns unsubscribe. |
+| `keys()` | Return currently present keys. |
+| `entries()` | Return current key/value entries. |
 
-- **BroadcastChannel** — real-time messaging between tabs (namespaced per workspace)
-- **localStorage** — view/presence projections, fenced generations, and expiring open-intent metadata
-- **Web Locks** — exclusive leadership authority
+### View and tab queries
 
-No WebSocket. No server. No polling. Everything happens client-side within the same origin.
-
-### Architecture
-
-```
-Layer 4 — Public API      createWorkspace(), Workspace interface
-Layer 3 — Coordinator     Startup sequencing, event translation, queue
-Layer 2 — Domain          Presence, Leader, State, Views
-Layer 1 — Transport       BroadcastChannel, localStorage, Dedup
-```
-
-### Message protocol
-
-Tabula uses 13 domain message types plus identity and compatibility control messages:
-
-```
-identity:probe · identity:claim
-tab:announce · tab:heartbeat · tab:leave
-state:sync-request · state:sync · state:set · state:delete · state:batch
-view:claim · view:claimed · view:release · view:conflict · view:focus · view:intent-claim · view:intent-state
-leader:query · leader:change
-protocol:reject
-```
-
-Every message uses a validated, versioned envelope:
-`{ protocol, type, id, from: { tabId, instanceId }, to?, sentAt, payload }`.
-Revision 1 readers accept revision 0, reject unsupported version ranges, and emit one
-`protocol:incompatible` event with the recovery action for each peer/version episode.
-Malformed, misdirected, duplicate, or oversized traffic is dropped before domain code.
-State synchronization uses request ids and initialization generations so only retained
-matching rounds can change synchronization status.
-
-## API reference
-
-### `createWorkspace<S>(namespace, options?)`
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `namespace` | `string` | Workspace identifier. Tabs with the same namespace coordinate together. |
-| `options.heartbeat` | `number` | Presence heartbeat interval in ms. Default: `1500`. |
-| `options.timeout` | `number` | Time before a silent tab is pruned. Default: `5000`. |
-| `options.readyTimeout` | `number` | Total initial discovery/sync budget in runnable ms. Default: `1000`. |
-| `options.openTimeout` | `number` | Open-intent claim timeout in ms. Default: `10000`. |
-
-Returns `Workspace<S>`.
-
-### `Workspace<S>`
-
-| Property / Method | Type | Description |
-|-------------------|------|-------------|
-| `ready` | `Promise<void>` | Resolves when init is complete. |
-| `status()` | `WorkspaceStatus` | Immutable lifecycle and synchronization snapshot. |
-| `state` | `WorkspaceState<S>` | Shared state API. |
-| `views` | `WorkspaceViews` | View registry queries. |
-| `tabs` | `WorkspaceTabs` | Presence information. |
-| `claim(name)` | `Promise<ViewClaimResult>` | Atomically claim a view or return its projected owner. |
-| `open(name, opts)` | `Promise<ViewHandle>` | Open a view in a new tab. |
-| `focus(name)` | `void` | Focus the tab holding a view. |
-| `onLeader(setup)` | `() => void` | Register leader callback. Returns unsubscribe. |
-| `isLeader()` | `boolean` | Whether this tab is the leader. |
-| `on(event, cb)` | `() => void` | Subscribe to events. Returns unsubscribe. |
-| `destroy()` | `void` | Full teardown. |
-
-### `WorkspaceState<S>`
-
-| Method | Description |
-|--------|-------------|
-| `set(key, value)` | Set a key. Broadcasts to all tabs. |
-| `get(key)` | Get current value. |
-| `on(key, cb)` | Subscribe to changes. Returns unsubscribe. |
-| `on('*', cb)` | Wildcard — fires on any key change. |
-| `delete(key)` | Delete a key. Broadcasts to all tabs. |
-| `keys()` | Returns array of set keys. |
-| `entries()` | Returns `[key, value]` pairs. |
-| `setAll(partial)` | Atomically set multiple keys before ordered notifications. |
-
-### `ViewClaimResult` and `ViewHandle`
-
-`claim(name)` resolves to `{ status: 'claimed', handle }` or
-`{ status: 'conflict', owner }`. Conflict is expected; claiming a different view
-while the tab owns one rejects with `ViewAlreadyClaimedError`.
-
-Both successful `claim()` and `open()` return a handle with readonly `name`, `owner`,
-and `{ generation, claimId }` token properties. `release()` and `focus()` target only
-that token, so stale handles cannot control a replacement claim. `on('vacant', cb)`
-and `on('conflict', cb)` return unsubscribe functions.
+| Interface | Members |
+|-----------|---------|
+| `WorkspaceViews` | `get(name)`, `has(name)`, `list()` |
+| `WorkspaceTabs` | `list()`, `current()`, `leader()` |
+| `ViewHandle` | readonly `name`, `owner`, `token`; `on`, `release`, `focus` |
 
 ### Events
 
-| Event | Payload | When |
-|-------|---------|------|
-| `tab:join` | `TabMeta` | A tab connects to the workspace. |
-| `tab:leave` | `TabMeta` | A tab disconnects (close, crash, timeout). |
-| `leader:change` | `{ tab: TabMeta, isMe: boolean }` | Leadership changes. |
-| `view:claimed` | `{ name, tab, token }` | A fenced view claim is projected. |
-| `view:vacant` | `{ name, token }` | That exact ownership term becomes vacant. |
-| `view:conflict` | `{ name, existing, incoming, token? }` | A claim encounters an owner projection. |
+| Event | Payload |
+|-------|---------|
+| `tab:join` | `TabMeta` |
+| `tab:leave` | `TabMeta` |
+| `leader:change` | `LeaderChangeEvent` |
+| `view:claimed` | `ViewClaimedEvent` |
+| `view:vacant` | `ViewVacantEvent` |
+| `view:conflict` | `ViewConflictEvent` |
+| `protocol:incompatible` | `ProtocolIncompatibleEvent` |
+| `sync:status` | `WorkspaceStatus` |
 
-### `TabMeta`
+### Defaults
 
-```ts
-interface TabMeta {
-  id: string          // Unique tab identifier (persists across refresh)
-  view: string | null // Claimed view name, if any
-  visible: boolean    // Whether the tab is in the foreground
-  firstSeenAt: number // Timestamp when the tab first connected
-  lastSeenAt: number  // Timestamp of the last heartbeat
-}
-```
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `heartbeat` | `1500` ms | Presence announcement interval. |
+| `timeout` | `5000` ms | Base silence threshold; lease retention extends it. |
+| `readyTimeout` | `1000` ms | Total runnable initial readiness budget. |
+| `openTimeout` | `10000` ms | Pending named-view claim timeout. |
 
-## Runtime prerequisites
+## Runtime and support
 
-Tabula 1.0 targets desktop applications running in top-level, same-origin browser
-contexts. Every participating page must provide:
+Every participant must be a top-level, secure, same-origin browser context with Web
+Locks, `BroadcastChannel`, `crypto.randomUUID()`, `structuredClone()`, readable and
+writable `localStorage`, and readable and writable `sessionStorage`. Iframes, workers,
+SSR execution, storage-blocked contexts, cross-origin coordination, and cross-device
+coordination are unsupported. No capability polyfills are bundled.
 
-- a secure context with the Web Locks API;
-- `BroadcastChannel`, `crypto.randomUUID()`, and `structuredClone()`;
-- usable `localStorage` and `sessionStorage`; and
-- the same origin and workspace namespace as the tabs it coordinates.
+Automated release evidence covers current Chromium, Firefox, and Playwright WebKit.
+Playwright WebKit is not Safari/macOS proof; a dated real Safari pass remains a 1.0 RC
+gate. See the
+[browser behavior guide](https://github.com/FarooqAlaulddin/tabula-js/blob/main/docs/BEHAVIOR.md)
+for exact versions and evidence labels.
 
-Iframes are not supported. Storage-blocked or capability-limited contexts cannot
-join a workspace. Tabula does not provide storage, Web Locks, or BroadcastChannel
-polyfills. Automated release evidence currently covers current Chromium, Firefox,
-and Playwright WebKit; a real Safari/macOS pass remains required before 1.0 RC.
+## Security and privacy
 
-## Security
+All scripts on the origin are trusted peers. Tabula validates shape, size, routing,
+and protocol compatibility, but it does not authenticate same-origin messages.
 
-Tabula trusts all scripts on the same origin. Keep in mind:
+- Treat shared state as untrusted UI hints and validate server-side.
+- Never store credentials, auth tokens, API keys, raw PII, or authorization decisions.
+- XSS on any participant compromises every workspace tab on that origin.
+- Projected leader and view identities are observability, not security boundaries.
+- Use server-side idempotency/locking for authoritative external effects.
 
-- Shared state should be treated as untrusted UI hints — validate server-side.
-- Never store auth tokens, API keys, or raw PII in shared state.
-- XSS on any page compromises all tabs in the workspace.
-- Any same-origin script can observe all Tabula traffic.
-- Protocol validation limits malformed traffic; it does not authenticate same-origin peers.
+## Non-goals
 
-## Packages
+Tabula does not provide persistence, RPC, cross-origin or cross-device sync, a
+BroadcastChannel fallback, UI components, routing, iframes, collaborative editing,
+exactly-once work, guaranteed focus, or real-time failure detection.
 
-| Package | Description | Size |
-|---------|-------------|------|
-| `@farooqalaulddin/tabula-js` | Core library. Zero dependencies. | <= 16 KiB minified + gzip |
-| `@farooqalaulddin/tabula-js/testing` | Test utilities. In-memory multi-tab simulation. | Included in core |
+The normative guarantees and rejection cases are in the
+[1.0 behavioral contract](https://github.com/FarooqAlaulddin/tabula-js/blob/main/docs/CONTRACT.md).
+
+## Examples
+
+The [live demo](https://farooqalaulddin.github.io/tabula-js/) exercises state,
+presence, leader transfer, exclusive views, focus, vacancy, and logout across multiple
+tabs. The
+[Excalidraw example](https://github.com/FarooqAlaulddin/tabula-js/tree/main/packages/example-excalidraw)
+uses direct React integration: one claimed canvas is editable and the dashboard is a
+read-only mirror. It does not claim collaborative scene merging.
 
 ## License
 

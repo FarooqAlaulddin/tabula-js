@@ -99,6 +99,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      - name: Packed documentation and sample gate
+        run: pnpm docs:check
       - run: pnpm package:check
 
   compatibility:

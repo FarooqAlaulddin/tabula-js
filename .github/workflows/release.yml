@@ -11,8 +11,15 @@ on:
       - scripts/release.mjs
       - scripts/release-policy.mjs
       - scripts/release-policy.test.js
+      - scripts/docs-policy.mjs
+      - scripts/docs-policy.test.js
+      - scripts/verify-docs.mjs
       - scripts/verify-package.mjs
-      - docs/RELEASING.md
+      - README.md
+      - packages/tabula/README.md
+      - packages/tabula/src/index.ts
+      - packages/example-excalidraw/**
+      - docs/**
       - package.json
       - packages/tabula/package.json
       - packages/tabula/CHANGELOG.md
@@ -97,7 +104,9 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
       - name: Portable browser matrix
         run: pnpm exec playwright test --config e2e/playwright.config.ts
-      - name: Packed sample harness
+      - name: Packed documentation samples
+        run: pnpm docs:check
+      - name: Packed demo harness
         run: pnpm demo:test
       - name: Frozen protocol compatibility
         run: pnpm compat:test

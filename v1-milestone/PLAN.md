@@ -195,7 +195,7 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 | P2-001 | Publish honest alternatives and product boundaries | agent | done |
 | P2-002 | Deploy a semantically accurate live demo | agent | done |
 | P2-003 | Publish the browser behavior and support contract | agent | done |
-| P2-004 | Align npm package documentation and executable examples | agent | todo |
+| P2-004 | Align npm package documentation and executable examples | agent | done |
 | P3-002 | Adopt changesets and seed changelogs | agent | done |
 | P3-003 | Gate packed exports, declarations, dependencies, and size | agent | done |
 | P3-004 | Add frozen-version and mixed-protocol compatibility fixtures | agent | done |
