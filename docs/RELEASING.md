@@ -78,6 +78,8 @@ that change release inputs run the complete unprivileged candidate pipeline. A m
 dispatch defaults to dry-run and performs lint, build, typecheck, unit, three-engine
 browser, packed demo, compatibility, and package gates before running the exact
 `npm publish` command with `--dry-run` against one retained tarball.
+Superseded pull-request runs cancel automatically; `main` pushes and manual release
+dispatches never cancel an in-progress publish or deployment.
 
 After reviewing the version PR and dry-run artifact, dispatch `Release` on `main` with
 `dry_run=false`. The separate `npm` environment job downloads and checksum-verifies
