@@ -1,5 +1,5 @@
 ---
-"@farooqalaulddin/tabula-js": minor
+"@thinkly/tabula-js": minor
 ---
 
 Harden workspace coordination with versioned validation, stable tab identity,

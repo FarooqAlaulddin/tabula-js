@@ -1,5 +1,5 @@
 ---
-"@farooqalaulddin/tabula-js": minor
+"@thinkly/tabula-js": minor
 ---
 
 Keep the package root focused on application coordination by removing internal

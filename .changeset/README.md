@@ -1,6 +1,6 @@
 # Changesets
 
-Every user-visible change to `@farooqalaulddin/tabula-js` requires a changeset.
+Every user-visible change to `@thinkly/tabula-js` requires a changeset.
 Choose the smallest semver bump that describes the public API or behavior change and
 write the summary for package consumers. Internal tests, milestone bookkeeping, and
 private example-only changes may use an empty changeset when a CI policy requires one.
