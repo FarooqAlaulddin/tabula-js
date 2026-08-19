@@ -49,4 +49,30 @@ Changesets/release notes, frozen fixture metadata, GitHub/npm settings, and this
 
 ## Outcome
 
-(pending)
+In progress as of 2026-08-19:
+
+- PR #1 (<https://github.com/FarooqAlaulddin/tabula-js/pull/1>) merged the
+  prerelease-ready source and release workflow preparation into `main`.
+- Release workflow failures on `main` were corrected without weakening gates:
+  stale Changesets package scope was fixed in commit `0228910`, and the obsolete
+  `changesets/action` `commit-mode` input was removed in commit `d9e844b`.
+- PR #2 (<https://github.com/FarooqAlaulddin/tabula-js/pull/2>) generated the
+  Changesets prerelease version and was merged as commit `fe29c56`, setting
+  `@thinkly/tabula-js` to `0.2.0-alpha.0` and updating the changelog.
+- PR #2 CI passed test, packed-package, Chromium/Firefox/WebKit E2E, and
+  Chromium/Firefox/WebKit compatibility checks. The Release workflow's unprivileged
+  "Validated release candidate" job also passed lint, build, typecheck, unit tests,
+  full portable browser matrix, packed documentation samples, packed demo harness,
+  frozen compatibility, release tarball validation, dry-run publish, and artifact
+  retention.
+- The subsequent `main` Release workflow run
+  <https://github.com/FarooqAlaulddin/tabula-js/actions/runs/32240229604>
+  completed successfully and no longer attempts to create a stale version PR.
+- `npm view @thinkly/tabula-js version dist-tags --json` still returns `E404`; the
+  package does not yet exist in the registry. The prepared bootstrap placeholder at
+  `/tmp/tabula-npm-bootstrap-thinkly-0.0.0` dry-runs as a one-file
+  `@thinkly/tabula-js@0.0.0` package under the intended `bootstrap` tag. Its real
+  publish requires the maintainer's current npm OTP and remains the current blocker.
+
+No acceptance criterion is complete yet because neither `0.2.0-alpha.0` nor `0.2.0`
+has been published from npm with provenance.

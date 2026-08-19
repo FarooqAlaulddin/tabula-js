@@ -38,6 +38,7 @@ not publish Tabula source and do not create `latest`:
 
 ```bash
 npm login
+npm pack --dry-run --json ./path/to/tabula-name-placeholder
 npm publish ./path/to/tabula-name-placeholder --access public --tag bootstrap
 npm view @thinkly/tabula-js dist-tags --json
 ```
@@ -46,6 +47,19 @@ The placeholder must contain only package identity and repository metadata. Keep
 outside the workspace release train, and record its version, tag, and registry URL
 in P4-002. If npm permits the package to be claimed without publishing a version,
 prefer that path and omit the placeholder.
+
+For the `@thinkly/tabula-js` first release, the prepared placeholder is
+`/tmp/tabula-npm-bootstrap-thinkly-0.0.0`. Its dry-run package has one file,
+`package.json`, version `0.0.0`, dist-tag `bootstrap`, package size 376 bytes, and
+unpacked size 532 bytes. Publish it only from an authenticated maintainer shell with
+the current npm 2FA code:
+
+```bash
+npm publish /tmp/tabula-npm-bootstrap-thinkly-0.0.0 --access public --tag bootstrap --otp=<current-code>
+```
+
+This command must not be run from the repository root and must not publish the real
+Tabula package bytes. After it succeeds, `latest` must still be absent or unchanged.
 
 ## Trusted publisher setup
 
