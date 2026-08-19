@@ -9,7 +9,7 @@ const getTheme = () => workspace.state.get('theme') ?? 'light'
 const expandCanvas = () => {
 	void workspace
 		.open('canvas', {
-			url: '/canvas.html',
+			url: `${import.meta.env.BASE_URL}canvas.html`,
 			syncKeys: ['elements', 'theme'],
 		})
 		.catch(console.error)

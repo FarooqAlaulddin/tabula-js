@@ -60,6 +60,16 @@ try {
 			TABULA_PACKAGE_ENTRY: packageEntry,
 		},
 	})
+
+	run('pnpm', ['exec', 'vite', 'build', '--config', 'packages/example-excalidraw/vite.config.ts'], {
+		env: {
+			...process.env,
+			TABULA_EXCALIDRAW_BASE: process.env.TABULA_EXCALIDRAW_BASE ?? '/tabula-js/excalidraw/',
+			TABULA_EXCALIDRAW_OUT_DIR:
+				process.env.TABULA_EXCALIDRAW_OUT_DIR ?? path.join(root, 'demo/dist/excalidraw'),
+			TABULA_PACKAGE_ENTRY: packageEntry,
+		},
+	})
 } finally {
 	await rm(tempRoot, { recursive: true, force: true })
 }

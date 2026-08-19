@@ -396,7 +396,7 @@ The normative guarantees and rejection cases are in the
 The [live demo](https://farooqalaulddin.github.io/tabula-js/) exercises state,
 presence, leader transfer, exclusive views, focus, vacancy, and logout across multiple
 tabs. The
-[Excalidraw example](https://github.com/FarooqAlaulddin/tabula-js/tree/main/packages/example-excalidraw)
+[Excalidraw example](https://farooqalaulddin.github.io/tabula-js/excalidraw/)
 uses direct React integration: one claimed canvas is editable and the dashboard is a
 read-only mirror. It does not claim collaborative scene merging.
 

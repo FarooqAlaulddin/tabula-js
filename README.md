@@ -103,7 +103,7 @@ core artifact.
 - [Design decisions and non-goals](./DECISIONS.md)
 - [Release procedure](./docs/RELEASING.md)
 - [Live demo](https://farooqalaulddin.github.io/tabula-js/)
-- [Exclusive Excalidraw example](./packages/example-excalidraw)
+- [Exclusive Excalidraw example](https://farooqalaulddin.github.io/tabula-js/excalidraw/)
 
 The package README is the canonical public API reference because npm renders that
 file. Repository documents provide the normative protocol, lifecycle, support, and

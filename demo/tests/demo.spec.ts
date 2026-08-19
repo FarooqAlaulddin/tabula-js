@@ -13,6 +13,13 @@ test('all production-base routes and assets load', async ({ context }) => {
 	}
 })
 
+test('deployed Excalidraw example route loads as an app', async ({ page }) => {
+	const response = await page.goto('excalidraw/')
+	expect(response?.ok()).toBe(true)
+	await expect(page.locator('.logo')).toHaveText('Excalidraw + Tabula')
+	await expect(page.locator('.canvas-area')).toBeVisible()
+})
+
 test('three tabs demonstrate exclusive editing, mirrors, UI state, conflict, and recovery', async ({
 	context,
 	page,
