@@ -2,7 +2,7 @@
 id: P4-002
 title: Publish 0.2.0 alpha and technical preview
 phase: 4
-status: todo
+status: in-progress
 depends_on: [P1-003, P3-001]
 owner: human
 scope: npm trusted-publisher setup + alpha proof + preview release
