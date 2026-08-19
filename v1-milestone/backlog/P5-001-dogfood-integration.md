@@ -1,35 +1,55 @@
 ---
 id: P5-001
-title: Dogfood in a real app
+title: Dogfood all public capabilities in real applications
 phase: 5
 status: todo
-depends_on: [P4-002]
+depends_on: [P4-003]
 owner: human
-scope: 1 app chosen + 1 integration (agent-executable once chosen)
+scope: one or more independent apps covering the complete feature matrix
 ---
 
 ## Context
 
-Stability is earned by usage, not declared. The Excalidraw example is a demo, not a consumer: it was written by the library author to show the library working. The gate to 1.0.0 requires the published 0.2.x running in at least one app that exists for its own reasons.
+Examples authored for Tabula prove integration mechanics, not production fitness.
+The `0.3.0` candidate must run in applications that exist for their own purpose.
+Starting with low-stakes features remains correct, but v1 milestone evidence must eventually
+cover state, presence, leadership, named views, lifecycle, framework-neutral usage,
+and the published testing adapter.
 
 ## Task
 
-Human decision: pick the app. Candidates: one of the maintainer's active projects with any multi-tab pain (session sync alone qualifies), or a real OSS app adopted via PR.
+Human selects one or more real apps. Collectively their normal usage paths must cover:
 
-Agent-executable once chosen:
-- Integrate starting with the lowest-stakes feature per the README adoption guide (leader-elected connection or logout sync — not views first).
-- Instrument for the burn-in report: log leader changes, sync failures, `view:conflict` events to whatever the app already uses for logging.
-- File every anomaly as a GitHub issue on tabula-js with reproduction notes — issues are the input to P5-002.
+- Shared UI state including delete and late-tab synchronization.
+- Presence displayed or used by application logic.
+- A leader-owned restartable connection/poll/background responsibility.
+- An exclusive named view opened/focused/reclaimed through real user interaction.
+- Lifecycle through refresh, close, background, sleep/wake, and application deployment.
+- Direct core integration from at least one framework application.
+- `tabula/testing` in the consumer's ordinary test suite.
+
+After the integrations and instrumentation are accepted, publish and adopt `0.4.0`
+as the explicit dogfood checkpoint under `next`.
+
+Agent integrates incrementally and adds privacy-conscious instrumentation for library
+version/protocol, anonymous workspace session, browser family/OS, tab counts,
+ready/repair/incompatibility, leader intervals, view claim tokens/conflicts/vacancy,
+and invariant failures. Logs must distinguish success coverage from absence of errors.
 
 ## Acceptance criteria
 
-- [ ] App named in Outcome; integration merged and running wherever that app runs.
-- [ ] At least one Tabula feature in the app's normal usage path (not a hidden test page).
-- [ ] Anomalies (or "none observed") tracked as GitHub issues labeled `burn-in`.
+- [ ] Outcome names the apps, owners, deployment environments, versions, and which matrix rows each covers.
+- [ ] Every public capability appears in at least one normal user path, not a hidden test route.
+- [ ] Consumers install public npm artifacts, not workspace/git dependencies.
+- [ ] Consumer tests use the published testing adapter and exercise application behavior.
+- [ ] Instrumentation is privacy-reviewed, versioned, and can produce P5-003 aggregate evidence.
+- [ ] Every anomaly is filed with `burn-in`, affected version, reproduction/evidence, and invariant classification.
+- [ ] Every dogfood app has adopted the provenance-backed `0.4.0` checkpoint from npm.
 
 ## Files
 
-External app repo; issues on this repo.
+External app repositories, consumer observability configuration, issues in this repository,
+FEATURE-COMPLETE burn-in links, and this Outcome.
 
 ## Outcome
 

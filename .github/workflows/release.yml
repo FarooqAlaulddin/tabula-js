@@ -1,0 +1,215 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/release.yml
+      - .changeset/**
+      - scripts/release.mjs
+      - scripts/release-policy.mjs
+      - scripts/release-policy.test.js
+      - scripts/docs-policy.mjs
+      - scripts/docs-policy.test.js
+      - scripts/verify-docs.mjs
+      - scripts/verify-package.mjs
+      - scripts/verify-published.mjs
+      - README.md
+      - packages/tabula/README.md
+      - packages/tabula/src/index.ts
+      - packages/example-excalidraw/**
+      - docs/**
+      - package.json
+      - packages/tabula/package.json
+      - packages/tabula/CHANGELOG.md
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Validate without publishing to npm or creating a GitHub release
+        required: true
+        default: true
+        type: boolean
+      dist_tag:
+        description: npm dist-tag (policy rejects invalid version/tag combinations)
+        required: true
+        default: next
+        type: choice
+        options: [next, latest]
+
+concurrency:
+  group: release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  version-pr:
+    name: Version pull request
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - name: Create or update the version pull request
+        uses: changesets/action@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
+        with:
+          version-script: pnpm changeset:version
+          commit-mode: github-api
+          pr-title: Release package versions
+
+  candidate:
+    name: Validated release candidate
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      git_tag: ${{ steps.release.outputs.git_tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Pin trusted-publishing npm CLI
+        run: npm install --global npm@11.12.1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Portable browser matrix
+        run: pnpm exec playwright test --config e2e/playwright.config.ts
+      - name: Packed documentation samples
+        run: pnpm docs:check
+      - name: Packed demo harness
+        run: pnpm demo:test
+      - name: Frozen protocol compatibility
+        run: pnpm compat:test
+      - name: Build and validate the release tarball
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.dist_tag || 'next' }}
+        run: pnpm release:prepare -- --tag "$RELEASE_TAG"
+      - name: Exercise the exact publish command without registry writes
+        env:
+          RELEASE_TAG: ${{ inputs.dist_tag || 'next' }}
+        run: pnpm release:dry-run -- --tag "$RELEASE_TAG"
+      - name: Retain tarball, checksum manifest, and release notes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate-${{ steps.release.outputs.version }}
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Trusted publish
+    if: github.event_name == 'workflow_dispatch' && !inputs.dry_run && github.ref == 'refs/heads/main'
+    needs: candidate
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.14.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Pin trusted-publishing npm CLI
+        run: npm install --global npm@11.12.1
+      - name: Download the exact validated candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: release-candidate-${{ needs.candidate.outputs.version }}
+          path: release-artifacts/
+      - name: Recheck identity and checksum after artifact transfer
+        env:
+          RELEASE_TAG: ${{ inputs.dist_tag }}
+        run: node scripts/release.mjs verify --tag "$RELEASE_TAG"
+      - name: Publish through npm trusted publishing
+        env:
+          RELEASE_TAG: ${{ inputs.dist_tag }}
+        run: node scripts/release.mjs publish --tag "$RELEASE_TAG"
+      - name: Create annotated source tag
+        env:
+          RELEASE_GIT_TAG: ${{ needs.candidate.outputs.git_tag }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git tag --annotate "$RELEASE_GIT_TAG" --message "$RELEASE_GIT_TAG"
+          git push origin "$RELEASE_GIT_TAG"
+      - name: Create GitHub release with exact artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_GIT_TAG: ${{ needs.candidate.outputs.git_tag }}
+        run: |
+          gh release create "$RELEASE_GIT_TAG" \
+            release-artifacts/*.tgz \
+            release-artifacts/release-manifest.json \
+            --notes-file release-artifacts/release-notes.md \
+            --title "$RELEASE_GIT_TAG" \
+            --verify-tag
+
+  verify-published:
+    name: Verify published npm artifact
+    if: github.event_name == 'workflow_dispatch' && !inputs.dry_run && github.ref == 'refs/heads/main'
+    needs: [candidate, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Verify exact registry artifact in independent consumers
+        run: pnpm published:check -- "${{ needs.candidate.outputs.version }}"
+      - name: Retain published-artifact verification
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: published-${{ needs.candidate.outputs.version }}-verification
+          path: release-artifacts/published-${{ needs.candidate.outputs.version }}-verification.json
+          if-no-files-found: error
+          retention-days: 90

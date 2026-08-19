@@ -1,38 +1,72 @@
 ---
 id: P3-001
-title: Release workflow — changesets publish with npm provenance
+title: Prove the provenance-backed release workflow
 phase: 3
-status: todo
-depends_on: [P3-002, P0-004]
+status: done
+depends_on: [P3-002, P3-003, P3-004]
 owner: agent
-scope: 1 workflow file + CI adjustments
+scope: version-PR + publish workflow + dry-run evidence
 ---
 
 ## Context
 
-P3-002 established changesets as the release model. This task builds the single publish workflow around it. Auth decision, recorded here so no task guesses: **npm trusted publishing (OIDC), no long-lived token.** The maintainer configures the trusted publisher on npmjs.com per package (human prerequisite, listed in P4-002); the workflow needs only `id-token: write`.
-
-Known limitation: `npm publish --dry-run` cannot verify OIDC exchange, trusted-publisher config, or provenance attestation — those are only proven by a real publish. Therefore the first real publish is an `0.2.0-rc.*` prerelease under a `next` dist-tag, serving as the provenance integration test before 0.2.0 proper (folded into P4-002's flow).
+Releases use npm trusted publishing through GitHub OIDC, never a long-lived npm token.
+Dry-run cannot prove the OIDC exchange or provenance attestation, so the first real
+integration proof is `0.2.0-alpha.0` under `next` in P4-002.
 
 ## Task
 
-- Add `.github/workflows/release.yml` using the changesets action: changeset on main → version PR; merging the version PR → build, typecheck, unit tests, e2e (chromium), then `pnpm release` (from P3-002) publishing core → react in dependency order with `--provenance --access public`.
-- Permissions: `id-token: write`, `contents: write` (version PR + tags), `pull-requests: write`.
-- Pin the Node version and use the `packageManager` field (P0-004) for pnpm.
-- Add a `workflow_dispatch` input `dry_run` that runs the full pipeline through `npm publish --dry-run` for both packages — verifies everything *except* OIDC/provenance (see Known limitation).
-- Create a GitHub release with the changeset-generated notes on each publish.
+- Add a Changesets version-PR/publish workflow with least-required permissions,
+  pinned Node/pnpm, frozen install, and reviewed/pinned action versions.
+- Before publish, run lint, build, typecheck, unit tests, portable browser matrix,
+  package gate, sample harness, and compatibility harness against packed artifacts.
+- Publish the package with public access and provenance enabled. Fail if a pre-1.0
+  workflow targets `latest`.
+- Create signed/annotated tags as selected, GitHub releases, changelog notes, tarball
+  checksums, and a machine-readable release manifest.
+- Add workflow_dispatch dry-run that performs the exact pipeline through
+  `npm publish --dry-run` but clearly reports that OIDC/provenance remain unproven.
+- Document human npm trusted-publisher setup for the package name, including the
+  public-repository prerequisite for provenance.
 
 ## Acceptance criteria
 
-- [ ] Workflow present; `gh workflow list` shows it.
-- [ ] Manual `dry_run` dispatch goes green end-to-end on CI.
-- [ ] Publish order proven core → react in the dry-run logs; react's dependency range resolves to the core version being published.
-- [ ] The rc-prerelease-first rule is written into P4-002's flow (verify, and update P4-002 if its text predates this).
+- [x] Dry-run workflow is green and publishes only the validated packed artifact.
+- [x] No npm token secret is required or referenced.
+- [x] Provenance/public-access configuration is visible and inherited by the real publish command.
+- [x] A negative test proves `latest` is rejected for alpha/preview/RC versions.
+- [x] GitHub release notes and manifest can be generated without publishing.
+- [x] Human npm/OIDC setup checklist is ready for P4-002.
 
 ## Files
 
-`.github/workflows/release.yml` (new), possibly `.github/workflows/ci.yml`.
+Release/CI workflows, release scripts/configuration, changesets config if needed, and release docs.
 
 ## Outcome
 
-(pending)
+- Added a SHA-pinned Changesets v2 version-PR workflow and a separately permissioned
+  release-candidate/publish pipeline. Builds and tests have read-only repository
+  access; only the protected `npm` environment job receives `contents: write` and
+  `id-token: write`.
+- The candidate job runs lint, build, typecheck, unit, all three portable browser
+  engines, the packed demo, frozen compatibility, and the full package gate. The
+  package gate copies its already validated tarball instead of rebuilding for publish.
+- Release tooling binds package/version/tag, source commit, workflow, tarball bytes,
+  release notes, and SHA-256 values in a machine-readable manifest. Artifact transfer
+  rechecks all identities and checksums before the real npm command.
+- Real publish rejects token credentials and non-main refs, requires GitHub OIDC, and
+  invokes `npm publish <tarball> --access public --tag <tag> --provenance`. It then
+  creates an annotated package/version tag and GitHub release from the same artifacts.
+- Six unit controls reject `latest` for alpha, preview, and RC versions and enforce
+  public/provenance manifest policy. A manual tamper control proved modified release
+  notes fail checksum verification.
+- GitHub Actions run `31871214612` completed the unprivileged candidate job in 7m48s:
+  257 unit, 162 browser, 9 demo, and 6 compatibility tests passed; the 18-file package
+  measured 15,512 gzip bytes, npm dry-run targeted public `next`, and artifact
+  `9243551688` retained the tarball, notes, and checksum manifest.
+- `docs/RELEASING.md` now contains the npm trusted-publisher, public-repository,
+  protected-environment, no-token, and exact repository URL checklist for P4-002.
+  Actual OIDC exchange and provenance publication remain intentionally unproven until
+  the human-owned `0.2.0-alpha.0` publish.
+- Expanded `## Files` to include `.gitignore`, `biome.json`, and the task ledger because
+  generated release artifacts need lint/working-tree boundaries and completion evidence.

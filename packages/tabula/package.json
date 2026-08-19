@@ -1,7 +1,16 @@
 {
-	"name": "tabula",
+	"name": "@thinkly/tabula-js",
 	"version": "0.1.0",
 	"description": "Coordinate browser tabs as views of a single workspace",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/FarooqAlaulddin/tabula-js.git",
+		"directory": "packages/tabula"
+	},
+	"homepage": "https://github.com/FarooqAlaulddin/tabula-js#readme",
+	"bugs": {
+		"url": "https://github.com/FarooqAlaulddin/tabula-js/issues"
+	},
 	"type": "module",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.js",
@@ -28,7 +37,7 @@
 			}
 		}
 	},
-	"files": ["dist"],
+	"files": ["dist", "README.md", "LICENSE", "CHANGELOG.md"],
 	"scripts": {
 		"build": "tsup",
 		"typecheck": "tsc --noEmit",
@@ -39,13 +48,23 @@
 	},
 	"keywords": [
 		"tabs",
+		"browser-tabs",
 		"broadcast-channel",
+		"web-locks",
 		"multi-tab",
+		"multi-window",
 		"coordination",
+		"workspace",
 		"shared-state",
 		"leader-election",
 		"browser"
 	],
+	"engines": {
+		"node": ">=20"
+	},
 	"license": "MIT",
+	"publishConfig": {
+		"access": "public"
+	},
 	"sideEffects": false
 }

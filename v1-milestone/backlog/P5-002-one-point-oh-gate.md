@@ -1,41 +1,47 @@
 ---
 id: P5-002
-title: 1.0.0 gate and release
+title: Stabilize through evidence-resetting 0.x releases
 phase: 5
 status: todo
 depends_on: [P5-001]
 owner: human
-scope: gate evaluation + 1 release
+scope: burn-in issue triage + any required 0.x releases
 ---
 
 ## Context
 
-1.0.0 is a promise of API stability and production readiness. The gate is event-based, not calendar-based.
-
-## Gate criteria (all must hold — each with checkable evidence)
-
-1. **Usage**: the P5-001 integration produced a dated burn-in log (the instrumentation P5-001 wired) covering at minimum: ≥20 distinct real sessions, ≥2 browsers, ≥1 session with a tab surviving a laptop sleep/wake cycle, ≥1 session with 3+ simultaneous tabs. Evidence: the log itself, linked in Outcome. Zero unexplained coordination failures in it.
-2. **Issues**: the query `is:issue label:burn-in is:open` returns zero. Every closed burn-in issue is either fixed (link the commit) or accepted-and-documented (link the docs/BEHAVIOR.md section).
-3. **API**: zero breaking changes since 0.2.0 — verified by diffing the exported surface (`dist/index.d.ts`) between 0.2.0 and the candidate. If any were needed, they shipped in an 0.x release and burn-in evidence (criterion 1) restarts from that release's adoption.
-4. **Browsers**: the manual Safari-on-macOS pass recorded in P1-004's Outcome has been performed against 0.2.x (WebKit-on-Linux CI is not Safari). Evidence: dated checklist in Outcome.
-5. **Docs**: every README and BEHAVIOR.md code sample executed against the release candidate (agent-executable: extract samples, compile/run against the packed tarball). Evidence: the run output linked in Outcome.
+Burn-in is expected to find defects. Fixes must not accumulate only on main while
+apps continue exercising an older candidate. Every meaningful correction is released,
+adopted, and given fresh evidence. Breaking API/protocol changes are still legal in
+`0.x`, but they reset all affected evidence.
 
 ## Task
 
-Human evaluates the gate. If it holds: agent prepares the 1.0.0 changeset (semver-major from 0.x), release notes summarizing the road from 0.1.0, and the maintainer merges the version PR. Announce wherever the maintainer chooses.
-
-If the gate fails, file what failed as issues; they become new backlog items; re-evaluate after they close.
+- Triage every `burn-in` anomaly as correctness defect, documentation/support-policy
+  correction, consumer misuse, observability defect, or unrelated issue.
+- Fix correctness and observability defects with regression tests at the lowest layer
+  plus browser/consumer coverage where observable.
+- Publish fixes according to semver impact, then establish and adopt `0.5.0` as the
+  stabilization checkpoint, with
+  provenance and updated compatibility fixtures/API baselines.
+- Upgrade every dogfood app to the new candidate before resuming affected evidence.
+- Mark affected FEATURE-COMPLETE rows `todo` and explicitly identify which counters
+  restart. Accepted limitations must already fit CONTRACT/non-goals and be documented.
+- Repeat until there are no unresolved or unexplained coordination anomalies.
 
 ## Acceptance criteria
 
-- [ ] Gate evaluation recorded in Outcome, criterion by criterion, with evidence links.
-- [ ] Both packages at 1.0.0 on npm with provenance.
-- [ ] GitHub release + notes published.
-- [ ] `v1-milestone/PLAN.md` index fully `done` — milestone closed.
+- [ ] Every burn-in issue has classification, resolution, regression evidence, and release version.
+- [ ] No correctness defect is waived solely to preserve schedule or avoid an API change.
+- [ ] Every release is adopted by affected apps and evidence-reset boundaries are recorded.
+- [ ] Compatibility/API snapshots include every candidate that remains in the supported upgrade path.
+- [ ] `is:issue label:burn-in is:open` returns zero before P5-003 starts.
+- [ ] All affected apps run the provenance-backed `0.5.0` stabilization checkpoint.
 
 ## Files
 
-`.changeset/`, release notes, this backlog.
+Issue tracker, required implementation/tests/docs/changesets, frozen fixtures/baselines,
+external app upgrades, FEATURE-COMPLETE, and this Outcome.
 
 ## Outcome
 

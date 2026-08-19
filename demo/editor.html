@@ -13,7 +13,7 @@
 		<span class="companion-status" id="status">Connecting...</span>
 	</header>
 	<div class="companion-body">
-		<textarea id="editor" placeholder="Start typing... content syncs across all tabs."></textarea>
+		<textarea id="editor" placeholder="Exclusive editor; preview tabs mirror this content."></textarea>
 	</div>
 </div>
 
@@ -26,18 +26,19 @@
 </div>
 
 <script type="module">
-import { createWorkspace } from 'tabula'
+import { createWorkspace } from '@thinkly/tabula-js'
 
 const NS = 'tabula-demo'
 const app = createWorkspace(NS, { heartbeat: 1000, timeout: 4000 })
 const statusEl = document.getElementById('status')
 const editorEl = document.getElementById('editor')
 
-// Claim after init — synced state applied automatically via pending-open
-app.ready.then(() => {
+// Claim after init; selected open() state arrives through the protocol handshake.
+app.ready.then(async () => {
 	try {
-		app.claim('editor')
-		statusEl.textContent = 'Claimed "editor"'
+		const result = await app.claim('editor')
+		statusEl.textContent = result.status === 'claimed' ? 'Claimed "editor"' : 'Read-only: editor already open'
+		if (result.status === 'conflict') editorEl.readOnly = true
 	} catch (e) {
 		statusEl.textContent = 'Claim failed: ' + e.message
 	}

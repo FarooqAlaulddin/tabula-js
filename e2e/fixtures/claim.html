@@ -4,24 +4,26 @@
 <body>
 <div id="status">loading</div>
 <script type="module">
-import { createWorkspace } from 'tabula'
+import { createWorkspace } from '@thinkly/tabula-js'
 
 const params = new URLSearchParams(location.search)
 const ns = params.get('ns') || 'e2e-default'
 const viewName = params.get('view') || 'unknown'
 const heartbeat = Number(params.get('heartbeat')) || 200
 const timeout = Number(params.get('timeout')) || 1000
+const openTimeout = Number(params.get('openTimeout')) || 10000
 
-const app = createWorkspace(ns, { heartbeat, timeout })
+const app = createWorkspace(ns, { heartbeat, timeout, openTimeout })
 
 window.__tabula = app
 window.__tabulaEvents = []
 
 // Claim after init completes
-app.ready.then(() => {
+app.ready.then(async () => {
 	try {
-		app.claim(viewName)
-		document.getElementById('status').textContent = 'claimed'
+		const result = await app.claim(viewName)
+		if (result.status === 'claimed') window.__viewHandle = result.handle
+		document.getElementById('status').textContent = result.status
 	} catch (e) {
 		document.getElementById('status').textContent = 'error: ' + e.message
 	}

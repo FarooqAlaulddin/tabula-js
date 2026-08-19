@@ -1,36 +1,56 @@
 ---
 id: P0-004
-title: Complete package metadata for publishing
+title: Complete package metadata and declared prerequisites
 phase: 0
-status: todo
-depends_on: [P0-003]
+status: done
+depends_on: [P0-002]
 owner: agent
-scope: 2 files + tarball verification
+scope: manifests + package contents + prerequisite documentation
 ---
 
 ## Context
 
-Current state (verified 2026-07-23 — re-verify before starting): both `packages/tabula/package.json` and `packages/tabula-react/package.json` **already have** `files: ["dist"]` and `sideEffects: false`, and the core package already has a `keywords` array. What's actually missing: `repository`, `homepage`, and `bugs` in both; `keywords` in the react package. Both packages have per-package READMEs; only the repo root has a LICENSE, so packed tarballs may lack one. npm provenance publishing (P3-001) requires a `repository` field matching the GitHub repo.
+The package manifests lack repository, homepage, bugs, and complete keyword metadata.
+Published tarballs must contain their licenses and must state the browser/runtime
+prerequisites that later hardening will enforce: top-level same-origin contexts,
+secure context for Web Locks, BroadcastChannel, usable local/session storage, and
+`crypto.randomUUID()`.
 
 ## Task
 
-- Add to both package.jsons: `repository` (`{ "type": "git", "url": "git+https://github.com/FarooqAlaulddin/tabula-js.git", "directory": "packages/<dir>" }`), `homepage`, `bugs`.
-- React package: add `keywords`; core package: reconcile the prescribed set (browser-tabs, broadcastchannel, multi-tab, cross-tab, leader-election, presence, workspace, tab-coordination) with the existing list — merge, don't blindly replace.
-- Decide how LICENSE reaches each tarball: per-package copies added to `files`, or `license` field only. Implement the choice.
-- Add `packageManager` field to the root package.json (pin pnpm) for reproducible release builds.
-- Verify each per-package README has package-specific install and import samples (update if they still reference old names post-P0-002 — coordinate if P0-002 hasn't run yet; this task must not undo it).
+- Add repository metadata with package directory, homepage, bugs, keywords,
+  `publishConfig`, and the chosen Node/TypeScript declarations where already decided.
+- Pin the root `packageManager` and document the supported package manager for releases.
+- Put LICENSE in the tarball and verify README selection for npm.
+- Add a short prerequisites section to the package README using the renamed package.
+- Run `npm pack --dry-run` and inspect the exact file list.
 
 ## Acceptance criteria
 
-- [ ] `npm pack --dry-run` in each package lists dist + README + LICENSE (per chosen mechanism) + package.json, nothing else.
-- [ ] Both packages have `repository` (with `directory`), `homepage`, `bugs`, `keywords`.
-- [ ] Root package.json has `packageManager`.
-- [ ] `pnpm build && pnpm typecheck` green.
+- [x] The package contains repository, homepage, bugs, keywords, license, and publish access metadata.
+- [x] Root `packageManager` pins the repository pnpm major and exact version.
+- [x] The dry-run tarball contains only package.json, README, LICENSE, changelog if present, and intended dist files.
+- [x] Package docs state secure-context, storage, browser, same-origin, and top-level-context prerequisites without claiming unsupported versions.
+- [x] Build, typecheck, and packed dry runs pass.
 
 ## Files
 
-`packages/tabula/package.json`, `packages/tabula-react/package.json`, root `package.json`, possibly `packages/*/LICENSE`, `packages/*/README.md`.
+Root/package manifests, package README, and package LICENSE file as needed.
 
 ## Outcome
 
-(pending)
+- Added npm metadata for the exact GitHub repository/package directory, homepage,
+  issue tracker, public publish access, license, and expanded discovery keywords.
+- Pinned the repository and release package manager to `pnpm@11.5.0` and documented
+  frozen-install release usage in the root README.
+- Added a package-local LICENSE byte-identical to the root MIT license and explicitly
+  included LICENSE, README, and dist in the package file allowlist.
+- Replaced inferred browser-version claims in root/npm READMEs with the actual v1
+  prerequisites: top-level same-origin contexts, secure context plus Web Locks,
+  BroadcastChannel, `crypto.randomUUID()`, and usable local/session storage.
+- `npm pack --dry-run --json` produced `@thinkly/tabula-js@0.1.0` with exactly
+  15 entries: LICENSE, README, package.json, and 12 intended dist files.
+- Verified LICENSE equality, `pnpm install --frozen-lockfile`, lint, typecheck, build,
+  milestone validation, and package metadata inspection.
+- Committed and pushed on `codex/v1-milestone-execution` as the P0-004 task commit.
+- No unrelated working-tree changes were present when the task was completed.

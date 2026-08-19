@@ -1,156 +1,205 @@
+import { StorageCorruptionError } from '@tabula/runtime'
 import { Leader } from '@tabula/tabula'
-import { describe, expect, it, vi } from 'vitest'
-import { createStubPresence, makeTab } from './helpers'
+import type { Message } from '@tabula/tabula'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+	createStubChannel,
+	createStubPresence,
+	installMockStorage,
+	installMockWindow,
+	makeTab,
+} from './helpers'
 
-describe('Leader', () => {
-	it('single tab becomes leader', () => {
-		const presence = createStubPresence('tab-1')
+function leaderMessage(
+	generation: number | undefined,
+	tabId = 'remote-tab',
+	instanceId = 'remote-instance',
+): Message {
+	return {
+		protocol: { major: 1, revision: 1, minRevision: 0 },
+		type: 'leader:change',
+		id: `message-${generation ?? 'legacy'}`,
+		from: { tabId, instanceId },
+		sentAt: Date.now(),
+		payload: generation === undefined ? { tabId } : { generation, tabId, instanceId },
+	}
+}
+
+describe('Leader Web Lock authority', () => {
+	let storageMock: ReturnType<typeof installMockStorage>
+	let windowMock: ReturnType<typeof installMockWindow>
+
+	beforeEach(() => {
+		storageMock = installMockStorage()
+		windowMock = installMockWindow()
+	})
+
+	afterEach(() => {
+		vi.restoreAllMocks()
+		windowMock.restore()
+		storageMock.restore()
+	})
+
+	function createLeader(
+		namespace: string,
+		tabId: string,
+		onChange = vi.fn(),
+		onAuthorityChange = vi.fn(),
+		onError = vi.fn(),
+	) {
+		const channel = Object.assign(createStubChannel(tabId), {
+			getIdentity: () => ({ tabId, instanceId: `${tabId}-instance` }),
+		})
+		const presence = createStubPresence(tabId)
+		const leader = new Leader(
+			namespace,
+			channel as any,
+			presence as any,
+			onChange,
+			onAuthorityChange,
+			onError,
+		)
+		return { leader, channel, presence, onChange, onAuthorityChange, onError }
+	}
+
+	it('holds the exact namespace lock and publishes a persistent generation', async () => {
+		const { leader, channel, onChange, onAuthorityChange } = createLeader('my workspace', 'tab-a')
+		leader.start()
+
+		await vi.waitFor(() => expect(leader.isLeader()).toBe(true))
+		expect(windowMock.locks.requestedNames).toEqual(['tabula-js:v1:my%20workspace:leader'])
+		expect(localStorage.getItem('tabula:my%20workspace:leader-generation')).toBe('1')
+		expect(onChange).toHaveBeenCalledWith('tab-a')
+		expect(onAuthorityChange).toHaveBeenCalledWith(true)
+		expect(channel.send).toHaveBeenCalledWith(
+			'leader:change',
+			{
+				generation: 1,
+				tabId: 'tab-a',
+				instanceId: 'tab-a-instance',
+			},
+			undefined,
+		)
+
+		leader.stop()
+		await vi.waitFor(() => expect(windowMock.locks.activeCount).toBe(0))
+	})
+
+	it('serializes contenders and increments generation on transfer', async () => {
+		const first = createLeader('shared', 'tab-a')
+		const second = createLeader('shared', 'tab-b')
+		first.leader.start()
+		second.leader.start()
+
+		await vi.waitFor(() => expect(first.leader.isLeader()).toBe(true))
+		expect(second.leader.isLeader()).toBe(false)
+		expect(windowMock.locks.maxActiveCount).toBe(1)
+
+		first.leader.stop()
+		await vi.waitFor(() => expect(second.leader.isLeader()).toBe(true))
+		expect(localStorage.getItem('tabula:shared:leader-generation')).toBe('2')
+		expect(windowMock.locks.maxActiveCount).toBe(1)
+
+		second.leader.stop()
+		await vi.waitFor(() => expect(windowMock.locks.activeCount).toBe(0))
+	})
+
+	it('aborts a queued request without acquiring authority', async () => {
+		const first = createLeader('queued', 'tab-a')
+		const second = createLeader('queued', 'tab-b')
+		first.leader.start()
+		second.leader.start()
+		await vi.waitFor(() => expect(first.leader.isLeader()).toBe(true))
+
+		second.leader.stop()
+		first.leader.stop()
+		await vi.waitFor(() => expect(windowMock.locks.activeCount).toBe(0))
+
+		expect(second.onAuthorityChange).not.toHaveBeenCalledWith(true)
+		expect(localStorage.getItem('tabula:queued:leader-generation')).toBe('1')
+		expect(second.onError).not.toHaveBeenCalled()
+	})
+
+	it('demotes before voluntarily releasing a held lock and does so once', async () => {
+		const transitions: string[] = []
+		const authority = vi.fn((held: boolean) => {
+			transitions.push(`${held}:${windowMock.locks.isHeld('tabula-js:v1:ordering:leader')}`)
+		})
+		const { leader } = createLeader('ordering', 'tab-a', vi.fn(), authority)
+		leader.start()
+		await vi.waitFor(() => expect(leader.isLeader()).toBe(true))
+
+		leader.stop()
+		leader.stop()
+		expect(transitions).toEqual(['true:true', 'false:true'])
+		await vi.waitFor(() => expect(windowMock.locks.activeCount).toBe(0))
+		expect(authority).toHaveBeenCalledTimes(2)
+	})
+
+	it('rejects stale, conflicting, and unfenced projections', () => {
+		const remoteOld = makeTab({ id: 'remote-old' })
+		const remoteNew = makeTab({ id: 'remote-new' })
 		const onChange = vi.fn()
-		const leader = new Leader(presence as any, onChange)
+		const { leader, presence } = createLeader('projection', 'self', onChange)
+		presence.setTabs([remoteOld, remoteNew])
 
-		leader.recalculate()
+		leader.handleMessage(leaderMessage(5, 'remote-old', 'instance-old'))
+		expect(leader.getLeaderId()).toBe('remote-old')
+		onChange.mockClear()
 
-		expect(leader.getLeaderId()).toBe('tab-1')
-		expect(leader.isLeader()).toBe(true)
-		expect(onChange).toHaveBeenCalledWith('tab-1')
-	})
-
-	it('oldest tab (smallest firstSeenAt) wins', () => {
-		const oldTab = makeTab({ id: 'tab-old', firstSeenAt: 1000, visible: true })
-		makeTab({ id: 'tab-new', firstSeenAt: 2000, visible: true })
-		const presence = createStubPresence('tab-new', [oldTab])
-		// Override self's firstSeenAt to be newer
-		;(presence.getSelf() as any).firstSeenAt = 2000
-
-		const onChange = vi.fn()
-		const leader = new Leader(presence as any, onChange)
-		leader.recalculate()
-
-		expect(leader.getLeaderId()).toBe('tab-old')
-		expect(leader.isLeader()).toBe(false)
-	})
-
-	it('tiebreaker: lexicographic tabId when timestamps equal', () => {
-		const tabA = makeTab({ id: 'aaa', firstSeenAt: 1000, visible: true })
-		makeTab({ id: 'zzz', firstSeenAt: 1000, visible: true })
-		const presence = createStubPresence('zzz', [tabA])
-		;(presence.getSelf() as any).firstSeenAt = 1000
-		;(presence.getSelf() as any).id = 'zzz'
-
-		const onChange = vi.fn()
-		const leader = new Leader(presence as any, onChange)
-		leader.recalculate()
-
-		expect(leader.getLeaderId()).toBe('aaa')
-	})
-
-	it('oldest tab wins regardless of visibility', () => {
-		const hiddenOld = makeTab({ id: 'tab-hidden', firstSeenAt: 1000, visible: false })
-		makeTab({ id: 'tab-visible', firstSeenAt: 2000, visible: true })
-		const presence = createStubPresence('tab-visible', [hiddenOld])
-		;(presence.getSelf() as any).firstSeenAt = 2000
-
-		const onChange = vi.fn()
-		const leader = new Leader(presence as any, onChange)
-		leader.recalculate()
-
-		// Visibility does NOT affect election — oldest tab is leader
-		expect(leader.getLeaderId()).toBe('tab-hidden')
-	})
-
-	it('all hidden: oldest hidden wins', () => {
-		const hiddenOld = makeTab({ id: 'tab-a', firstSeenAt: 1000, visible: false })
-		makeTab({ id: 'tab-b', firstSeenAt: 2000, visible: false })
-		const presence = createStubPresence('tab-b', [hiddenOld])
-		;(presence.getSelf() as any).firstSeenAt = 2000
-		;(presence.getSelf() as any).visible = false
-
-		const onChange = vi.fn()
-		const leader = new Leader(presence as any, onChange)
-		leader.recalculate()
-
-		expect(leader.getLeaderId()).toBe('tab-a')
-	})
-
-	it('all visible: oldest visible wins', () => {
-		const visibleOld = makeTab({ id: 'tab-a', firstSeenAt: 1000, visible: true })
-		makeTab({ id: 'tab-b', firstSeenAt: 2000, visible: true })
-		const presence = createStubPresence('tab-b', [visibleOld])
-		;(presence.getSelf() as any).firstSeenAt = 2000
-
-		const onChange = vi.fn()
-		const leader = new Leader(presence as any, onChange)
-		leader.recalculate()
-
-		expect(leader.getLeaderId()).toBe('tab-a')
-	})
-
-	it('onChange not called if leader does not change', () => {
-		const presence = createStubPresence('tab-1')
-		const onChange = vi.fn()
-		const leader = new Leader(presence as any, onChange)
-
-		leader.recalculate()
-		expect(onChange).toHaveBeenCalledTimes(1)
-
-		leader.recalculate()
-		expect(onChange).toHaveBeenCalledTimes(1)
-	})
-
-	it('onChange called when leader changes', () => {
-		const presence = createStubPresence('tab-1')
-		const onChange = vi.fn()
-		const leader = new Leader(presence as any, onChange)
-
-		leader.recalculate()
-		expect(onChange).toHaveBeenCalledWith('tab-1')
-
-		// A new, older tab joins
-		const olderTab = makeTab({ id: 'tab-older', firstSeenAt: 1, visible: true })
-		presence.setTabs([olderTab])
-
-		leader.recalculate()
-		expect(onChange).toHaveBeenCalledTimes(2)
-		expect(onChange).toHaveBeenLastCalledWith('tab-older')
-	})
-
-	it('getLeaderId() returns null before first recalculate', () => {
-		const presence = createStubPresence('tab-1')
-		const leader = new Leader(presence as any, vi.fn())
-
-		expect(leader.getLeaderId()).toBeNull()
-	})
-
-	it('isLeader() returns true only when this tab is leader', () => {
-		const otherTab = makeTab({ id: 'tab-other', firstSeenAt: 1, visible: true })
-		const presence = createStubPresence('tab-self', [otherTab])
-		const leader = new Leader(presence as any, vi.fn())
-
-		// Before recalculate
-		expect(leader.isLeader()).toBe(false)
-
-		// After recalculate — tab-other is older so it becomes leader
-		leader.recalculate()
-		expect(leader.isLeader()).toBe(false)
-		expect(leader.getLeaderId()).toBe('tab-other')
-
-		// Remove the other tab so self becomes leader
-		presence.setTabs([])
-		leader.recalculate()
-		expect(leader.isLeader()).toBe(true)
-	})
-
-	it('empty tab list: no crash', () => {
-		// Create a stub presence that returns an empty tab list
-		const presence = {
-			tabId: 'tab-1',
-			getAllTabs: () => [],
-		}
-		const onChange = vi.fn()
-		const leader = new Leader(presence as any, onChange)
-
-		expect(() => leader.recalculate()).not.toThrow()
-		expect(leader.getLeaderId()).toBeNull()
+		leader.handleMessage(leaderMessage(4, 'remote-new', 'instance-new'))
+		leader.handleMessage(leaderMessage(5, 'remote-new', 'instance-new'))
+		leader.handleMessage(leaderMessage(undefined, 'remote-new', 'instance-new'))
+		expect(leader.getLeaderId()).toBe('remote-old')
 		expect(onChange).not.toHaveBeenCalled()
+
+		leader.handleMessage(leaderMessage(6, 'remote-new', 'instance-new'))
+		expect(leader.getLeaderId()).toBe('remote-new')
+		expect(onChange).toHaveBeenCalledWith('remote-new')
+	})
+
+	it('answers a late-join query only while holding authority', async () => {
+		const { leader, channel } = createLeader('late-join', 'tab-a')
+		leader.start()
+		await vi.waitFor(() => expect(leader.isLeader()).toBe(true))
+		channel.send.mockClear()
+
+		leader.handleMessage({
+			protocol: { major: 1, revision: 1, minRevision: 0 },
+			type: 'leader:query',
+			id: 'query-1',
+			from: { tabId: 'tab-b', instanceId: 'tab-b-instance' },
+			sentAt: Date.now(),
+			payload: null,
+		})
+		expect(channel.send).toHaveBeenCalledWith(
+			'leader:change',
+			expect.objectContaining({ generation: 1, tabId: 'tab-a' }),
+			{ tabId: 'tab-b', instanceId: 'tab-b-instance' },
+		)
+
+		leader.stop()
+		channel.send.mockClear()
+		leader.handleMessage({
+			protocol: { major: 1, revision: 1, minRevision: 0 },
+			type: 'leader:query',
+			id: 'query-2',
+			from: { tabId: 'tab-b', instanceId: 'tab-b-instance' },
+			sentAt: Date.now(),
+			payload: null,
+		})
+		expect(channel.send).not.toHaveBeenCalled()
+	})
+
+	it('fails acquisition on a corrupt generation without running leader work', async () => {
+		localStorage.setItem('tabula:corrupt:leader-generation', 'not-a-generation')
+		const { leader, onAuthorityChange, onError } = createLeader('corrupt', 'tab-a')
+		leader.start()
+
+		await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1))
+		expect(onError.mock.calls[0][0]).toBeInstanceOf(StorageCorruptionError)
+		expect(onAuthorityChange).not.toHaveBeenCalledWith(true)
+		expect(leader.isLeader()).toBe(false)
+		expect(localStorage.getItem('tabula:corrupt:leader-generation')).toBe('not-a-generation')
 	})
 })

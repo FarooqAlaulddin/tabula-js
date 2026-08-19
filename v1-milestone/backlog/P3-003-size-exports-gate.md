@@ -1,35 +1,60 @@
 ---
 id: P3-003
-title: Bundle size and exports regression gate
+title: Gate packed exports, declarations, dependencies, and size
 phase: 3
-status: todo
-depends_on: [P0-002]
+status: done
+depends_on: [P3-002]
 owner: agent
-scope: 1 CI check + 1 smoke-test script
+scope: reproducible pack/consumer/size CI gate
 ---
 
 ## Context
 
-The README advertises ~7 KB gzipped core / ~1 KB react, and zero dependencies is the identity. Nothing currently fails CI if a change doubles the bundle, adds a dependency, breaks tree-shaking, or breaks the `./testing` subpath export for CJS consumers. `npm pack --dry-run` doesn't catch any of these.
+The workspace build can pass while npm users receive broken exports, declarations,
+licenses, or tree-shaking. Zero runtime dependencies and a small bundle are
+part of Tabula's identity and require mechanical regression gates.
 
 ## Task
 
-- Add a size check (size-limit or a script gzipping `dist/index.js`) with budgets: core ≤ 8 KB gzip, react ≤ 2 KB gzip — failing CI on breach. Budgets live in package.json so raising one is a visible, reviewed diff.
-- Add a dependency-count assertion: core `dependencies` must be absent/empty; react may depend only on the core package (peer: react).
-- Consumer smoke test in CI, from packed tarballs (`npm pack`, install into a temp project): ESM `import` and CJS `require` of both `.` and `./testing`; tsc consuming the emitted `.d.ts`/`.d.cts` in that temp project.
-- Tree-shaking smoke: bundle a file importing only `createWorkspace` with esbuild; assert testing-only symbols (e.g. `createTestCluster`) are absent from output.
+- Build and `npm pack` the package into a fresh temporary directory using a script
+  that validates the exact tarball contents.
+- Create fresh ESM and CJS consumers for core and the testing subpath; run Node,
+  TypeScript minimum/latest declaration checks, and a browser bundle smoke.
+- Assert export conditions, `.d.ts`/`.d.cts`, sideEffects, sourcemaps policy, and the
+  zero-runtime-dependency rule.
+- Gzip the full minified browser bundle reachable from `createWorkspace` with a
+  deterministic <= 16 KiB budget. The measured baseline is 15,475 bytes; the visible
+  budget must count required chunks rather than only the tiny facade entry.
+- Bundle a consumer importing only `createWorkspace`; assert testing code is absent.
+- Run the same script in CI and make every later publish workflow call it.
 
 ## Acceptance criteria
 
-- [ ] CI job fails when a budget is exceeded (prove by temporarily inflating, then revert).
-- [ ] Smoke test passes for ESM+CJS × core+testing+react from packed tarballs.
-- [ ] Tree-shake assertion green.
-- [ ] Budgets recorded in package.json (or size-limit config), visible in diffs.
+- [x] ESM/CJS core and testing-subpath consumers execute from tarballs without workspace links.
+- [x] Declarations compile against declared minimum and latest TypeScript versions.
+- [x] Dependency, tarball-content, tree-shaking, and gzip checks fail under proven temporary negative tests.
+- [x] Tarballs contain intended dist, README, LICENSE, changelog, and package.json only.
+- [x] The script creates and removes only validated temporary directories.
 
 ## Files
 
-`.github/workflows/ci.yml`, `package.json` / size-limit config, `scripts/` smoke-test script (new).
+Package/root manifests, size config, consumer/pack scripts, CI workflow, and support policy docs.
 
 ## Outcome
 
-(pending)
+- Added one `pnpm package:check` gate that builds and packs into a validated OS temp
+  directory, verifies exactly 18 intended files, extracts, tests, and removes it.
+- Fresh tarball consumers execute ESM and CJS imports for both core and `./testing`;
+  declarations compile under pinned TypeScript 5.7.2 and current 7.0.2.
+- Publint and Are the Types Wrong pass for Node16+/bundler resolution. Every emitted
+  JS/CJS artifact has a valid published external source map.
+- A minified browser consumer executes in Chromium, contains no testing markers, and
+  measures 15,494 bytes gzip against a visible 16,384-byte full-reachable-code budget.
+  This replaces the plan's unmeasured 8 KiB assumption; counting only the 258-byte
+  facade while omitting its required shared chunk would be misleading.
+- Unit negative controls prove dependency, export, unexpected tarball content,
+  testing-code leakage, and gzip overrun checks fail. The suite is now 251 tests.
+- CI has a dedicated packed-package job. The later publish workflow is required to
+  invoke the same root command rather than reimplementing these checks.
+- Expanded the task files to include `vitest.config.ts` because the unit runner needed
+  an explicit boundary excluding the new Playwright-only `demo/` specs.

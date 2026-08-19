@@ -22,9 +22,9 @@ describe('Registry', () => {
 	function makeEntry(overrides: Partial<ViewRegistryEntry> = {}): ViewRegistryEntry {
 		return {
 			tabId: 'tab-1',
+			instanceId: 'instance-1',
 			claimedAt: Date.now(),
-			epoch: 'epoch-1',
-			meta: {},
+			token: { generation: 1, claimId: 'claim-1' },
 			...overrides,
 		}
 	}
@@ -48,13 +48,31 @@ describe('Registry', () => {
 				teardown()
 			}
 		})
+
+		it('returns null for a malformed or prototype-bearing stored entry', () => {
+			const { registry } = setup()
+			try {
+				localStorage.setItem(
+					'tabula:test:view:malformed',
+					JSON.stringify({ tabId: '', instanceId: '', claimedAt: 'now', token: null }),
+				)
+				localStorage.setItem(
+					'tabula:test:view:polluting',
+					'{"tabId":"tab","instanceId":"instance","claimedAt":1,"token":{"generation":1,"claimId":"claim","__proto__":{}}}',
+				)
+				expect(registry.get('malformed')).toBeNull()
+				expect(registry.get('polluting')).toBeNull()
+			} finally {
+				teardown()
+			}
+		})
 	})
 
 	describe('set() and get()', () => {
 		it('roundtrips ViewRegistryEntry via JSON', () => {
 			const { registry } = setup()
 			try {
-				const entry = makeEntry({ tabId: 'tab-42', epoch: 'ep-99' })
+				const entry = makeEntry({ tabId: 'tab-42', instanceId: 'instance-42' })
 				registry.set('editor', entry)
 
 				const retrieved = registry.get('editor')
@@ -96,42 +114,6 @@ describe('Registry', () => {
 				expect(Object.keys(result)).toHaveLength(2)
 				expect(result.editor).toEqual(entry1)
 				expect(result.writer).toEqual(entry2)
-			} finally {
-				teardown()
-			}
-		})
-	})
-
-	describe('clearStale()', () => {
-		it('removes entries with wrong epoch, returns their names', () => {
-			const { registry } = setup()
-			try {
-				registry.set('editor', makeEntry({ epoch: 'old-epoch' }))
-				registry.set('writer', makeEntry({ epoch: 'current-epoch' }))
-				registry.set('viewer', makeEntry({ epoch: 'old-epoch' }))
-
-				const cleared = registry.clearStale('current-epoch')
-				expect(cleared).toHaveLength(2)
-				expect(cleared).toContain('editor')
-				expect(cleared).toContain('viewer')
-
-				// Current epoch entry survives
-				expect(registry.get('writer')).not.toBeNull()
-				expect(registry.get('editor')).toBeNull()
-				expect(registry.get('viewer')).toBeNull()
-			} finally {
-				teardown()
-			}
-		})
-
-		it('returns empty array when nothing is stale', () => {
-			const { registry } = setup()
-			try {
-				registry.set('editor', makeEntry({ epoch: 'current' }))
-				registry.set('writer', makeEntry({ epoch: 'current' }))
-
-				const cleared = registry.clearStale('current')
-				expect(cleared).toHaveLength(0)
 			} finally {
 				teardown()
 			}
@@ -218,6 +200,22 @@ describe('Registry', () => {
 					newValue: 'value',
 				} as unknown as StorageEvent)
 
+				expect(listener).not.toHaveBeenCalled()
+			} finally {
+				teardown()
+			}
+		})
+
+		it('ignores malformed storage event values', () => {
+			const { registry } = setup()
+			try {
+				const listener = vi.fn()
+				registry.startListening()
+				registry.onChange(listener)
+				windowMock.getHandlers('storage')[0]({
+					key: 'tabula:test:view:editor',
+					newValue: '{"tabId":"","instanceId":"","claimedAt":1,"token":null}',
+				} as unknown as StorageEvent)
 				expect(listener).not.toHaveBeenCalled()
 			} finally {
 				teardown()

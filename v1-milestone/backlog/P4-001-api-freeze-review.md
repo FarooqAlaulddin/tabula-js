@@ -1,40 +1,66 @@
 ---
 id: P4-001
-title: API freeze review
+title: Complete the feature matrix and freeze the API candidate
 phase: 4
 status: todo
-depends_on: [P1-001, P1-002, P1-005, P2-001, P3-001]
+depends_on: [P4-002, P2-004]
 owner: agent
-scope: 1 review pass over ~8 interfaces + fixes
+scope: complete public surface/support review + feature evidence audit
 ---
 
 ## Context
 
-After 1.0.0, every rename or signature change is a major version. The exported surface is small (Workspace, WorkspaceState, WorkspaceViews, WorkspaceTabs, ViewHandle, TabMeta, WorkspaceOptions, event map + createWorkspace/testing exports) — review it once, deliberately, while changes are still cheap.
+After real `0.2.0` artifacts prove the technical core, the project can select the
+feature-complete API candidate for `0.3.0`. This is the last planned opportunity to
+improve public naming and type ergonomics before burn-in. Later breaking corrections
+are allowed only through a new `0.x` release and evidence reset.
 
 ## Task
 
-Review every exported symbol in `packages/tabula/src/index.ts`, `tabula.ts`, `testing.ts`, and `tabula-react/src/index.ts` against these checks:
+Review every exported core and testing symbol plus package export condition:
 
-- **Naming consistency**: claim/release/open/focus verbs; `on`/`off` symmetry (state has `on` but no `off` — decide: add `state.off` or document unsubscribe-function-only pattern and make Workspace consistent by removing `off`? Pick one convention everywhere).
-- **Option defaults**: are `heartbeat: 1500` / `timeout: 5000` right as defaults post-P1-001 (leadership no longer depends on them)? Is `session: true` the right default?
-- **Type ergonomics**: does `useSharedState<AppState, 'draft'>('draft')` (key stated twice) have a cleaner signature? Evaluate `useSharedState<AppState>('draft')` with inference.
-- **`@internal` hygiene**: nothing exported that isn't documented; everything documented is exported.
-- **Error messages**: every throw states what to do, not just what failed.
-- **Support policy**: declare and record the supported ranges — Node (for `tabula/testing`), TypeScript (test emitted declarations against the declared minimum and latest), React peer range. Add `peerDependencies`/`engines` fields as decided; these become part of the frozen contract.
+- Naming and subscription consistency; claim/open/release/focus result/error semantics.
+- Ready/destroy and pre-ready/post-destroy behavior.
+- Option defaults after Web Locks, including heartbeat/timeout/session decisions.
+- State delete/tombstone and `setAll` public semantics.
+- Leader and view event payload generations/tokens without exposing unnecessary internals.
+- Framework-neutral integration ergonomics, including direct React application usage.
+- Testing/browser divergence and completeness of mock interfaces.
+- Node, TypeScript, browser, secure-context, and storage support policy.
+- Error classes/messages and protocol incompatibility observability.
+- Same-origin threat model, unsafe-data guidance, state-data exposure, prototype
+  pollution defenses, dependency/supply-chain surface, and privacy implications of
+  dogfood instrumentation.
+- Internal export hygiene and semver classification of every accepted change.
 
-Produce a short decision log (append to this file's Outcome), implement the accepted changes, and update README/API reference in the same commit.
+Fill every implementation/unit/browser/docs cell in FEATURE-COMPLETE with evidence.
+Generate and commit a machine-readable API/declaration baseline for later diffs.
 
 ## Acceptance criteria
 
-- [ ] Decision log in Outcome: every check above has a recorded keep/change decision.
-- [ ] Accepted changes implemented; `pnpm build && pnpm typecheck && pnpm test && pnpm test:e2e` green.
-- [ ] README API reference matches the frozen surface exactly.
+- [ ] Outcome records keep/change rationale for every review category above.
+- [ ] No undocumented public export and no documented symbol absent from packed declarations.
+- [ ] FEATURE-COMPLETE has no missing implementation, unit, browser, or docs evidence required before burn-in.
+- [ ] Full three-engine, package, sample, compatibility, lint, typecheck, and unit gates pass.
+- [ ] API/declaration baseline is generated from packed candidate artifacts and reproducible.
+- [ ] Root/package docs exactly match the selected API and support policy.
 
 ## Files
 
-`packages/tabula/src/*.ts`, `packages/tabula-react/src/index.ts`, `README.md`.
+Public core/testing APIs, manifests, docs, API snapshot tooling/artifact,
+FEATURE-COMPLETE, and tests required by accepted decisions.
 
 ## Outcome
 
-(pending)
+P1-007 candidate changes to review before API freeze:
+
+- `claim(name)` changed from fire-and-forget `void` to `Promise<ViewClaimResult>` with
+  explicit `claimed` and expected `conflict` branches.
+- Successful claims and `open()` return the same token-fenced `ViewHandle`, exposing
+  readonly `name`, `owner`, and `token`; stale handle actions are no-ops.
+- `ViewAlreadyClaimedError` is public and identifies `currentView`.
+- `view:claimed` and `view:vacant` include the exact token; `view:conflict` may include
+  the existing projected token.
+- `WorkspaceOptions.openTimeout` is public and defaults to 10 seconds.
+- `ViewClaimToken` and `ViewClaimResult` are exported; storage intent/correlation
+  shapes remain internal and must stay absent from the packed declaration surface.

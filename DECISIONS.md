@@ -1,5 +1,10 @@
 # Tabula — Design Decisions
 
+> **Status note (2026-08-08):** Sections written before the dated v1 decisions are
+> preserved as the `0.1.0` design history. [The 1.0 behavioral contract](./docs/CONTRACT.md)
+> is normative where it supersedes oldest-tab leadership, timestamp-only state order,
+> unconditional deletes, session epochs, or localStorage view claims.
+
 ## What it is
 A coordination layer that makes a web app coherent across multiple browser tabs.
 One sentence: "Tabula lets you build web apps that treat multiple tabs as one surface."
@@ -227,3 +232,122 @@ app.state.on('*', () => {
 - No UI components
 - No URL/routing opinions
 - No iframe support
+
+## 2026-08-08 — v1 package boundary
+
+- The sole v1 npm package is `@thinkly/tabula-js`; its testing utilities
+  remain the `@thinkly/tabula-js/testing` subpath.
+- The earlier `tabula` and `tabula-react` package notes above are historical. Neither
+  name was published by this project, and both workspace package identities are
+  removed from the v1 implementation.
+- A React wrapper is deferred until after v1. Framework applications consume the
+  core workspace directly and own their framework-specific subscription boundary.
+- The React-based Excalidraw example remains as proof of direct core integration,
+  not as a wrapper-package contract.
+
+## 2026-08-08 — v1 coordination authority and convergence
+
+- `docs/CONTRACT.md` freezes I1-I10 before implementation changes. Phase 1 tasks must
+  update that contract explicitly if implementation evidence forces a design change.
+- Leadership and named-view ownership use held Web Locks as their only exclusion
+  authority. Presence and localStorage remain eventual projections, never authority.
+- Leader and view projections carry persistent monotonic generations created while
+  the corresponding lock is held. Stale messages and handles cannot mutate a newer term.
+- Shared state uses totally ordered hybrid-logical-clock operations. Delete is a
+  retained tombstone, and `setAll` is an atomic batch with post-commit notifications.
+- Startup merges correlated responses from all known peers and exposes incomplete
+  sync while bounded repair continues after readiness.
+- Every wire message uses the validated major/revision envelope. Unsupported ranges
+  produce one public recovery signal instead of silent partition.
+- A session-stored tab id is paired with a per-load instance id and duplicate probing;
+  opener presence and storage inheritance are not identity authority.
+- The selected and rejected alternatives, rationale, limits, failure semantics, and
+  browser-policy boundaries are recorded in the contract rather than duplicated here.
+
+## 2026-08-08 — lifecycle, identity, and storage hardening
+
+- `readyTimeout` is one total runnable-time budget for identity probing, discovery,
+  and initial state synchronization. It is not a separate budget for every stage.
+- A session-stored tab id is only a candidate. Every document has a separate instance
+  id and probes before announcing presence; the later `(startedAt, instanceId)` claim
+  repairs to a fresh tab id. Opener state is not used as identity authority.
+- Lifecycle is observable through immutable `status()` snapshots and `sync:status`.
+  Terminal destroy/failure rejects queued asynchronous work and prevents all later
+  public operations except status inspection and repeated destroy.
+- Persisted `pagehide` suspends resources without broadcasting departure. Persisted
+  `pageshow` revalidates identity and reruns bounded discovery before queued work and
+  leader callbacks resume.
+- Baseline browser and storage capabilities are probed synchronously before attachment.
+  Later storage writes use typed transactional errors; malformed non-authoritative
+  projections are quarantined with a bounded diagnostic.
+- The old `session` option and startup epoch sweep were removed. A newly loaded tab
+  must never delete another live tab's registry projection merely because its document
+  session differs.
+
+## 2026-08-08 — Web Locks leadership authority
+
+- Browser leadership is the interval in which a workspace holds the exclusive lock
+  `tabula-js:v1:<encoded-workspace-namespace>:leader`. Presence age and visibility do
+  not authorize work, and lock request ordering is browser-controlled.
+- Each acquisition increments a localStorage generation while inside the lock. Holder
+  announcements and query replies carry the generation plus tab/document identity;
+  lower, conflicting, and unfenced projections cannot replace a newer projection.
+- Queued requests use an abort signal. Held requests use a separate release promise so
+  voluntary cleanup completes before lock release and destroy remains idempotent.
+- Frozen holders are not timed out or preempted. Abrupt context termination relies on
+  the browser releasing the lock and cannot promise application cleanup.
+- The testing cluster retains oldest-created selection solely for deterministic tests;
+  it is explicitly not a simulation of browser request order.
+
+## 2026-08-14 — convergent state operations
+
+- Set and delete share one operation shape ordered by `(wallTime, logical, tabId,
+  instanceId, operationId)`. String fields use code-unit ordering rather than
+  locale-sensitive collation.
+- Each state actor maintains a hybrid logical clock that cannot move backward and
+  advances from accepted remote clocks. Raw wall-clock arrival is not authority.
+- Deletes remain as invisible tombstones for the workspace lifetime. The 1,024-key
+  limit includes tombstones; v1 does not expire them without a cohort acknowledgement.
+- Local values are structured-cloned and the outbound message must send successfully
+  before commit. `undefined` is reserved for absence and is accepted only through delete.
+- `setAll` emits one validated batch. Every winning key is installed before lexical
+  key notifications and then lexical wildcard notifications; any preflight/send
+  failure leaves the entire batch uncommitted.
+
+## 2026-08-14 — repairable startup synchronization
+
+- Startup state synchronization begins after presence discovery and uses correlated,
+  generation-scoped rounds. Every known live responder returns a complete operation
+  snapshot, including an explicit empty snapshot and retained tombstones.
+- All valid responses in a retained round merge through the state operation total
+  order. Arrival order and the first responder have no authority over the result.
+- A verified singleton completes immediately. A simultaneous empty cohort lets its
+  lowest document instance bootstrap readiness so peers cannot circularly wait.
+- The readiness budget bounds when the workspace becomes usable, not when every peer
+  must answer. Missing peers produce observable `repairing` status while retries
+  continue with bounded backoff and on peer activity.
+- Sixteen recent correlations retain late-response repair without unbounded memory.
+  Destroy and bfcache suspension cancel retry timers, waiters, and correlation state.
+
+## 2026-08-14 — atomic and fenced named views
+
+- An exclusive `tabula-js:v1:<encoded namespace>:view:<encoded view>` Web Lock is the
+  only named-view authority. `claim()` uses `ifAvailable`, returns a promise for a
+  claimed/conflict result, and never queues behind an ordinary conflict.
+- One tab owns at most one view in v1. A different second claim rejects with
+  `ViewAlreadyClaimedError`; repeating the same claim returns a handle for the same
+  ownership term.
+- Every ownership term carries a persistent generation and random claim id. Registry
+  projections, control messages, events, and handles are token-fenced, so stale
+  release and focus actions cannot affect a replacement owner.
+- Registry and presence data are discovery projections. Registry deletion cannot
+  release authority, frozen holders are not stolen, and crash vacancy requires proof
+  that the browser has released the Web Lock.
+- `open()` stores only expiring intent metadata. Selected state operations move over
+  directed, validated `view:intent-claim` and `view:intent-state` messages, preserving
+  structured-clone types without placing application values in URLs or storage.
+- `openTimeout` defaults to 10 seconds. Popup block, timeout, supersession, destroy,
+  terminal failure, and successful claim all clean the exact pending correlation.
+- Refresh remembers the view name but reacquires with a fresh token. bfcache suspension
+  retains the held lock. Focus success means the exact holder called `window.focus()`;
+  browser foreground policy remains outside Tabula's guarantee.

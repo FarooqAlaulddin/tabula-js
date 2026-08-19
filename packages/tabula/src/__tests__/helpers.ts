@@ -1,4 +1,11 @@
-import type { Message, MessageType, TabMeta, ViewRegistryEntry } from '@tabula/tabula'
+import type {
+	Message,
+	MessageIdentity,
+	MessageTarget,
+	MessageType,
+	TabMeta,
+	ViewRegistryEntry,
+} from '@tabula/tabula'
 import { vi } from 'vitest'
 
 // ── Mock BroadcastChannel ─────────────────────────────────────────────────
@@ -14,7 +21,7 @@ export class MockBroadcastChannel {
 	}
 
 	// simulate receiving a message from another tab
-	simulateMessage(data: Message): void {
+	simulateMessage(data: unknown): void {
 		if (this.onmessage) {
 			this.onmessage({ data } as MessageEvent)
 		}
@@ -137,15 +144,113 @@ export function installMockDocument(initialVisibility = 'visible'): {
 
 // ── Mock window ───────────────────────────────────────────────────────────
 
+interface QueuedLockRequest {
+	name: string
+	signal?: AbortSignal
+	callback: (lock: Lock | null) => unknown
+	resolve: (value: unknown) => void
+	reject: (reason: unknown) => void
+	granted: boolean
+}
+
+export class MockLockManager {
+	private queues = new Map<string, QueuedLockRequest[]>()
+	private held = new Set<string>()
+	readonly requestedNames: string[] = []
+	activeCount = 0
+	maxActiveCount = 0
+
+	request(
+		name: string,
+		options: LockOptions,
+		callback: (lock: Lock | null) => unknown,
+	): Promise<unknown> {
+		this.requestedNames.push(name)
+		if (options.ifAvailable && this.held.has(name)) {
+			return Promise.resolve().then(() => callback(null))
+		}
+		return new Promise((resolve, reject) => {
+			const request: QueuedLockRequest = {
+				name,
+				signal: options.signal,
+				callback,
+				resolve,
+				reject,
+				granted: false,
+			}
+			if (request.signal?.aborted) {
+				reject(new DOMException('The lock request was aborted.', 'AbortError'))
+				return
+			}
+			const queue = this.queues.get(name) ?? []
+			queue.push(request)
+			this.queues.set(name, queue)
+			request.signal?.addEventListener(
+				'abort',
+				() => {
+					if (request.granted) return
+					const index = queue.indexOf(request)
+					if (index >= 0) queue.splice(index, 1)
+					reject(new DOMException('The lock request was aborted.', 'AbortError'))
+				},
+				{ once: true },
+			)
+			this.pump(name)
+		})
+	}
+
+	isHeld(name: string): boolean {
+		return this.held.has(name)
+	}
+
+	queuedCount(name: string): number {
+		return this.queues.get(name)?.length ?? 0
+	}
+
+	private pump(name: string): void {
+		if (this.held.has(name)) return
+		const queue = this.queues.get(name)
+		const request = queue?.shift()
+		if (!request) return
+		if (request.signal?.aborted) {
+			this.pump(name)
+			return
+		}
+		request.granted = true
+		this.held.add(name)
+		this.activeCount++
+		this.maxActiveCount = Math.max(this.maxActiveCount, this.activeCount)
+		void Promise.resolve()
+			.then(() => request.callback({ name, mode: 'exclusive' } as Lock))
+			.then(request.resolve, request.reject)
+			.finally(() => {
+				this.activeCount--
+				this.held.delete(name)
+				this.pump(name)
+			})
+	}
+}
+
 export function installMockWindow(): {
 	getHandlers: (event: string) => Array<(...args: unknown[]) => void>
+	locks: MockLockManager
+	open: ReturnType<typeof vi.fn>
 	restore: () => void
 } {
 	const handlers = new Map<string, Array<(...args: unknown[]) => void>>()
 	const origWindow = globalThis.window
+	const secureContextDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'isSecureContext')
+	const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
 
-	const mockWin = {
+	const mockWin: Record<string, unknown> & {
+		focus: ReturnType<typeof vi.fn>
+		open: ReturnType<typeof vi.fn>
+		addEventListener: (event: string, handler: (...args: unknown[]) => void) => void
+		removeEventListener: (event: string, handler: (...args: unknown[]) => void) => void
+	} = {
 		focus: vi.fn(),
+		open: vi.fn(() => ({})),
+		location: { href: 'https://example.test/' },
 		addEventListener(event: string, handler: (...args: unknown[]) => void) {
 			if (!handlers.has(event)) handlers.set(event, [])
 			handlers.get(event)?.push(handler)
@@ -158,13 +263,33 @@ export function installMockWindow(): {
 			}
 		},
 	}
+	mockWin.self = mockWin
+	mockWin.top = mockWin
+	const locks = new MockLockManager()
 
 	Object.defineProperty(globalThis, 'window', { value: mockWin, writable: true })
+	Object.defineProperty(globalThis, 'isSecureContext', { value: true, configurable: true })
+	Object.defineProperty(globalThis, 'navigator', {
+		value: { locks },
+		configurable: true,
+	})
 
 	return {
 		getHandlers: (event: string) => handlers.get(event) ?? [],
+		locks,
+		open: mockWin.open,
 		restore: () => {
 			Object.defineProperty(globalThis, 'window', { value: origWindow, writable: true })
+			if (secureContextDescriptor) {
+				Object.defineProperty(globalThis, 'isSecureContext', secureContextDescriptor)
+			} else {
+				delete (globalThis as { isSecureContext?: boolean }).isSecureContext
+			}
+			if (navigatorDescriptor) {
+				Object.defineProperty(globalThis, 'navigator', navigatorDescriptor)
+			} else {
+				delete (globalThis as { navigator?: Navigator }).navigator
+			}
 		},
 	}
 }
@@ -172,18 +297,21 @@ export function installMockWindow(): {
 // ── Stub Channel (for Presence/State/Views tests) ─────────────────────────
 
 export function createStubChannel(tabId = 'tab-1') {
+	const identity = { tabId, instanceId: `${tabId}-instance` }
 	return {
 		send: vi.fn(
-			(type: MessageType, payload: unknown, to?: string): Message => ({
+			(type: MessageType, payload: unknown, to?: string | MessageTarget): Message => ({
+				protocol: { major: 1, revision: 1, minRevision: 0 },
 				type,
-				from: tabId,
-				to,
+				from: { tabId, instanceId: `${tabId}-instance` },
+				...(to ? { to: typeof to === 'string' ? { tabId: to } : to } : {}),
 				payload,
 				id: `${tabId}:${Math.random()}`,
-				ts: Date.now(),
+				sentAt: Date.now(),
 			}),
 		),
 		onMessage: vi.fn(() => () => {}),
+		getIdentity: vi.fn(() => ({ ...identity })),
 		close: vi.fn(),
 	}
 }
@@ -269,13 +397,23 @@ export function makeTab(overrides: Partial<TabMeta> = {}): TabMeta {
 
 // ── Helper: create a Message ──────────────────────────────────────────────
 
-export function makeMessage(overrides: Partial<Message> = {}): Message {
+type MessageOverrides = Omit<Partial<Message>, 'from' | 'to'> & {
+	from?: string | MessageIdentity
+	to?: string | MessageTarget
+}
+
+export function makeMessage(overrides: MessageOverrides = {}): Message {
+	const { from: fromOverride, to: toOverride, ...rest } = overrides
+	const from = fromOverride ?? 'remote-tab'
+	const to = toOverride
 	return {
+		protocol: { major: 1, revision: 1, minRevision: 0 },
 		type: 'tab:announce',
-		from: 'remote-tab',
-		payload: {},
+		payload: { visible: true, view: null, createdAt: Date.now() },
 		id: `msg-${Math.random().toString(36).slice(2, 8)}`,
-		ts: Date.now(),
-		...overrides,
+		sentAt: Date.now(),
+		...rest,
+		from: typeof from === 'string' ? { tabId: from, instanceId: `${from}-instance` } : from,
+		...(to ? { to: typeof to === 'string' ? { tabId: to } : to } : {}),
 	}
 }

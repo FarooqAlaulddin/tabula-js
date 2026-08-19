@@ -6,6 +6,16 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy_demo:
+        description: Build, deploy, and smoke-test the GitHub Pages demo
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -15,7 +25,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 11.5.0
 
       - uses: actions/setup-node@v6
         with:
@@ -36,8 +46,191 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      - name: Install Playwright
-        run: pnpm exec playwright install --with-deps chromium
+  browser:
+    name: E2E (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v6
 
-      - name: E2E tests
-        run: pnpm test:e2e
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # @playwright/test pins the browser revision installed by this command.
+      - name: Install ${{ matrix.engine }}
+        run: |
+          if [ "${{ matrix.engine }}" = "webkit" ]; then
+            pnpm exec playwright install --with-deps webkit
+          else
+            pnpm exec playwright install ${{ matrix.engine }}
+          fi
+
+      - name: Run ${{ matrix.engine }} suite
+        run: pnpm exec playwright test --config e2e/playwright.config.ts --project=${{ matrix.engine }}
+
+      - name: Retain browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.engine }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  package:
+    name: Packed package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - name: Packed documentation and sample gate
+        run: pnpm docs:check
+      - run: pnpm package:check
+
+  compatibility:
+    name: Compatibility (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: |
+          if [ "${{ matrix.engine }}" = "webkit" ]; then
+            pnpm exec playwright install --with-deps webkit
+          else
+            pnpm exec playwright install ${{ matrix.engine }}
+          fi
+      - name: Test frozen fixtures on ${{ matrix.engine }}
+        run: pnpm exec playwright test --config compat/playwright.config.ts --project=${{ matrix.engine }}
+      - name: Retain compatibility failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-${{ matrix.engine }}
+          path: |
+            compat/report/
+            compat/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  demo:
+    name: Production demo
+    if: github.event_name == 'push' || inputs.deploy_demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Test production-base demo from packed package
+        run: pnpm demo:test
+      - name: Rebuild deploy artifact from packed package
+        run: pnpm demo:build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: demo/dist
+
+  deploy-demo:
+    name: Deploy demo
+    if: github.event_name == 'push' || inputs.deploy_demo
+    needs: demo
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  deployed-demo-smoke:
+    name: Deployed demo (${{ matrix.engine }})
+    if: github.event_name == 'push' || inputs.deploy_demo
+    needs: deploy-demo
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
+      - name: Smoke deployed demo
+        env:
+          DEMO_BASE_URL: ${{ needs.deploy-demo.outputs.page_url }}
+        run: pnpm exec playwright test --config demo/playwright.config.ts --project=${{ matrix.engine }}
+      - name: Retain deployed demo screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-demo-${{ matrix.engine }}
+          path: demo/test-results/
+          if-no-files-found: ignore
+          retention-days: 30

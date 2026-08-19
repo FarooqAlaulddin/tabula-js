@@ -1,18 +1,22 @@
 // ════════════════════════════════════════════════════════════════════════════
-// tabula/testing — Test utilities for Node.js and browser test environments
+// @thinkly/tabula-js/testing - utilities for Node.js and browser tests
 // In-memory BroadcastChannel simulation. No browser APIs required.
 // ════════════════════════════════════════════════════════════════════════════
 
 import type {
 	TabMeta,
+	ViewClaimResult,
+	ViewClaimToken,
 	ViewHandle,
 	ViewOpenOptions,
 	Workspace,
 	WorkspaceEventMap,
 	WorkspaceState,
+	WorkspaceStatus,
 	WorkspaceTabs,
 	WorkspaceViews,
 } from '@tabula/tabula'
+import { ViewAlreadyClaimedError } from '@tabula/tabula'
 
 // ── In-memory channel ─────────────────────────────────────────────────────
 
@@ -68,6 +72,8 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 	private wildcardListeners = new Set<(key: string, value: unknown) => void>()
 	private eventListeners = new Map<string, Set<(payload: unknown) => void>>()
 	private viewMap = new Map<string, TabMeta>()
+	private viewTokenMap = new Map<string, ViewClaimToken>()
+	private viewGenerations = new Map<string, number>()
 	private currentView: string | null = null
 	private leaderTabId: string | null = null
 	private leaderSetups: Array<{
@@ -77,6 +83,7 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 	private channel: MemoryChannel | null
 	private allTabs: Map<string, MockWorkspaceImpl<S>> | null
 	private unsub: (() => void) | null = null
+	private destroyed = false
 
 	constructor(
 		tabId: string,
@@ -188,36 +195,50 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 		}
 	}
 
-	claim(viewName: string): void {
+	async claim(viewName: string): Promise<ViewClaimResult> {
 		if (this.currentView) {
-			throw new Error(
-				`app.claim('${viewName}') was called, but this tab already holds the '${this.currentView}' view.`,
-			)
+			if (this.currentView === viewName) {
+				const token = this.viewTokenMap.get(viewName)
+				if (token) {
+					return { status: 'claimed', handle: this.createViewHandle(viewName, this.tabMeta, token) }
+				}
+			}
+			throw new ViewAlreadyClaimedError(this.currentView)
 		}
+		const existing = this.viewMap.get(viewName)
+		if (existing) {
+			this.emit('view:conflict', {
+				name: viewName,
+				existing,
+				incoming: this.tabMeta,
+				token: this.viewTokenMap.get(viewName),
+			})
+			return { status: 'conflict', owner: existing }
+		}
+		const token = {
+			generation: (this.viewGenerations.get(viewName) ?? 0) + 1,
+			claimId: crypto.randomUUID(),
+		}
+		this.viewGenerations.set(viewName, token.generation)
 		this.currentView = viewName
 		this.tabMeta.view = viewName
 		this.viewMap.set(viewName, this.tabMeta)
-		this.emit('view:claimed', { name: viewName, tab: this.tabMeta })
+		this.viewTokenMap.set(viewName, token)
+		this.emit('view:claimed', { name: viewName, tab: this.tabMeta, token })
 		this.channel?.broadcast({
 			type: 'view:claimed',
 			from: this.tabId,
-			payload: { name: viewName, tabId: this.tabId },
+			payload: { name: viewName, tabId: this.tabId, token },
 		})
+		return { status: 'claimed', handle: this.createViewHandle(viewName, this.tabMeta, token) }
 	}
 
 	async open(viewName: string, _options: ViewOpenOptions<S>): Promise<ViewHandle> {
-		// in mock mode, just register the view as pending
-		const handle: ViewHandle = {
-			on(_event: string, _cb: (...args: unknown[]) => void) {
-				return () => {}
-			},
-			release: () => {
-				this.viewMap.delete(viewName)
-				this.emit('view:vacant', { name: viewName })
-			},
-			focus: () => {},
-		} as ViewHandle
-		return handle
+		const owner = this.viewMap.get(viewName) ?? this.tabMeta
+		const token =
+			this.viewTokenMap.get(viewName) ??
+			({ generation: 1, claimId: crypto.randomUUID() } satisfies ViewClaimToken)
+		return this.createViewHandle(viewName, owner, token)
 	}
 
 	focus(_viewName: string): void {
@@ -225,6 +246,12 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 	}
 
 	destroy(): void {
+		if (this.destroyed) return
+		if (this.currentView) {
+			const token = this.viewTokenMap.get(this.currentView)
+			if (token) this.releaseView(this.currentView, token)
+		}
+		this.destroyed = true
 		for (const entry of this.leaderSetups) {
 			if (entry.cleanup) entry.cleanup()
 		}
@@ -235,6 +262,14 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 		this.eventListeners.clear()
 		this.stateListeners.clear()
 		this.wildcardListeners.clear()
+	}
+
+	status(): WorkspaceStatus {
+		return Object.freeze({
+			lifecycle: this.destroyed ? 'destroyed' : 'ready',
+			sync: 'complete',
+			missingPeerIds: Object.freeze([]),
+		})
 	}
 
 	onLeader(setup: () => (() => void) | undefined): () => void {
@@ -319,17 +354,68 @@ class MockWorkspaceImpl<S extends object> implements Workspace<S> {
 			this.stateMap.delete(key)
 			this.notifyState(key, undefined)
 		} else if (msg.type === 'view:claimed') {
-			const { name, tabId } = msg.payload as { name: string; tabId: string }
+			const { name, tabId, token } = msg.payload as {
+				name: string
+				tabId: string
+				token: ViewClaimToken
+			}
 			const tab = this.allTabs?.get(tabId)
 			if (tab) {
 				this.viewMap.set(name, tab.tabMeta)
-				this.emit('view:claimed', { name, tab: tab.tabMeta })
+				this.viewTokenMap.set(name, token)
+				this.viewGenerations.set(name, token.generation)
+				this.emit('view:claimed', { name, tab: tab.tabMeta, token })
 			}
 		} else if (msg.type === 'view:release') {
-			const { name } = msg.payload as { name: string }
+			const { name, token } = msg.payload as { name: string; token: ViewClaimToken }
+			const current = this.viewTokenMap.get(name)
+			if (!current || !this.tokensEqual(current, token)) return
 			this.viewMap.delete(name)
-			this.emit('view:vacant', { name })
+			this.viewTokenMap.delete(name)
+			this.emit('view:vacant', { name, token })
 		}
+	}
+
+	private createViewHandle(viewName: string, owner: TabMeta, token: ViewClaimToken): ViewHandle {
+		const on = (event: string, cb: (...args: any[]) => void): (() => void) =>
+			this.on(event as keyof WorkspaceEventMap, (payload: any) => {
+				if (payload.name !== viewName || !this.tokensEqual(payload.token, token)) return
+				if (event === 'vacant') cb()
+				else cb({ existing: payload.existing, incoming: payload.incoming })
+			})
+		return {
+			name: viewName,
+			token: { ...token },
+			owner: { ...owner },
+			on: on as ViewHandle['on'],
+			release: () => {
+				const holder = this.allTabs?.get(owner.id)
+				if (holder) holder.releaseView(viewName, token)
+				else this.releaseView(viewName, token)
+			},
+			focus: () => {},
+		}
+	}
+
+	private releaseView(viewName: string, token: ViewClaimToken): void {
+		const current = this.viewTokenMap.get(viewName)
+		if (!current || !this.tokensEqual(current, token)) return
+		this.viewMap.delete(viewName)
+		this.viewTokenMap.delete(viewName)
+		if (this.currentView === viewName) {
+			this.currentView = null
+			this.tabMeta.view = null
+		}
+		this.emit('view:vacant', { name: viewName, token })
+		this.channel?.broadcast({
+			type: 'view:release',
+			from: this.tabId,
+			payload: { name: viewName, token },
+		})
+	}
+
+	private tokensEqual(left: ViewClaimToken, right: ViewClaimToken): boolean {
+		return left.generation === right.generation && left.claimId === right.claimId
 	}
 
 	private notifyState(key: string, value: unknown): void {
@@ -367,7 +453,7 @@ export function createTestCluster<S extends object = Record<string, unknown>>(
 
 	function electLeader(): void {
 		if (tabs.size === 0) return
-		// leader = first tab (oldest)
+		// Deterministic test simulation only; browsers use Web Lock request ordering.
 		const sorted = Array.from(tabs.values()).sort(
 			(a, b) => a.tabs.current().firstSeenAt - b.tabs.current().firstSeenAt,
 		)

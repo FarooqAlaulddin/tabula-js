@@ -38,6 +38,7 @@
 			"coverage",
 			"e2e/fixtures",
 			"demo",
+			"release-artifacts",
 			"test-results"
 		]
 	}

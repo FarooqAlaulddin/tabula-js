@@ -1,3 +1,4 @@
+import { resetDocumentIdentityForTesting } from '@tabula/runtime'
 import { createWorkspace } from '@tabula/tabula'
 import type { Workspace } from '@tabula/tabula'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -81,6 +82,7 @@ describe('Integration: multi-tab scenarios', () => {
 				return `tab-uuid-${uuidCounter}`
 			},
 		})
+		resetDocumentIdentityForTesting()
 	})
 
 	afterEach(() => {
@@ -103,15 +105,16 @@ describe('Integration: multi-tab scenarios', () => {
 	}> {
 		// Tab A: first tab
 		const tabA = createWorkspace<TestState>(namespace)
-		// Advance to let tabA's init complete (waitForTabs 100ms + syncState 500ms)
-		await vi.advanceTimersByTimeAsync(350)
+		await vi.advanceTimersByTimeAsync(1000)
+		await tabA.ready
 
-		// Tab B: clear sessionStorage tab-id to get a new UUID for the second tab
+		// Tab B: simulate a separate document realm and fresh browser context.
+		resetDocumentIdentityForTesting()
 		sessionStorage.removeItem('tabula:tab-id')
 
 		const tabB = createWorkspace<TestState>(namespace)
-		// Advance to let tabB's init complete (includes announce exchange)
-		await vi.advanceTimersByTimeAsync(350)
+		await vi.advanceTimersByTimeAsync(1000)
+		await tabB.ready
 
 		return { tabA, tabB }
 	}
@@ -160,15 +163,18 @@ describe('Integration: multi-tab scenarios', () => {
 		it('tab:join event fires when second tab connects', async () => {
 			// Create tab A first
 			const tabA = createWorkspace<TestState>('shared-ns')
-			await vi.advanceTimersByTimeAsync(350)
+			await vi.advanceTimersByTimeAsync(1000)
+			await tabA.ready
 
 			const joinCb = vi.fn()
 			tabA.on('tab:join', joinCb)
 
 			// Create tab B
+			resetDocumentIdentityForTesting()
 			sessionStorage.removeItem('tabula:tab-id')
 			const tabB = createWorkspace<TestState>('shared-ns')
-			await vi.advanceTimersByTimeAsync(350)
+			await vi.advanceTimersByTimeAsync(1000)
+			await tabB.ready
 
 			expect(joinCb).toHaveBeenCalled()
 			const joinedTab = joinCb.mock.calls[0][0]
@@ -179,11 +185,32 @@ describe('Integration: multi-tab scenarios', () => {
 		})
 	})
 
+	describe('tab identity', () => {
+		it('repairs a copied session tab ID while the earlier tab remains live', async () => {
+			const tabA = createWorkspace<TestState>('duplicate-id')
+			await vi.advanceTimersByTimeAsync(1000)
+			await tabA.ready
+			const originalId = tabA.tabs.current().id
+
+			resetDocumentIdentityForTesting()
+			const tabB = createWorkspace<TestState>('duplicate-id')
+			await vi.advanceTimersByTimeAsync(1000)
+			await tabB.ready
+
+			expect(tabA.tabs.current().id).toBe(originalId)
+			expect(tabB.tabs.current().id).not.toBe(originalId)
+			expect(sessionStorage.getItem('tabula:tab-id')).toBe(tabB.tabs.current().id)
+
+			tabA.destroy()
+			tabB.destroy()
+		})
+	})
+
 	describe('views across tabs', () => {
 		it('claim in tab A, views.has in tab B returns true', async () => {
 			const { tabA, tabB } = await createTwoTabs()
 
-			tabA.claim('editor')
+			await tabA.claim('editor')
 			// Give time for the view:claimed message to propagate
 			await vi.advanceTimersByTimeAsync(50)
 

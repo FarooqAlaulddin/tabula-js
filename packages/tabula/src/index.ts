@@ -1,10 +1,8 @@
 export { createWorkspace } from '@tabula/tabula'
 export type {
-	Message,
-	MessageType,
 	TabMeta,
-	StateEntry,
-	ViewRegistryEntry,
+	ViewClaimToken,
+	ViewClaimResult,
 	WorkspaceOptions,
 	ViewOpenOptions,
 	ViewHandle,
@@ -17,4 +15,17 @@ export type {
 	ViewVacantEvent,
 	ViewConflictEvent,
 	LeaderChangeEvent,
+	ProtocolIncompatibleEvent,
+	ProtocolVersion,
+	WorkspaceLifecycle,
+	WorkspaceStatus,
+	WorkspaceSyncState,
+} from '@tabula/tabula'
+export {
+	CapabilityError,
+	StorageCorruptionError,
+	StorageOperationError,
+	ViewAlreadyClaimedError,
+	WorkspaceDestroyedError,
+	WorkspaceFailedError,
 } from '@tabula/tabula'

@@ -1,38 +1,75 @@
 ---
 id: P1-005
-title: Inbound message robustness and trust-model review
+title: Add protocol versioning, validation, and deployment compatibility
 phase: 1
-status: todo
-depends_on: [P0-002]
+status: done
+depends_on: [P1-000]
 owner: agent
-scope: transport-layer validation + unit tests + 1 doc section
+scope: transport envelope + domain validators + compatibility tests
 ---
 
 ## Context
 
-The transport layer currently casts inbound BroadcastChannel/localStorage data to internal types without structural validation. The README's security section correctly states same-origin scripts are trusted — but *trusted* must mean "can coordinate," not "can crash every tab with one malformed postMessage." A stray message from another library sharing a channel name, a corrupted localStorage entry, or a buggy old-version tab after a deploy must degrade gracefully.
+Inbound BroadcastChannel and storage data is currently cast directly to internal
+types. A malformed message can reach every domain module, and a new deployment can
+silently partition long-lived tabs if versions disagree. Protocol evolution and
+validation must land before any public preview.
+
+Implement against `docs/CONTRACT.md` section 8; its envelope, revision window,
+validation limits, bounded stores, and incompatibility event are authoritative.
 
 ## Task
 
-- Add a validation boundary at the transport layer: every inbound message is checked for envelope shape (`type` in the known set, `from` string, `ts` number, `id` string) before dispatch; malformed messages are dropped, counted, and logged once in dev — handlers never see them and never throw on shape.
-- Same for registry reads: a corrupted/unparseable localStorage entry is treated as absent and cleaned up, not thrown on.
-- **Version tolerance**: add a protocol version to the envelope. Unknown-version messages are dropped with a single dev warning (forward-compat for post-1.0 protocol evolution — this must land BEFORE 1.0, it can't be added compatibly later).
-- Bound unbounded growth: dedup-id memory and presence maps must have documented caps or pruning (review existing dedup nonce store for unbounded growth across long-lived tabs).
-- Fuzz-style unit tests: feed each domain module garbage payloads (wrong types, missing fields, prototype-polluting keys like `__proto__`, oversized strings) — assert no throw, no state corruption.
-- Document the trust model in the README security section: Tabula provides coordination, not authorization; validation is for robustness, not security.
+- Add protocol major 1/revision 1 with revision 0 compatibility to every message.
+- Validate the envelope and each domain payload before dispatch. Reject unknown types,
+  invalid ids/timestamps/targets, dangerous keys, excessive nesting, and documented
+  oversize payloads without throwing from the message event.
+- Emit/log the CONTRACT-selected single observable incompatibility signal for an
+  unsupported version, including the user recovery action; deduplicate the signal.
+- Keep validation for robustness, not authorization. Same-origin scripts remain trusted.
+- Bound deduplication, warning counters, presence discoveries, request-correlation
+  records, and any other protocol bookkeeping.
+- Add fuzz/property-style tests covering presence, state, views, leader, sync,
+  prototype-polluting keys, duplicate ids, wrong targets, and unsupported versions.
 
 ## Acceptance criteria
 
-- [ ] Unit tests: ≥1 malformed-payload test per message type family (presence, state, views, leader) — all green, none throwing.
-- [ ] `__proto__`/`constructor` state keys demonstrably do not pollute prototypes.
-- [ ] Envelope carries a protocol version; unknown versions dropped with dev warning.
-- [ ] Dedup store bounded (test proves old entries evicted).
-- [ ] README security section updated with the trust model paragraph.
+- [x] No domain handler receives an unvalidated envelope or payload.
+- [x] Unknown compatible fields are handled according to CONTRACT; unsupported versions surface exactly one observable signal per peer/version episode.
+- [x] `__proto__`, `prototype`, and `constructor` cannot pollute objects or become unsafe state keys.
+- [x] All protocol bookkeeping is bounded and eviction is tested.
+- [x] The revision-0 compatible fixture passes; an incompatible major/range degrades exactly as documented.
+- [x] Unit, fuzz, typecheck, and existing browser tests pass.
 
 ## Files
 
-`packages/tabula/src/tabula.ts` (transport/dispatch), new `packages/tabula/src/__tests__/robustness.test.ts`, `README.md`, `DECISIONS.md` (protocol version note).
+Core transport/domain code, protocol/robustness tests, `docs/CONTRACT.md`,
+`DECISIONS.md`, and trust-model documentation.
 
 ## Outcome
 
-(pending)
+- Added a zero-dependency protocol boundary that emits major 1/revision 1 envelopes,
+  accepts the documented revision-0 fixture, validates exact tab/instance targets,
+  and ignores unknown compatible fields and message types.
+- Added structural validation for every current presence, state, sync, view, leader,
+  and protocol-control payload before domain dispatch. The boundary rejects malformed
+  identities, timestamps, targets, unsafe keys, clone-hostile values, excessive depth
+  or node counts, and envelopes over 1 MiB without throwing from the event handler.
+- Added per-load instance identities and instance-scoped message ids. Directed sync
+  responses now target the requesting instance rather than every load sharing a tab id.
+- Added the public, typed `protocol:incompatible` event and one directed reject per
+  peer/version episode with the contracted reload guidance. Episode tracking is capped
+  at 128 and emits one capacity warning.
+- Expanded deduplication to the contractual 2,048 ids with five-minute expiry and
+  tested FIFO eviction. Presence projection is capped at 256 peers with one warning.
+- Validated view-registry and presence JSON before use, regenerated malformed stored
+  identity values, used prototype-safe registry result records, and rejected dangerous
+  local state keys before send or mutation.
+- Expanded task scope to root/package protocol documentation, public type exports,
+  existing transport/domain fixtures, storage tests, and coordinator event tests because
+  the protocol envelope is an observable package contract across those boundaries.
+- Added revision, compatibility, family-validator, malformed storage, targeting,
+  duplicate, capacity, prototype-pollution, and deterministic fuzz/property-style tests.
+  The suite now has 213 passing unit tests.
+- Verified repository lint, workspace typecheck, production/declaration builds,
+  milestone validation, diff whitespace, and all 26 Chromium end-to-end tests.

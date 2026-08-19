@@ -21,29 +21,22 @@ describe('Dedup', () => {
 		expect(dedup.isDuplicate('msg-2')).toBe(true)
 	})
 
-	it('evicts at 500 boundary (item 501 causes eviction of first)', () => {
+	it('evicts at the 2,048-entry boundary', () => {
 		const dedup = new Dedup()
 
-		// Insert 500 items (IDs 1..500)
-		for (let i = 1; i <= 500; i++) {
+		for (let i = 1; i <= 2048; i++) {
 			dedup.isDuplicate(`id-${i}`)
 		}
 
-		// All 500 are still known
 		expect(dedup.isDuplicate('id-1')).toBe(true)
-
-		// Insert the 501st item — this should evict id-1
-		dedup.isDuplicate('id-501')
-
-		// id-1 was evicted, so it looks new again
+		dedup.isDuplicate('id-2049')
 		expect(dedup.isDuplicate('id-1')).toBe(false)
 	})
 
 	it('eviction is FIFO not LRU (re-checking does not refresh position)', () => {
 		const dedup = new Dedup()
 
-		// Insert 500 items (IDs 1..500)
-		for (let i = 1; i <= 500; i++) {
+		for (let i = 1; i <= 2048; i++) {
 			dedup.isDuplicate(`id-${i}`)
 		}
 
@@ -51,20 +44,29 @@ describe('Dedup', () => {
 		expect(dedup.isDuplicate('id-1')).toBe(true)
 
 		// Insert one more — id-1 should still be evicted because FIFO
-		dedup.isDuplicate('id-501')
+		dedup.isDuplicate('id-2049')
 		expect(dedup.isDuplicate('id-1')).toBe(false)
 	})
 
-	it('exactly 500 IDs fit without eviction', () => {
+	it('exactly 2,048 IDs fit without eviction', () => {
 		const dedup = new Dedup()
 
-		for (let i = 1; i <= 500; i++) {
+		for (let i = 1; i <= 2048; i++) {
 			dedup.isDuplicate(`id-${i}`)
 		}
 
-		// All 500 are still remembered — none evicted
-		for (let i = 1; i <= 500; i++) {
+		for (let i = 1; i <= 2048; i++) {
 			expect(dedup.isDuplicate(`id-${i}`)).toBe(true)
 		}
+	})
+
+	it('expires entries after five minutes', () => {
+		let now = 0
+		const dedup = new Dedup(2048, 5 * 60_000, () => now)
+		expect(dedup.isDuplicate('msg')).toBe(false)
+		now = 5 * 60_000
+		expect(dedup.isDuplicate('msg')).toBe(true)
+		now += 1
+		expect(dedup.isDuplicate('msg')).toBe(false)
 	})
 })

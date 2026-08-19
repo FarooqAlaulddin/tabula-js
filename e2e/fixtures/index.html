@@ -5,14 +5,24 @@
 <div id="status">loading</div>
 <span id="notif-badge" data-count="0">0</span>
 <script type="module">
-import { createWorkspace } from 'tabula'
+import { createWorkspace } from '@thinkly/tabula-js'
 
 const params = new URLSearchParams(location.search)
 const ns = params.get('ns') || 'e2e-default'
 const heartbeat = Number(params.get('heartbeat')) || 200
 const timeout = Number(params.get('timeout')) || 1000
+const readyTimeout = Number(params.get('readyTimeout')) || 1000
+const openTimeout = Number(params.get('openTimeout')) || 10000
 
-const app = createWorkspace(ns, { heartbeat, timeout })
+window.__tabulaModule = { createWorkspace }
+window.__focusCallCount = 0
+const originalFocus = window.focus.bind(window)
+window.focus = () => {
+	window.__focusCallCount++
+	originalFocus()
+}
+
+const app = createWorkspace(ns, { heartbeat, timeout, readyTimeout, openTimeout })
 
 // expose for Playwright
 window.__tabula = app
@@ -23,15 +33,33 @@ app.on('tab:leave', (tab) => window.__tabulaEvents.push({ type: 'tab:leave', tab
 app.on('leader:change', (e) => window.__tabulaEvents.push({ type: 'leader:change', ...e }))
 app.on('view:claimed', (e) => window.__tabulaEvents.push({ type: 'view:claimed', ...e }))
 app.on('view:vacant', (e) => window.__tabulaEvents.push({ type: 'view:vacant', ...e }))
+app.on('view:conflict', (e) => window.__tabulaEvents.push({ type: 'view:conflict', ...e }))
+app.on('sync:status', (status) => window.__tabulaEvents.push({ type: 'sync:status', ...status }))
+app.on('protocol:incompatible', (event) =>
+	window.__tabulaEvents.push({ type: 'protocol:incompatible', ...event }),
+)
+
+window.__leaderLifecycle = { setupCount: 0, cleanupCount: 0 }
+const leaderAudit = new BroadcastChannel(`tabula-e2e-leader-audit:${ns}`)
 
 // onLeader: increment notification counter every 1s (mirrors demo behaviour)
 app.onLeader(() => {
+	window.__leaderLifecycle.setupCount++
+	window.__tabulaEvents.push({ type: 'leader:setup' })
+	const tabId = app.tabs.current().id
+	const auditId = `${tabId}:${window.__leaderLifecycle.setupCount}`
+	leaderAudit.postMessage({ type: 'start', auditId, tabId, at: Date.now() })
 	let count = app.state.get('notificationCount') ?? 0
 	const iv = setInterval(() => {
 		count++
 		app.state.set('notificationCount', count)
 	}, 1000)
-	return () => clearInterval(iv)
+	return () => {
+		clearInterval(iv)
+		window.__leaderLifecycle.cleanupCount++
+		window.__tabulaEvents.push({ type: 'leader:cleanup' })
+		leaderAudit.postMessage({ type: 'end', auditId, tabId, at: Date.now() })
+	}
 })
 
 app.state.on('notificationCount', () => {
@@ -44,6 +72,9 @@ app.state.on('notificationCount', () => {
 // signal ready when workspace init is complete
 app.ready.then(() => {
 	document.getElementById('status').textContent = 'ready'
+}).catch((error) => {
+	window.__tabulaReadyError = { name: error.name, message: error.message }
+	document.getElementById('status').textContent = 'failed'
 })
 </script>
 </body>

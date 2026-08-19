@@ -1,0 +1,26 @@
+{
+	"packageName": "@thinkly/tabula-js",
+	"gzipBudgetBytes": 16384,
+	"typescript": {
+		"minimum": "5.7.2",
+		"latest": "7.0.2"
+	},
+	"staticTarballFiles": [
+		"package/CHANGELOG.md",
+		"package/LICENSE",
+		"package/README.md",
+		"package/dist/index.cjs",
+		"package/dist/index.cjs.map",
+		"package/dist/index.d.cts",
+		"package/dist/index.d.ts",
+		"package/dist/index.js",
+		"package/dist/index.js.map",
+		"package/dist/testing.cjs",
+		"package/dist/testing.cjs.map",
+		"package/dist/testing.d.cts",
+		"package/dist/testing.d.ts",
+		"package/dist/testing.js",
+		"package/dist/testing.js.map",
+		"package/package.json"
+	]
+}

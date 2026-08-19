@@ -91,6 +91,29 @@ describe('Presence', () => {
 			)
 		})
 
+		it('caps presence at 256 projected peers and warns once', () => {
+			const presence = createPresence()
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+			try {
+				for (let index = 0; index < 260; index++) {
+					presence.handleMessage(
+						makeMessage({
+							type: 'tab:announce',
+							from: `tab-${index}`,
+							id: `announce-${index}`,
+							payload: { visible: true, view: null, createdAt: Date.now() },
+						}),
+					)
+				}
+				expect(presence.getAllTabs()).toHaveLength(256)
+				expect(onJoin).toHaveBeenCalledTimes(255)
+				expect(presence.getTab('tab-259')).toBeUndefined()
+				expect(warn).toHaveBeenCalledTimes(1)
+			} finally {
+				warn.mockRestore()
+			}
+		})
+
 		it('repeated announce from known tab does NOT fire onJoin but updates lastSeenAt', () => {
 			const presence = createPresence()
 
@@ -308,7 +331,7 @@ describe('Presence', () => {
 			// Simulate the remote tab writing its presence to localStorage
 			localStorage.setItem(
 				'tabula:test-ns:tab:tab-active',
-				JSON.stringify({ lastSeen: Date.now(), createdAt: Date.now(), visible: true }),
+				JSON.stringify({ lastSeen: Date.now(), createdAt: Date.now(), visible: true, view: null }),
 			)
 
 			// Advance past normal timeout — should survive (localStorage is fresh)

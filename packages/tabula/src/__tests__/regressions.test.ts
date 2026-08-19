@@ -1,5 +1,5 @@
 import { Channel, State, Views, createWorkspace } from '@tabula/tabula'
-import type { Message, StateEntry } from '@tabula/tabula'
+import type { Message, StateOperation } from '@tabula/tabula'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
 	createStubChannel,
@@ -29,30 +29,28 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 		writer.set('counter', 3)
 
 		// Extract the entries that were broadcast
-		const sentEntries: Array<{ key: string; entry: StateEntry }> = writerChannel.send.mock.calls
+		const sentOperations: StateOperation[] = writerChannel.send.mock.calls
 			.filter((call: unknown[]) => call[0] === 'state:set')
-			.map((call: unknown[]) => call[1] as { key: string; entry: StateEntry })
+			.map((call: unknown[]) => (call[1] as { operation: StateOperation }).operation)
 
-		expect(sentEntries).toHaveLength(3)
-		// All share the same timestamp and tabId, but versions must be 1, 2, 3
-		expect(sentEntries[0].entry.ts).toBe(fixedTime)
-		expect(sentEntries[1].entry.ts).toBe(fixedTime)
-		expect(sentEntries[2].entry.ts).toBe(fixedTime)
-		expect(sentEntries[0].entry.version).toBe(1)
-		expect(sentEntries[1].entry.version).toBe(2)
-		expect(sentEntries[2].entry.version).toBe(3)
+		expect(sentOperations).toHaveLength(3)
+		expect(sentOperations.map((operation) => operation.clock)).toEqual([
+			{ wallTime: fixedTime, logical: 0 },
+			{ wallTime: fixedTime, logical: 1 },
+			{ wallTime: fixedTime, logical: 2 },
+		])
 
 		// Now simulate a SECOND tab receiving these messages in order
 		const receiverId = 'receiver-tab'
 		const receiverChannel = createStubChannel(receiverId)
 		const receiver = new State<Record<string, unknown>>(receiverChannel as any, receiverId)
 
-		for (const { key, entry } of sentEntries) {
+		for (const operation of sentOperations) {
 			receiver.handleMessage(
 				makeMessage({
 					type: 'state:set',
 					from: tabId,
-					payload: { key, entry },
+					payload: { operation },
 				}),
 			)
 		}
@@ -63,8 +61,8 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 		// Verify intermediate values were also accepted by checking
 		// the entry's version reflects the final write
 		const snapshot = receiver.getSnapshot()
-		expect(snapshot.counter.version).toBe(3)
-		expect(snapshot.counter.value).toBe(3)
+		expect(snapshot.counter.clock.logical).toBe(2)
+		expect(snapshot.counter.kind === 'set' && snapshot.counter.value).toBe(3)
 
 		vi.restoreAllMocks()
 	})
@@ -85,7 +83,7 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 				from: sameTabId,
 				payload: {
 					key: 'score',
-					entry: { value: 10, ts: fixedTime, tabId: sameTabId, version: 1 } as StateEntry,
+					entry: { value: 10, ts: fixedTime, tabId: sameTabId, version: 1 },
 				},
 			}),
 		)
@@ -98,7 +96,7 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 				from: sameTabId,
 				payload: {
 					key: 'score',
-					entry: { value: 20, ts: fixedTime, tabId: sameTabId, version: 2 } as StateEntry,
+					entry: { value: 20, ts: fixedTime, tabId: sameTabId, version: 2 },
 				},
 			}),
 		)
@@ -112,7 +110,7 @@ describe('Bug 1: rapid same-tab writes within same millisecond', () => {
 				from: sameTabId,
 				payload: {
 					key: 'score',
-					entry: { value: 30, ts: fixedTime, tabId: sameTabId, version: 3 } as StateEntry,
+					entry: { value: 30, ts: fixedTime, tabId: sameTabId, version: 3 },
 				},
 			}),
 		)
@@ -138,13 +136,15 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 		const onConflict = vi.fn()
 
 		const views = new Views(
+			'regression',
 			registry as any,
 			channel as any,
 			presence as any,
-			'epoch-1',
 			onClaimed,
 			onVacant,
 			onConflict,
+			vi.fn(),
+			vi.fn(),
 		)
 
 		// Verify the unknown tab is truly not in presence
@@ -155,7 +155,12 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 			makeMessage({
 				type: 'view:claimed',
 				from: unknownTabId,
-				payload: { name: 'editor', tabId: unknownTabId },
+				payload: {
+					name: 'editor',
+					tabId: unknownTabId,
+					instanceId: `${unknownTabId}-instance`,
+					token: { generation: 1, claimId: 'unknown-claim' },
+				},
 			}),
 		)
 
@@ -173,6 +178,7 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 				view: 'editor',
 				visible: true,
 			}),
+			{ generation: 1, claimId: 'unknown-claim' },
 		)
 
 		// The synthetic TabMeta should have firstSeenAt and lastSeenAt
@@ -188,11 +194,13 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 		const onClaimed = vi.fn()
 
 		const views = new Views(
+			'regression',
 			registry as any,
 			channel as any,
 			presence as any,
-			'epoch-1',
 			onClaimed,
+			vi.fn(),
+			vi.fn(),
 			vi.fn(),
 			vi.fn(),
 		)
@@ -201,7 +209,12 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 			makeMessage({
 				type: 'view:claimed',
 				from: 'phantom-tab',
-				payload: { name: 'dashboard', tabId: 'phantom-tab' },
+				payload: {
+					name: 'dashboard',
+					tabId: 'phantom-tab',
+					instanceId: 'phantom-tab-instance',
+					token: { generation: 1, claimId: 'phantom-claim' },
+				},
 			}),
 		)
 
@@ -213,9 +226,9 @@ describe('Bug 2: view:claimed from unknown tab must not be silently dropped', ()
 	})
 })
 
-// ── Bug 3: syncState must always send sync request, even when alone ──────
+// ── Bug 3: verified singleton readiness must not wait for a retry ────────
 
-describe('Bug 3: syncState always broadcasts state:sync-request even when alone', () => {
+describe('Bug 3: verified singleton readiness avoids redundant sync retries', () => {
 	let bcMock: ReturnType<typeof installMockBroadcastChannel>
 	let storageMock: ReturnType<typeof installMockStorage>
 	let docMock: ReturnType<typeof installMockDocument>
@@ -239,26 +252,21 @@ describe('Bug 3: syncState always broadcasts state:sync-request even when alone'
 		winMock.restore()
 	})
 
-	it('a single-tab workspace still sends state:sync-request during init', async () => {
-		// Create workspace — only one tab will exist (no other tabs in presence)
+	it('a single-tab workspace becomes ready without broadcasting a sync request', async () => {
 		const ws = createWorkspace('regression-test-3')
-
-		// Advance timers enough for the full init sequence to complete
-		// init() has: sleep(100) for announce wait + syncState() with sleep(50)
-		await vi.advanceTimersByTimeAsync(500)
+		await vi.advanceTimersByTimeAsync(75)
+		await ws.ready
 
 		// Find the BroadcastChannel instance used for the namespace
 		const bc = bcMock.instances.find((i) => i.name === 'tabula:regression-test-3')
 		expect(bc).toBeDefined()
 
-		// Collect all messages posted to the BroadcastChannel
 		const postedMessages: Message[] = (bc as NonNullable<typeof bc>).postMessage.mock.calls.map(
 			(call: unknown[]) => call[0] as Message,
 		)
-
-		// There MUST be a state:sync-request among the posted messages
 		const syncRequests = postedMessages.filter((m) => m.type === 'state:sync-request')
-		expect(syncRequests.length).toBeGreaterThanOrEqual(1)
+		expect(syncRequests).toHaveLength(0)
+		expect(ws.status()).toEqual({ lifecycle: 'ready', sync: 'complete', missingPeerIds: [] })
 
 		ws.destroy()
 	})
@@ -280,50 +288,30 @@ describe('Bug 4: message ID uniqueness across page refresh', () => {
 		storageMock.restore()
 	})
 
-	it('message IDs contain a nonce segment beyond simple tabId:counter', () => {
+	it('message IDs use the per-load instance identity and a counter', () => {
 		const tabId = 'persistent-tab-id'
-		const channel = new Channel('test-ns', tabId)
+		const channel = new Channel('test-ns', tabId, 'load-instance')
 		const msg = channel.send('tab:announce', {})
 
-		// The message ID should have the format tabId:nonce:counter
-		// NOT the old format of tabId:counter
 		const parts = msg.id.split(':')
-		// Old format would be 2 parts (tabId:counter)
-		// New format is 3 parts (tabId:nonce:counter)
-		expect(parts.length).toBe(3)
-		expect(parts[0]).toBe(tabId)
-		// The nonce segment should be a non-empty alphanumeric string
-		expect(parts[1]).toMatch(/^[a-z0-9]+$/)
-		// The counter segment should be a numeric string
-		expect(parts[2]).toMatch(/^\d+$/)
+		expect(parts[0]).toBe('load-instance')
+		expect(parts[1]).toMatch(/^\d+$/)
+		expect(msg.from).toEqual({ tabId, instanceId: 'load-instance' })
 
 		channel.close()
 	})
 
-	it('two Channel instances with the same tabId produce IDs that share a nonce (module-level)', () => {
+	it('two Channel instances with the same tabId have distinct per-load identities', () => {
 		const tabId = 'same-tab-id'
-		const channel1 = new Channel('ns-a', tabId)
-		const channel2 = new Channel('ns-b', tabId)
+		const channel1 = new Channel('ns-a', tabId, 'instance-a')
+		const channel2 = new Channel('ns-b', tabId, 'instance-b')
 
 		const msg1 = channel1.send('tab:announce', {})
 		const msg2 = channel2.send('tab:announce', {})
 
-		// Both IDs start with the same tabId
-		expect(msg1.id.startsWith(tabId)).toBe(true)
-		expect(msg2.id.startsWith(tabId)).toBe(true)
-
-		// The IDs must be different (counter increments globally)
 		expect(msg1.id).not.toBe(msg2.id)
-
-		// Both share the same nonce (since it's module-level)
-		const nonce1 = msg1.id.split(':')[1]
-		const nonce2 = msg2.id.split(':')[1]
-		expect(nonce1).toBe(nonce2)
-
-		// But the counter portion differs
-		const counter1 = msg1.id.split(':')[2]
-		const counter2 = msg2.id.split(':')[2]
-		expect(counter1).not.toBe(counter2)
+		expect(msg1.id).toMatch(/^instance-a:\d+$/)
+		expect(msg2.id).toMatch(/^instance-b:\d+$/)
 
 		channel1.close()
 		channel2.close()
@@ -333,7 +321,7 @@ describe('Bug 4: message ID uniqueness across page refresh', () => {
 		const tabId = 'refreshing-tab'
 
 		// First "session" — create channel and send messages
-		const channel1 = new Channel('ns-refresh', tabId)
+		const channel1 = new Channel('ns-refresh', tabId, 'before-refresh')
 		const ids1 = [
 			channel1.send('tab:announce', {}).id,
 			channel1.send('tab:heartbeat', {}).id,
@@ -341,11 +329,8 @@ describe('Bug 4: message ID uniqueness across page refresh', () => {
 		]
 		channel1.close()
 
-		// Second "session" — same tabId, new Channel instance
-		// In a real refresh, msgNonce would be re-generated (new module load).
-		// Within a single test process the nonce is the same, but the counter
-		// keeps incrementing, so IDs are still unique.
-		const channel2 = new Channel('ns-refresh', tabId)
+		// Second load keeps the session tab id but gets a new instance id.
+		const channel2 = new Channel('ns-refresh', tabId, 'after-refresh')
 		const ids2 = [
 			channel2.send('tab:announce', {}).id,
 			channel2.send('tab:heartbeat', {}).id,

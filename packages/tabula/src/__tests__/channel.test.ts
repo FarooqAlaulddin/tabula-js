@@ -15,7 +15,7 @@ describe('Channel', () => {
 	function setup(tabId = 'tab-1', namespace = 'test') {
 		storageMock = installMockStorage()
 		bcMock = installMockBroadcastChannel()
-		const channel = new Channel(namespace, tabId)
+		const channel = new Channel(namespace, tabId, `${tabId}-instance`)
 		const bc = bcMock.instances[0]
 		return { channel, bc, tabId }
 	}
@@ -43,14 +43,16 @@ describe('Channel', () => {
 	})
 
 	describe('send()', () => {
-		it('returns a well-formed Message with correct type, from, id, ts', () => {
+		it('returns a versioned envelope with identity, id, and timestamp', () => {
 			const { channel } = setup()
 			try {
 				const msg = channel.send('tab:announce', { visible: true })
+				expect(msg.protocol).toEqual({ major: 1, revision: 1, minRevision: 0 })
 				expect(msg.type).toBe('tab:announce')
-				expect(msg.from).toBe('tab-1')
-				expect(msg.id).toMatch(/^tab-1:[a-z0-9]+:\d+$/)
-				expect(msg.ts).toBeTypeOf('number')
+				expect(msg.from.tabId).toBe('tab-1')
+				expect(msg.from.instanceId).toBeTypeOf('string')
+				expect(msg.id).toBe(`${msg.from.instanceId}:1`)
+				expect(msg.sentAt).toBeTypeOf('number')
 				expect(msg.payload).toEqual({ visible: true })
 			} finally {
 				teardown()
@@ -61,7 +63,7 @@ describe('Channel', () => {
 			const { channel } = setup()
 			try {
 				const msg = channel.send('state:sync', { state: {} }, 'tab-2')
-				expect(msg.to).toBe('tab-2')
+				expect(msg.to).toEqual({ tabId: 'tab-2' })
 			} finally {
 				teardown()
 			}

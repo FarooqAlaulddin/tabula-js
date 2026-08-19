@@ -1,26 +1,43 @@
 {
 	"private": true,
+	"packageManager": "pnpm@11.5.0",
 	"scripts": {
 		"build": "pnpm -r build",
+		"changeset": "changeset",
+		"changeset:status": "changeset status",
+		"changeset:version": "changeset version",
+		"changeset:pre": "changeset pre",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"typecheck": "pnpm -r typecheck",
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
+		"docs:check": "node scripts/verify-docs.mjs",
+		"package:check": "node scripts/verify-package.mjs",
+		"compat:build": "node scripts/build-compat.mjs",
+		"compat:test": "pnpm exec playwright test --config compat/playwright.config.ts",
 		"clean": "pnpm -r clean",
-		"test:e2e": "pnpm build && playwright test --config e2e/playwright.config.ts",
+		"test:e2e": "pnpm build && pnpm exec playwright test --config e2e/playwright.config.ts",
+		"demo:build": "node scripts/build-demo.mjs",
+		"demo:test": "pnpm exec playwright test --config demo/playwright.config.ts",
 		"demo": "pnpm build && vite --config demo/vite.config.ts",
-		"example:excalidraw": "pnpm build && pnpm --filter example-excalidraw dev"
+		"example:excalidraw": "pnpm build && pnpm --filter example-excalidraw dev",
+		"release:prepare": "node scripts/release.mjs prepare",
+		"release:dry-run": "node scripts/release.mjs dry-run",
+		"release:verify": "node scripts/release.mjs verify",
+		"release:publish:next": "node scripts/release.mjs publish --tag next",
+		"published:check": "node scripts/verify-published.mjs"
 	},
 	"devDependencies": {
+		"@arethetypeswrong/cli": "0.18.5",
 		"@biomejs/biome": "^1.9.0",
+		"@changesets/cli": "3.0.0",
 		"@playwright/test": "^1.58.2",
 		"@vitest/coverage-v8": "^3.2.4",
+		"esbuild": "0.28.2",
+		"publint": "0.3.23",
 		"typescript": "^5.7.0",
 		"vite": "^6.0.0",
 		"vitest": "^3.0.0"
-	},
-	"pnpm": {
-		"onlyBuiltDependencies": ["@biomejs/biome", "esbuild"]
 	}
 }
