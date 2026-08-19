@@ -61,3 +61,8 @@ Demo sources/config, deploy workflow, demo browser tests, and README links.
 - The repository is public, Pages uses GitHub Actions with HTTPS enforcement, and the
   `github-pages` environment allows `main` plus the milestone branch used for this
   verification. No remaining human Pages setup prerequisite blocks this gate.
+- A post-gate demo enhancement adds a default app-level split mode: the dashboard tab
+  itself atomically claims and releases one named view while showing its working
+  surface beside the dashboard. A segmented control retains the separate-tab path for
+  `open()`/focus and multi-tab evidence; the demo does not claim browser-native split
+  control or iframe support. The production-base Playwright suite covers both modes.

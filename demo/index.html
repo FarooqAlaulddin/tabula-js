@@ -16,6 +16,10 @@
 			<span class="leader-status" id="leader-status">Electing leader...</span>
 			<span class="leader-work">Leader ticks <strong id="leader-count">0</strong></span>
 		</div>
+		<div class="view-mode" role="group" aria-label="View opening mode">
+			<button type="button" id="mode-split" aria-pressed="true">Split</button>
+			<button type="button" id="mode-tab" aria-pressed="false">New tab</button>
+		</div>
 		<button class="btn btn-sm" id="btn-new-dashboard">Open Another Tab</button>
 		<button class="btn btn-sm" id="btn-theme">Theme</button>
 		<button class="btn btn-sm btn-danger" id="btn-logout">Logout All Tabs</button>
@@ -70,6 +74,38 @@
 		</div>
 	</main>
 
+	<section class="split-panel" id="split-panel" hidden>
+		<header class="split-header">
+			<div>
+				<strong id="split-title">View</strong>
+				<span id="split-status">claimed here</span>
+			</div>
+			<button class="split-close" id="btn-close-split" type="button" aria-label="Close split view" title="Close split view">&times;</button>
+		</header>
+		<div class="split-body">
+			<div class="split-view" data-split-view="editor" hidden>
+				<textarea id="split-editor" placeholder="Exclusive editor; preview tabs mirror this content."></textarea>
+			</div>
+			<div class="split-view" data-split-view="preview" hidden>
+				<div class="preview-content" id="split-preview">Waiting for editor content...</div>
+			</div>
+			<div class="split-view" data-split-view="settings" hidden>
+				<div class="settings-group">
+					<h3>Theme</h3>
+					<div class="radio-group">
+						<label><input type="radio" name="split-theme" value="light"> Light</label>
+						<label><input type="radio" name="split-theme" value="dark"> Dark</label>
+					</div>
+				</div>
+				<div class="settings-group">
+					<h3>Leader-owned work</h3>
+					<p class="settings-value">Current ticks: <strong id="split-notif-display">0</strong></p>
+					<button class="btn btn-sm" id="btn-split-reset-notif">Reset Ticks</button>
+				</div>
+			</div>
+		</div>
+	</section>
+
 	<!-- ── Right sidebar: Event log ───────────────────────────────────── -->
 	<aside class="sidebar sidebar-right">
 		<h3>Event Log</h3>
@@ -97,6 +133,13 @@ import { createWorkspace } from '@farooqalaulddin/tabula-js'
 
 const NS = 'tabula-demo'
 const app = createWorkspace(NS, { heartbeat: 1000, timeout: 4000 })
+const viewRoutes = {
+	editor: { url: 'editor.html', syncKeys: ['theme', 'editorContent'] },
+	preview: { url: 'preview.html', syncKeys: ['theme', 'editorContent'] },
+	settings: { url: 'settings.html', syncKeys: ['theme', 'notificationCount'] }
+}
+let viewMode = 'split'
+let splitHandle = null
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -196,13 +239,18 @@ function renderViews() {
 function renderEditorPreview() {
 	const content = app.state.get('editorContent')
 	const el = document.getElementById('editor-preview')
+	const splitPreview = document.getElementById('split-preview')
+	const splitEditor = document.getElementById('split-editor')
 	if (content) {
 		el.textContent = content
 		el.style.color = ''
+		splitPreview.textContent = content
 	} else {
 		el.textContent = 'No content yet'
 		el.style.color = ''
+		splitPreview.textContent = 'Waiting for editor content...'
 	}
+	if (document.activeElement !== splitEditor) splitEditor.value = content ?? ''
 }
 
 function renderRuntime() {
@@ -218,6 +266,98 @@ function renderRuntime() {
 function applyTheme() {
 	const theme = app.state.get('theme') || 'light'
 	document.documentElement.dataset.theme = theme
+	for (const radio of document.querySelectorAll('input[name="split-theme"]')) {
+		radio.checked = radio.value === theme
+	}
+}
+
+function hideSplit() {
+	document.getElementById('split-panel').hidden = true
+	document.querySelector('.dashboard').classList.remove('has-split')
+}
+
+async function releaseSplit() {
+	const handle = splitHandle
+	if (!handle) {
+		hideSplit()
+		return
+	}
+	splitHandle = null
+	const released = new Promise(resolve => {
+		let timer
+		const off = app.on('view:vacant', event => {
+			if (event.name !== handle.name) return
+			clearTimeout(timer)
+			off()
+			resolve()
+		})
+		timer = setTimeout(() => {
+			off()
+			resolve()
+		}, 1000)
+	})
+	handle.release()
+	hideSplit()
+	await released
+}
+
+function showSplit(name, handle) {
+	splitHandle = handle
+	document.querySelector('.dashboard').classList.add('has-split')
+	const panel = document.getElementById('split-panel')
+	panel.hidden = false
+	document.getElementById('split-title').textContent = name[0].toUpperCase() + name.slice(1)
+	document.getElementById('split-status').textContent = 'claimed here'
+	for (const view of document.querySelectorAll('[data-split-view]')) {
+		view.hidden = view.dataset.splitView !== name
+	}
+	renderEditorPreview()
+	applyTheme()
+	document.getElementById('split-notif-display').textContent = String(app.state.get('notificationCount') ?? 0)
+	panel.scrollIntoView({ block: 'nearest' })
+}
+
+async function openSplit(name) {
+	if (splitHandle?.name === name) {
+		document.getElementById('split-panel').scrollIntoView({ block: 'nearest' })
+		return
+	}
+	if (splitHandle) await releaseSplit()
+	const result = await app.claim(name)
+	if (result.status === 'conflict') {
+		app.focus(name)
+		toast(`View "${name}" is already open`, 'yellow')
+		return
+	}
+	showSplit(name, result.handle)
+	result.handle.on('conflict', () => {
+		if (splitHandle === result.handle) {
+			splitHandle = null
+			hideSplit()
+		}
+	})
+}
+
+function setViewMode(mode) {
+	viewMode = mode
+	document.getElementById('mode-split').setAttribute('aria-pressed', String(mode === 'split'))
+	document.getElementById('mode-tab').setAttribute('aria-pressed', String(mode === 'tab'))
+	for (const name of views) {
+		document.getElementById(`btn-open-${name}`).textContent = mode === 'split' ? 'Open Here' : 'Open Tab'
+	}
+	if (mode === 'tab') void releaseSplit()
+}
+
+function openView(name) {
+	if (viewMode === 'split') {
+		void openSplit(name).catch(error => toast(error.message, 'red'))
+		return
+	}
+	const route = viewRoutes[name]
+	void app.open(name, {
+		url: new URL(route.url, window.location.href).href,
+		syncKeys: route.syncKeys
+	}).catch(error => toast(error.message, 'red'))
 }
 
 // ── Events ──────────────────────────────────────────────────────────────
@@ -287,6 +427,7 @@ app.state.on('auth', val => {
 app.state.on('notificationCount', () => {
 	const count = app.state.get('notificationCount') ?? 0
 	document.getElementById('leader-count').textContent = String(count)
+	document.getElementById('split-notif-display').textContent = String(count)
 })
 
 // ── onLeader: mock notification counter ─────────────────────────────────
@@ -326,26 +467,24 @@ document.getElementById('btn-new-dashboard').onclick = () => {
 	window.open(new URL('./', window.location.href), '_blank')
 }
 
-document.getElementById('btn-open-editor').onclick = () => {
-	void app.open('editor', {
-		url: new URL('editor.html', window.location.href).href,
-		syncKeys: ['theme', 'editorContent']
-	}).catch(console.error)
+document.getElementById('mode-split').onclick = () => setViewMode('split')
+document.getElementById('mode-tab').onclick = () => setViewMode('tab')
+document.getElementById('btn-close-split').onclick = () => void releaseSplit()
+document.getElementById('btn-open-editor').onclick = () => openView('editor')
+document.getElementById('btn-open-preview').onclick = () => openView('preview')
+document.getElementById('btn-open-settings').onclick = () => openView('settings')
+
+let splitEditorTimer
+document.getElementById('split-editor').addEventListener('input', event => {
+	clearTimeout(splitEditorTimer)
+	splitEditorTimer = setTimeout(() => app.state.set('editorContent', event.target.value), 100)
+})
+
+for (const radio of document.querySelectorAll('input[name="split-theme"]')) {
+	radio.addEventListener('change', () => app.state.set('theme', radio.value))
 }
 
-document.getElementById('btn-open-preview').onclick = () => {
-	void app.open('preview', {
-		url: new URL('preview.html', window.location.href).href,
-		syncKeys: ['theme', 'editorContent']
-	}).catch(console.error)
-}
-
-document.getElementById('btn-open-settings').onclick = () => {
-	void app.open('settings', {
-		url: new URL('settings.html', window.location.href).href,
-		syncKeys: ['theme', 'notificationCount']
-	}).catch(console.error)
-}
+document.getElementById('btn-split-reset-notif').onclick = () => app.state.set('notificationCount', 0)
 
 // ── Presence poll (1s) ──────────────────────────────────────────────────
 
@@ -370,6 +509,7 @@ app.ready.then(() => {
 	renderTabs()
 	renderViews()
 	renderRuntime()
+	setViewMode('split')
 
 	const count = app.state.get('notificationCount') ?? 0
 	document.getElementById('leader-count').textContent = String(count)

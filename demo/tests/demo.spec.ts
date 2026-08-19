@@ -25,6 +25,7 @@ test('three tabs demonstrate exclusive editing, mirrors, UI state, conflict, and
 	const secondDashboard = await secondDashboardPromise
 	await expect(secondDashboard.locator('#runtime-status')).toHaveText(/ready/i)
 
+	await page.locator('#mode-tab').click()
 	const editorPromise = context.waitForEvent('page')
 	await page.locator('#btn-open-editor').click()
 	const editor = await editorPromise
@@ -54,6 +55,26 @@ test('three tabs demonstrate exclusive editing, mirrors, UI state, conflict, and
 	await contender.reload()
 	await expect(contender.locator('#status')).toHaveText('Claimed "editor"')
 	await expect(contender.locator('#editor')).not.toHaveAttribute('readonly', '')
+})
+
+test('a dashboard can claim and release a named view in its split pane', async ({ page }) => {
+	await page.goto('')
+	await expect(page.locator('#runtime-status')).toHaveText(/ready/i)
+	await expect(page.locator('#mode-split')).toHaveAttribute('aria-pressed', 'true')
+
+	await page.locator('#btn-open-editor').click()
+	await expect(page.locator('#split-panel')).toBeVisible()
+	await expect(page.locator('#split-title')).toHaveText('Editor')
+	await expect(page.locator('#status-editor')).toHaveText('you')
+
+	await page.locator('#split-editor').fill('An exclusive view inside the dashboard split')
+	await expect(page.locator('#editor-preview')).toHaveText(
+		'An exclusive view inside the dashboard split',
+	)
+
+	await page.locator('#btn-close-split').click()
+	await expect(page.locator('#split-panel')).toBeHidden()
+	await expect(page.locator('#status-editor')).toHaveText(/vacant|unclaimed/)
 })
 
 test('leader-owned work transfers after abrupt close', async ({ context, page }, testInfo) => {
