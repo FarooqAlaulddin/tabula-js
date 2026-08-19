@@ -19,6 +19,9 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageDir = path.join(root, 'packages/tabula')
 const policy = JSON.parse(readFileSync(path.join(root, 'config/package-gate.json'), 'utf8'))
+const packageIndex = process.argv.indexOf('--package')
+const suppliedPackage =
+	packageIndex === -1 ? null : path.resolve(process.argv[packageIndex + 1] ?? '')
 const tempRoot = await mkdtemp(path.join(tmpdir(), 'tabula-package-gate-'))
 const normalizedTempRoot = path.resolve(tempRoot)
 if (
@@ -195,11 +198,18 @@ async function browserBundleSmoke(directory) {
 
 let tarball
 try {
-	run('pnpm', ['--filter', policy.packageName, 'build'])
-	run('pnpm', ['pack', '--pack-destination', tempRoot], { cwd: packageDir })
-	const tarballName = (await readdir(tempRoot)).find((name) => name.endsWith('.tgz'))
-	if (!tarballName) throw new Error('package command did not produce a tarball')
-	tarball = path.join(tempRoot, tarballName)
+	if (suppliedPackage) {
+		if (!existsSync(suppliedPackage) || !suppliedPackage.endsWith('.tgz')) {
+			throw new Error(`--package must identify an existing .tgz: ${suppliedPackage}`)
+		}
+		tarball = suppliedPackage
+	} else {
+		run('pnpm', ['--filter', policy.packageName, 'build'])
+		run('pnpm', ['pack', '--pack-destination', tempRoot], { cwd: packageDir })
+		const tarballName = (await readdir(tempRoot)).find((name) => name.endsWith('.tgz'))
+		if (!tarballName) throw new Error('package command did not produce a tarball')
+		tarball = path.join(tempRoot, tarballName)
+	}
 
 	const entries = run('tar', ['-tzf', tarball], { capture: true }).trim().split('\n')
 	validateTarEntries(entries, policy.staticTarballFiles)
@@ -246,6 +256,7 @@ try {
 	const bundle = await browserBundleSmoke(minimum)
 	const packageOutput = process.env.TABULA_PACKAGE_OUTPUT
 	if (packageOutput) {
+		if (suppliedPackage) throw new Error('cannot copy a supplied package as a release candidate')
 		const normalizedOutput = path.resolve(packageOutput)
 		const allowedDirectory = path.join(root, 'release-artifacts')
 		if (path.dirname(normalizedOutput) !== allowedDirectory || !normalizedOutput.endsWith('.tgz')) {

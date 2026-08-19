@@ -46,11 +46,19 @@ async function verifyFixtures() {
 
 try {
 	await verifyFixtures()
-	run('pnpm', ['--filter', '@farooqalaulddin/tabula-js', 'build'])
-	run('pnpm', ['pack', '--pack-destination', tempRoot], { cwd: packageDir })
-
-	const tarballName = (await readdir(tempRoot)).find((name) => name.endsWith('.tgz'))
-	if (!tarballName) throw new Error('pnpm pack did not produce a tarball')
+	let tarball = process.env.TABULA_PACKAGE_TARBALL
+	if (tarball) {
+		tarball = path.resolve(tarball)
+		if (!existsSync(tarball) || !tarball.endsWith('.tgz')) {
+			throw new Error(`TABULA_PACKAGE_TARBALL must identify an existing .tgz: ${tarball}`)
+		}
+	} else {
+		run('pnpm', ['--filter', '@farooqalaulddin/tabula-js', 'build'])
+		run('pnpm', ['pack', '--pack-destination', tempRoot], { cwd: packageDir })
+		const tarballName = (await readdir(tempRoot)).find((name) => name.endsWith('.tgz'))
+		if (!tarballName) throw new Error('pnpm pack did not produce a tarball')
+		tarball = path.join(tempRoot, tarballName)
+	}
 
 	const consumerDir = path.join(tempRoot, 'consumer')
 	await mkdir(consumerDir)
@@ -63,7 +71,7 @@ try {
 		'--ignore-scripts',
 		'--no-audit',
 		'--no-fund',
-		path.join(tempRoot, tarballName),
+		tarball,
 	])
 
 	const packageEntry = path.join(

@@ -15,6 +15,7 @@ on:
       - scripts/docs-policy.test.js
       - scripts/verify-docs.mjs
       - scripts/verify-package.mjs
+      - scripts/verify-published.mjs
       - README.md
       - packages/tabula/README.md
       - packages/tabula/src/index.ts
@@ -180,3 +181,35 @@ jobs:
             --notes-file release-artifacts/release-notes.md \
             --title "$RELEASE_GIT_TAG" \
             --verify-tag
+
+  verify-published:
+    name: Verify published npm artifact
+    if: github.event_name == 'workflow_dispatch' && !inputs.dry_run && github.ref == 'refs/heads/main'
+    needs: [candidate, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Verify exact registry artifact in independent consumers
+        run: pnpm published:check -- "${{ needs.candidate.outputs.version }}"
+      - name: Retain published-artifact verification
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: published-${{ needs.candidate.outputs.version }}-verification
+          path: release-artifacts/published-${{ needs.candidate.outputs.version }}-verification.json
+          if-no-files-found: error
+          retention-days: 90

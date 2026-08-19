@@ -25,7 +25,8 @@
 		"release:prepare": "node scripts/release.mjs prepare",
 		"release:dry-run": "node scripts/release.mjs dry-run",
 		"release:verify": "node scripts/release.mjs verify",
-		"release:publish:next": "node scripts/release.mjs publish --tag next"
+		"release:publish:next": "node scripts/release.mjs publish --tag next",
+		"published:check": "node scripts/verify-published.mjs"
 	},
 	"devDependencies": {
 		"@arethetypeswrong/cli": "0.18.5",
