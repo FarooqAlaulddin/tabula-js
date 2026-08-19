@@ -71,7 +71,12 @@ jobs:
 
       # @playwright/test pins the browser revision installed by this command.
       - name: Install ${{ matrix.engine }}
-        run: pnpm exec playwright install ${{ matrix.engine }}
+        run: |
+          if [ "${{ matrix.engine }}" = "webkit" ]; then
+            pnpm exec playwright install --with-deps webkit
+          else
+            pnpm exec playwright install ${{ matrix.engine }}
+          fi
 
       - name: Run ${{ matrix.engine }} suite
         run: pnpm exec playwright test --config e2e/playwright.config.ts --project=${{ matrix.engine }}
@@ -130,7 +135,12 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install ${{ matrix.engine }}
+      - run: |
+          if [ "${{ matrix.engine }}" = "webkit" ]; then
+            pnpm exec playwright install --with-deps webkit
+          else
+            pnpm exec playwright install ${{ matrix.engine }}
+          fi
       - name: Test frozen fixtures on ${{ matrix.engine }}
         run: pnpm exec playwright test --config compat/playwright.config.ts --project=${{ matrix.engine }}
       - name: Retain compatibility failure evidence
