@@ -585,7 +585,7 @@ policy/best effort.
 
 ## 10. Published artifact contract (I10)
 
-The supported product is the packed/published `@farooqalaulddin/tabula-js` package,
+The supported product is the packed/published `@thinkly/tabula-js` package,
 including its `./testing` export. Release evidence MUST install tarballs or npm
 artifacts into fresh consumers without workspace aliases. ESM, CJS, declarations,
 exports, dependency count, size, README, LICENSE, protocol compatibility, examples,

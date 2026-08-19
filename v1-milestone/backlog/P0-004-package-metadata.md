@@ -48,7 +48,7 @@ Root/package manifests, package README, and package LICENSE file as needed.
 - Replaced inferred browser-version claims in root/npm READMEs with the actual v1
   prerequisites: top-level same-origin contexts, secure context plus Web Locks,
   BroadcastChannel, `crypto.randomUUID()`, and usable local/session storage.
-- `npm pack --dry-run --json` produced `@farooqalaulddin/tabula-js@0.1.0` with exactly
+- `npm pack --dry-run --json` produced `@thinkly/tabula-js@0.1.0` with exactly
   15 entries: LICENSE, README, package.json, and 12 intended dist files.
 - Verified LICENSE equality, `pnpm install --frozen-lockfile`, lint, typecheck, build,
   milestone validation, and package metadata inspection.

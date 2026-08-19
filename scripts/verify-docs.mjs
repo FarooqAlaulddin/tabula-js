@@ -17,7 +17,7 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageDir = path.join(root, 'packages/tabula')
-const packageName = '@farooqalaulddin/tabula-js'
+const packageName = '@thinkly/tabula-js'
 const tempRoot = await mkdtemp(path.join(tmpdir(), 'tabula-docs-gate-'))
 
 function run(command, args, options = {}) {

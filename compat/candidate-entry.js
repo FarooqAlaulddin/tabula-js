@@ -1,4 +1,4 @@
-import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import { createWorkspace } from '@thinkly/tabula-js'
 
 const namespace = new URLSearchParams(window.location.search).get('ns') ?? 'compatibility'
 const workspace = createWorkspace(namespace, { heartbeat: 100, timeout: 500, readyTimeout: 700 })

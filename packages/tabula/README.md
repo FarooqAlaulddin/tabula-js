@@ -2,7 +2,7 @@
 
 **Coordinate browser tabs as views of one workspace.**
 
-`@farooqalaulddin/tabula-js` is a framework-neutral browser coordination library
+`@thinkly/tabula-js` is a framework-neutral browser coordination library
 with zero runtime dependencies. It provides typed ephemeral state, presence,
 Web-Lock-authorized leader work, and exclusive named views for same-origin desktop
 web applications.
@@ -12,16 +12,16 @@ web applications.
 ## Install
 
 ```bash
-npm install @farooqalaulddin/tabula-js
+npm install @thinkly/tabula-js
 ```
 
 The package ships ESM, CommonJS, TypeScript declarations, source maps, and the
-`@farooqalaulddin/tabula-js/testing` subpath.
+`@thinkly/tabula-js/testing` subpath.
 
 ## Quick start
 
 ```ts verify=browser
-import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import { createWorkspace } from '@thinkly/tabula-js'
 
 interface AppState {
 	theme: 'light' | 'dark'
@@ -80,7 +80,7 @@ state unchanged. `setAll` validates and sends one atomic batch, installs all key
 notifies key listeners in lexical order followed by wildcard listeners.
 
 ```ts verify=ts
-import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import { createWorkspace } from '@thinkly/tabula-js'
 
 interface UiState {
 	theme: 'light' | 'dark'
@@ -113,7 +113,7 @@ conflict observation are fenced to that term, so stale handles cannot control a 
 claim. The localStorage registry is a discovery projection, not authority.
 
 ```ts verify=ts
-import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import { createWorkspace } from '@thinkly/tabula-js'
 
 interface EditorState {
 	theme: 'light' | 'dark'
@@ -165,7 +165,7 @@ Tabula v1 has no React wrapper. React applications subscribe directly to the cor
 using React's external-store API:
 
 ```tsx verify=react
-import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import { createWorkspace } from '@thinkly/tabula-js'
 import { useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -207,11 +207,11 @@ not promise that ordering.
 
 ```mjs verify=esm
 import assert from 'node:assert/strict'
-import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import { createWorkspace } from '@thinkly/tabula-js'
 import {
 	createMockWorkspace,
 	createTestCluster,
-} from '@farooqalaulddin/tabula-js/testing'
+} from '@thinkly/tabula-js/testing'
 
 assert.equal(typeof createWorkspace, 'function')
 const single = createMockWorkspace()
@@ -230,11 +230,11 @@ assert.equal(first.isLeader(), true)
 
 ```cjs verify=cjs
 const assert = require('node:assert/strict')
-const { createWorkspace } = require('@farooqalaulddin/tabula-js')
+const { createWorkspace } = require('@thinkly/tabula-js')
 const {
 	createMockWorkspace,
 	createTestCluster,
-} = require('@farooqalaulddin/tabula-js/testing')
+} = require('@thinkly/tabula-js/testing')
 
 assert.equal(typeof createWorkspace, 'function')
 const single = createMockWorkspace()

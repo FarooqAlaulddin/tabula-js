@@ -8,7 +8,7 @@
 		"skipLibCheck": true,
 		"esModuleInterop": true,
 		"paths": {
-			"@farooqalaulddin/tabula-js": ["../tabula/src/index.ts"],
+			"@thinkly/tabula-js": ["../tabula/src/index.ts"],
 			"@tabula/tabula": ["../tabula/src/tabula.ts"]
 		}
 	},

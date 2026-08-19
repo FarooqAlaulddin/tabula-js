@@ -10,7 +10,7 @@ export default defineConfig({
 	base: process.env.TABULA_DEMO_BASE ?? '/',
 	resolve: {
 		alias: {
-			'@farooqalaulddin/tabula-js': packageEntry,
+			'@thinkly/tabula-js': packageEntry,
 		},
 	},
 	build: {

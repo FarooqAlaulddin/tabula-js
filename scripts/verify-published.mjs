@@ -7,7 +7,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const packageName = '@farooqalaulddin/tabula-js'
+const packageName = '@thinkly/tabula-js'
 const version = process.argv[2]
 if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version ?? '')) {
 	throw new Error('usage: node scripts/verify-published.mjs <exact-version>')
@@ -67,7 +67,7 @@ try {
 		],
 		{ cwd: consumer },
 	)
-	const packageEntry = path.join(consumer, 'node_modules/@farooqalaulddin/tabula-js/dist/index.js')
+	const packageEntry = path.join(consumer, 'node_modules/@thinkly/tabula-js/dist/index.js')
 	if (!existsSync(packageEntry)) throw new Error('published package is missing its ESM entry')
 
 	run('pnpm', ['exec', 'playwright', 'test', '--config', 'e2e/playwright.config.ts'], {

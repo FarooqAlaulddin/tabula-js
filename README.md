@@ -12,13 +12,13 @@ named views. The core has zero runtime dependencies.
 ## Install
 
 ```bash
-npm install @farooqalaulddin/tabula-js
+npm install @thinkly/tabula-js
 ```
 
 ## Quick start
 
 ```ts verify=browser
-import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import { createWorkspace } from '@thinkly/tabula-js'
 
 interface AppState {
 	theme: 'light' | 'dark'

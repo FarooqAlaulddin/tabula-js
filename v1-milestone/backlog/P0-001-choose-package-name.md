@@ -43,24 +43,27 @@ rename and wrapper removal.
 
 ## Outcome
 
-Maintainer decision recorded on `2026-08-08`:
+Maintainer decision recorded on `2026-08-08` and revised to the existing
+organization scope on `2026-08-19`:
 
-- The sole v1 package is `@farooqalaulddin/tabula-js`, under the maintainer's
-  personal scope. The React wrapper is deferred until after v1.
-- Public imports are `@farooqalaulddin/tabula-js` and
-  `@farooqalaulddin/tabula-js/testing`.
-- `npm view @farooqalaulddin/tabula-js` returned `E404` at
-  `2026-08-08T10:37:23Z`. Availability must be rechecked immediately before the
+- The sole v1 package is `@thinkly/tabula-js`, under the maintainer's
+  npm organization scope. The React wrapper is deferred until after v1.
+- Public imports are `@thinkly/tabula-js` and
+  `@thinkly/tabula-js/testing`.
+- `npm access list packages thinkly --json` returned `{}` and
+  `npm view @thinkly/tabula-js` returned `E404` at
+  `2026-08-19T09:03:53Z`. Availability must be rechecked immediately before the
   first publish because a registry lookup cannot reserve a name.
 - The unscoped `tabula` and `tabula-js` packages belong to unrelated projects;
-  the selected personal scope avoids impersonating either one.
+  the selected organization scope avoids impersonating either one.
 - npm's trusted-publisher documentation supports GitHub-hosted Actions and requires
   Node 22.14+ with npm 11.5.1+. P3-001 must pin a compliant release runtime.
 - The GitHub repository is currently private. npm permits trusted publishing, but
   provenance is unavailable for a private source repository; it must be made public
   before the first provenance-gated release in P4-002.
-- Local `npm whoami` returned `E401`. Creating/confirming the npm scope and attaching
-  the trusted publisher remain explicit human setup in P4-002.
+- Local `npm whoami` returns `falaulddin`, and the `thinkly` organization scope is
+  visible to that account. Creating or claiming the package and attaching the
+  trusted publisher remain explicit human setup in P4-002.
 - The maintainer's no-wrapper decision changed the v1 product boundary, so this task
   also removed React-package obligations from all downstream milestone gates.
 

@@ -17,7 +17,7 @@ reference to the unavailable names or a v1 React wrapper.
 
 ## Task
 
-- Rename the core manifest to `@farooqalaulddin/tabula-js`.
+- Rename the core manifest to `@thinkly/tabula-js`.
 - Remove the React wrapper package from the v1 workspace and documentation.
 - Refactor React-based examples to consume the framework-neutral core API directly.
 - Update import specifiers in demos, examples, e2e fixtures, tests, tsconfig aliases,
@@ -46,7 +46,7 @@ Package/workspace manifests, lockfile, TypeScript/build aliases, imports in `dem
 ## Outcome
 
 - Renamed the sole publishable package and all demo, e2e, example, documentation,
-  and testing-subpath references to `@farooqalaulddin/tabula-js`.
+  and testing-subpath references to `@thinkly/tabula-js`.
 - Removed the five tracked `packages/tabula-react` files and all wrapper aliases and
   dependencies. The Excalidraw React app now subscribes directly to core workspace
   state/events and cleans up each subscription explicitly.
@@ -59,7 +59,7 @@ Package/workspace manifests, lockfile, TypeScript/build aliases, imports in `dem
   Excalidraw TypeScript checking, `pnpm build`, 173 unit tests, and 26 Chromium e2e tests.
 - React Doctor reports no issues in the changed React files. A local browser smoke
   rendered Excalidraw, changed the shared theme from light to dark, and logged no errors.
-- `npm pack --dry-run --json` reports `@farooqalaulddin/tabula-js@0.1.0`; its included
+- `npm pack --dry-run --json` reports `@thinkly/tabula-js@0.1.0`; its included
   README contains only the selected package and testing-subpath names.
 - Committed and pushed on `codex/v1-milestone-execution` as the P0-002 task commit.
 - No unrelated working-tree changes were present when the task was completed.

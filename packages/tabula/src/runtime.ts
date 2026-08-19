@@ -151,7 +151,7 @@ export function assertBaselineCapabilities(): void {
 	if (typeof globalThis.BroadcastChannel !== 'function') {
 		throw new CapabilityError(
 			'BroadcastChannel',
-			'For Node.js tests, use @farooqalaulddin/tabula-js/testing.',
+			'For Node.js tests, use @thinkly/tabula-js/testing.',
 		)
 	}
 	if (typeof globalThis.navigator?.locks?.request !== 'function') {

@@ -6,7 +6,7 @@ export default defineConfig({
 	plugins: [react()],
 	resolve: {
 		alias: {
-			'@farooqalaulddin/tabula-js': path.resolve(__dirname, '../tabula/src/index.ts'),
+			'@thinkly/tabula-js': path.resolve(__dirname, '../tabula/src/index.ts'),
 			'@tabula/tabula': path.resolve(__dirname, '../tabula/src/tabula.ts'),
 		},
 	},

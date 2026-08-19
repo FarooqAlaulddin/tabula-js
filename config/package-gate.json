@@ -1,5 +1,5 @@
 {
-	"packageName": "@farooqalaulddin/tabula-js",
+	"packageName": "@thinkly/tabula-js",
 	"gzipBudgetBytes": 16384,
 	"typescript": {
 		"minimum": "5.7.2",

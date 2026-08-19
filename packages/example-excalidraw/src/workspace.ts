@@ -1,4 +1,4 @@
-import { createWorkspace } from '@farooqalaulddin/tabula-js'
+import { createWorkspace } from '@thinkly/tabula-js'
 
 export interface DrawingState {
 	elements: unknown[]

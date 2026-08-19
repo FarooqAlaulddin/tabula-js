@@ -11,7 +11,7 @@ export default defineConfig({
 	publicDir: false,
 	resolve: {
 		alias: {
-			'@farooqalaulddin/tabula-js': packageEntry,
+			'@thinkly/tabula-js': packageEntry,
 		},
 	},
 	build: {

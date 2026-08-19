@@ -17,7 +17,7 @@ describe('release dist-tag policy', () => {
 	it('requires public access and provenance in the manifest', () => {
 		const manifest = {
 			schemaVersion: 1,
-			package: { name: '@farooqalaulddin/tabula-js', version: '0.2.0' },
+			package: { name: '@thinkly/tabula-js', version: '0.2.0' },
 			distTag: 'next',
 			access: 'public',
 			provenance: false,

@@ -53,7 +53,7 @@ try {
 			throw new Error(`TABULA_PACKAGE_TARBALL must identify an existing .tgz: ${tarball}`)
 		}
 	} else {
-		run('pnpm', ['--filter', '@farooqalaulddin/tabula-js', 'build'])
+		run('pnpm', ['--filter', '@thinkly/tabula-js', 'build'])
 		run('pnpm', ['pack', '--pack-destination', tempRoot], { cwd: packageDir })
 		const tarballName = (await readdir(tempRoot)).find((name) => name.endsWith('.tgz'))
 		if (!tarballName) throw new Error('pnpm pack did not produce a tarball')
@@ -74,10 +74,7 @@ try {
 		tarball,
 	])
 
-	const packageEntry = path.join(
-		consumerDir,
-		'node_modules/@farooqalaulddin/tabula-js/dist/index.js',
-	)
+	const packageEntry = path.join(consumerDir, 'node_modules/@thinkly/tabula-js/dist/index.js')
 	if (!existsSync(packageEntry)) throw new Error('packed package is missing its ESM entry')
 
 	run('pnpm', ['exec', 'vite', 'build', '--config', 'compat/vite.config.ts'], {

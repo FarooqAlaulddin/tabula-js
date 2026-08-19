@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════
-// @farooqalaulddin/tabula-js/testing - utilities for Node.js and browser tests
+// @thinkly/tabula-js/testing - utilities for Node.js and browser tests
 // In-memory BroadcastChannel simulation. No browser APIs required.
 // ════════════════════════════════════════════════════════════════════════════
 

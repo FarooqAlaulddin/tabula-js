@@ -1,6 +1,6 @@
 # Release procedure
 
-Tabula has one publishable package: `@farooqalaulddin/tabula-js`. The Excalidraw
+Tabula has one publishable package: `@thinkly/tabula-js`. The Excalidraw
 example and repository root are private and ignored by Changesets. No command in this
 procedure embeds registry credentials; publishing is performed by the trusted GitHub
 Actions workflow after its build, test, package, and provenance gates pass.
@@ -39,7 +39,7 @@ not publish Tabula source and do not create `latest`:
 ```bash
 npm login
 npm publish ./path/to/tabula-name-placeholder --access public --tag bootstrap
-npm view @farooqalaulddin/tabula-js dist-tags --json
+npm view @thinkly/tabula-js dist-tags --json
 ```
 
 The placeholder must contain only package identity and repository metadata. Keep it
@@ -54,7 +54,7 @@ checklist in npm and GitHub:
 
 - [x] Make `FarooqAlaulddin/tabula-js` public; npm provenance is unavailable for a
   private source repository.
-- [ ] Create or claim the public npm package `@farooqalaulddin/tabula-js` using the
+- [ ] Create or claim the public npm package `@thinkly/tabula-js` using the
   one-time bootstrap above if necessary.
 - [ ] Configure its GitHub Actions trusted publisher for owner `FarooqAlaulddin`,
   repository `tabula-js`, workflow `release.yml`, environment `npm`, with

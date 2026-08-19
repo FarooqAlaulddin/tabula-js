@@ -10,7 +10,7 @@
 	"dependencies": {
 		"@excalidraw/excalidraw": "^0.18.0",
 		"react": "^19.0.0",
-		"@farooqalaulddin/tabula-js": "workspace:*",
+		"@thinkly/tabula-js": "workspace:*",
 		"react-dom": "^19.0.0"
 	},
 	"devDependencies": {

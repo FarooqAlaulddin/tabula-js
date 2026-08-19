@@ -8,7 +8,7 @@ export default defineConfig({
 	root: path.resolve(__dirname, 'fixtures'),
 	resolve: {
 		alias: {
-			'@farooqalaulddin/tabula-js': packageEntry,
+			'@thinkly/tabula-js': packageEntry,
 		},
 	},
 	server: {

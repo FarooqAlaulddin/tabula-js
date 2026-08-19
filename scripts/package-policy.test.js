@@ -7,7 +7,7 @@ import {
 } from './package-policy.mjs'
 
 const manifest = {
-	name: '@farooqalaulddin/tabula-js',
+	name: '@thinkly/tabula-js',
 	sideEffects: false,
 	engines: { node: '>=20' },
 	publishConfig: { access: 'public' },
