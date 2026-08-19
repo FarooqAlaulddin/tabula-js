@@ -1,6 +1,6 @@
 # Browser behavior and support
 
-This document translates the normative [1.0 behavioral contract](./CONTRACT.md) into
+This document translates the normative [v1 behavioral contract](./CONTRACT.md) into
 operational guidance. It describes the current implementation and separates automated
 evidence from checks that still require a real browser or machine lifecycle.
 
@@ -34,7 +34,7 @@ The final expanded matrix was run on 2026-08-14 with retries disabled.
 | Chromium | Chrome for Testing 145.0.7632.6, build 1208 | 56/56 | Portable suite plus Chromium-only lifecycle controls |
 | Firefox | Firefox 146.0.1, build 1509 | 53/53 | Portable suite |
 | WebKit | Playwright WebKit 26.0, build 2248 | 53/53 | Portable suite; not Safari proof |
-| Safari on macOS | Pending | [Manual checklist](./SAFARI-CHECKLIST.md) | Required before the 1.0 release candidate |
+| Safari on macOS | Pending | [Manual checklist](./SAFARI-CHECKLIST.md) | Required before the 0.7.0 release-readiness candidate |
 
 **Automated:** the complete 162-test matrix passed three consecutive times; see the
 [adversarial task evidence](../v1-milestone/backlog/P1-003-edge-case-e2e.md). These

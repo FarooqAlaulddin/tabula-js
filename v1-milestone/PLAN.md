@@ -1,18 +1,21 @@
-# Tabula -> 1.0.0 Master Plan
+# Tabula V1 Feature Milestone -> 0.8.0 Master Plan
 
 Goal: turn the current `0.1.0` source baseline into a published, feature-complete,
-production-credible `1.0.0` of Tabula's deliberately narrow product: a thin,
+production-credible `0.8.0` of Tabula's deliberately narrow product: a thin,
 removable coordination layer that lets same-origin desktop web apps treat browser
-tabs and windows as views of one workspace.
+tabs and windows as views of one workspace. The milestone retains the full v1
+feature and evidence standard while deliberately postponing the semver `1.0.0`
+compatibility commitment.
 
-`1.0.0` is not permission to add adjacent features. It is the point at which every
+`0.8.0` is not permission to add adjacent features. It is the point at which every
 feature already implied by the workspace model has a stable contract, converges
 under ordinary browser adversity, works from the published package, and has been
-exercised outside this repository.
+exercised outside this repository. Because it remains `0.x`, a later `0.9.0` may
+still correct a missed breaking API or protocol issue before an eventual `1.0.0`.
 
-## Product contract for 1.0
+## V1 product contract
 
-Tabula 1.0 consists of these supported capabilities:
+Tabula's v1 feature contract consists of these supported capabilities:
 
 1. **Workspace lifecycle** -- deterministic initialization through `ready`, safe
    teardown through `destroy()`, stable per-tab identity across refresh, namespace
@@ -74,7 +77,7 @@ These invariants take precedence over implementation details and task wording:
 - **I10 -- Published artifacts are the product.** Every release gate tests packed or
   published artifacts, not only workspace-linked source.
 
-## Non-goals for 1.0
+## Non-goals for the v1 feature milestone
 
 Unchanged from `DECISIONS.md`:
 
@@ -88,7 +91,7 @@ Unchanged from `DECISIONS.md`:
 - No exactly-once or security-critical leader execution.
 - No serialization of arbitrary non-structured-clone JavaScript values.
 
-Adding any of these requires a separate post-1.0 product decision. It must not be
+Adding any of these requires a separate post-milestone product decision. It must not be
 smuggled into a hardening task.
 
 ## Release train
@@ -102,13 +105,17 @@ prerelease or `0.x` patch/minor; it never lowers the gate.
 | `0.2.0-alpha.0` | First publish-pipeline and package-consumption proof | Phases 0-3 complete enough for OIDC, packed-artifact, and protocol smoke tests; `next` tag only |
 | `0.2.0` | Public technical preview | All Phase 1 correctness and Phase 3 package gates complete; three-engine automated suite green |
 | `0.3.0` | Feature-complete API candidate | Positioning/docs/demo complete; API candidate review complete; all feature-matrix implementation and browser rows green |
-| `0.3.x` / later `0.x` | Burn-in corrections | Every accepted fix, behavior change, or API correction released and re-adopted before evidence resumes |
-| `1.0.0-rc.N` | Frozen release candidate | No known correctness issues; compatibility, Safari, docs, packed samples, and burn-in gates green |
-| `1.0.0` | Stable contract | The exact RC artifact passed the final gate; only version/changelog/provenance changes differ |
+| `0.4.0` | Dogfood adoption checkpoint | All public capabilities installed from npm in real applications with privacy-reviewed instrumentation |
+| `0.5.0` / later `0.x` patches | Stabilization checkpoint | Every accepted fix, behavior change, or API correction released and re-adopted before evidence resumes |
+| `0.6.0` | Burn-in evidence checkpoint | The final evidence window satisfies every quantitative and qualitative burn-in gate |
+| `0.7.0` | Frozen release-readiness candidate | No known correctness issues; compatibility, Safari, docs, packed samples, and burn-in gates green |
+| `0.8.0` | Completed v1 feature milestone | Runtime/API/protocol are unchanged from `0.7.0`; public-artifact verification passes under `next` |
+| `0.9.x` | Reserved pre-1.0 correction space | Breaking corrections discovered after `0.8.0` remain possible and require explicit migration evidence |
+| `1.0.0` | Future stable semver contract, outside this plan | Requires a later explicit compatibility decision and moves `latest` only after its own gate |
 
-No `latest` npm dist-tag is used before `1.0.0`; prereleases and `0.x` previews use
-`next`. The maintainer may promote a proven `0.x` to another explicit preview tag,
-but install docs must continue to identify it as pre-1.0.
+No release in this plan uses the `latest` npm dist-tag; prereleases and all `0.x`
+checkpoints use `next`. The maintainer may promote a proven `0.x` to another explicit
+preview tag, but install docs must continue to identify it as pre-1.0.
 
 ## Phases and gates
 
@@ -119,9 +126,9 @@ but install docs must continue to identify it as pre-1.0.
 | 2 | Browser and product proof | Cross-browser/adversarial suite green; behavior docs, comparisons, package docs, and honest live demo shipped |
 | 3 | Release engineering | Changesets, OIDC workflow, package/size/exports gates, compatibility fixture, and dry run proven |
 | 4 | Public previews and API candidate | `0.2.0-alpha.0`, `0.2.0`, then feature-complete `0.3.0` published from packed-tested commits |
-| 5 | Real-app burn-in and stabilization | Every public capability exercised; anomalies released as later `0.x`; evidence window green |
-| 6 | 1.0 release candidate | Frozen `1.0.0-rc.N` passes Safari, mixed-version, lifecycle, docs, package, and API-diff gates |
-| 7 | 1.0.0 | Exact RC promoted through provenance-backed release; post-release install verified; milestone archived |
+| 5 | Real-app burn-in and stabilization | `0.4.0` dogfood, `0.5.0` stabilization, and `0.6.0` evidence checkpoints complete |
+| 6 | Release readiness | Frozen `0.7.0` passes Safari, mixed-version, lifecycle, docs, package, and API-diff gates |
+| 7 | 0.8.0 milestone | Behavior-identical `0.8.0` published under `next`; post-release install verified; milestone archived |
 
 Phases 2 and 3 may overlap after the Phase 1 message schema is stable. Core Phase 1
 tasks are deliberately serialized because they share protocol, lifecycle, and the
@@ -206,6 +213,6 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 | P5-001 | Dogfood all public capabilities in real applications | human | todo |
 | P5-002 | Stabilize through evidence-resetting 0.x releases | human | todo |
 | P5-003 | Close the burn-in evidence gate | human | todo |
-| P6-001 | Build and verify 1.0.0-rc.N | agent | todo |
-| P6-002 | Approve the final 1.0 gate | human | todo |
-| P7-001 | Publish 1.0.0 and close the milestone | human | todo |
+| P6-001 | Build and verify the 0.7.0 release-readiness candidate | agent | todo |
+| P6-002 | Approve the 0.8.0 milestone gate | human | todo |
+| P7-001 | Publish 0.8.0 and close the v1 feature milestone | human | todo |

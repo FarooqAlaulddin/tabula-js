@@ -1,10 +1,12 @@
-# Tabula 1.0 Feature-Completeness Matrix
+# Tabula V1 Feature-Completeness Matrix
 
-This matrix defines "feature complete" for `1.0.0`. Rows may be marked complete
-only with links to the implementation, automated tests, public documentation, and
-burn-in evidence required by the row. `not-applicable` requires a written reason.
+This matrix defines the v1-quality feature contract shipped by the `0.8.0` milestone.
+It deliberately does not make the semver `1.0.0` compatibility commitment. Rows may
+be marked complete only with links to the implementation, automated tests, public
+documentation, and burn-in evidence required by the row. `not-applicable` requires a
+written reason.
 
-| Area | Required 1.0 behavior | Unit | Browser | Docs | Burn-in | Status |
+| Area | Required v1 behavior | Unit | Browser | Docs | Burn-in | Status |
 |------|-----------------------|------|---------|------|---------|--------|
 | Workspace | Namespace validation and isolation | required | required | required | sampled | todo |
 | Workspace | `ready` settles after a bounded initial round; incomplete status repairs | required | [matrix](../e2e/tests/state.spec.ts) | [behavior](../docs/BEHAVIOR.md#shared-state-boundary) | required | todo |
@@ -43,4 +45,4 @@ burn-in evidence required by the row. `not-applicable` requires a written reason
 P4-001 owns this file until `0.3.0`. After that release, each burn-in correction
 updates affected evidence links and returns the row to `todo` until the replacement
 release passes. P6-001 snapshots the fully linked matrix into its Outcome; P6-002
-must reject the 1.0 gate if any row is not `done` or an approved `not-applicable`.
+must reject the 0.8.0 gate if any row is not `done` or an approved `not-applicable`.

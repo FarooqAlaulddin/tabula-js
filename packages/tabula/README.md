@@ -366,8 +366,8 @@ SSR execution, storage-blocked contexts, cross-origin coordination, and cross-de
 coordination are unsupported. No capability polyfills are bundled.
 
 Automated release evidence covers current Chromium, Firefox, and Playwright WebKit.
-Playwright WebKit is not Safari/macOS proof; a dated real Safari pass remains a 1.0 RC
-gate. See the
+Playwright WebKit is not Safari/macOS proof; a dated real Safari pass remains a 0.7.0
+release-readiness gate. See the
 [browser behavior guide](https://github.com/FarooqAlaulddin/tabula-js/blob/main/docs/BEHAVIOR.md)
 for exact versions and evidence labels.
 
@@ -389,7 +389,7 @@ BroadcastChannel fallback, UI components, routing, iframes, collaborative editin
 exactly-once work, guaranteed focus, or real-time failure detection.
 
 The normative guarantees and rejection cases are in the
-[1.0 behavioral contract](https://github.com/FarooqAlaulddin/tabula-js/blob/main/docs/CONTRACT.md).
+[v1 behavioral contract](https://github.com/FarooqAlaulddin/tabula-js/blob/main/docs/CONTRACT.md).
 
 ## Examples
 

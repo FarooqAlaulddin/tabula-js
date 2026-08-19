@@ -10,8 +10,8 @@ scope: one candidate release + public artifact verification
 
 ## Context
 
-`0.3.0` is the first release that claims feature completeness for the intended 1.0
-scope. It is still pre-1.0: burn-in may require breaking corrections, but every such
+`0.3.0` is the first release that claims feature completeness for the intended v1
+scope. It remains pre-1.0: burn-in may require breaking corrections, but every such
 correction must be released and restart affected evidence.
 
 ## Task
@@ -21,8 +21,8 @@ correction must be released and restart affected evidence.
 - Publish the package with provenance under `next`; verify public docs/demo links.
 - Install from npm into clean ESM/CJS/React-app/browser consumers and execute every sample.
 - Snapshot `0.3.0` tarballs, API declarations, protocol version, and checksums as the
-  baseline for burn-in and eventual 1.0 comparison.
-- Announce it only as a feature-complete preview/API candidate, not stable 1.0.
+  baseline for burn-in and eventual `0.8.0` comparison.
+- Announce it only as a feature-complete preview/API candidate, not stable semver 1.x.
 
 ## Acceptance criteria
 

@@ -21,7 +21,7 @@ and dist-tags before the first npm artifact exists.
   credentials or bypassing normal build/test gates.
 - Seed the package changelog with the unpublished `0.1.0` source baseline and a note
   that its occupied package names were never released.
-- Document prerelease entry/exit steps for `0.2.0-alpha`, normal `0.x`, and `1.0.0-rc`.
+- Document prerelease entry/exit steps for `0.2.0-alpha` and normal `0.x` evidence checkpoints.
 - Activate the standing rule that every user-visible change carries a changeset.
 
 ## Acceptance criteria
@@ -44,7 +44,7 @@ and dist-tags before the first npm artifact exists.
   pre-1.0 publish uses the explicit `next` dist-tag.
 - Seeded the unpublished `0.1.0` source-baseline changelog and a pending minor
   changeset describing the hardened `0.2.0` technical preview.
-- Documented alpha, normal `0.x`, `1.0.0-rc`, prerelease exit, and stable-promotion
+- Documented alpha, normal `0.x`, prerelease exit, and milestone-promotion
   procedures in `docs/RELEASING.md`.
 - `pnpm changeset:status`, lint, and frozen install pass. An isolated temporary copy
   versioned to `0.2.0`, updated `CHANGELOG.md`, consumed its changeset, and was then

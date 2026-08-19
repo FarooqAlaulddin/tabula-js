@@ -10,8 +10,9 @@ scope: evidence audit against the final 0.x candidate
 
 ## Context
 
-The final burn-in window begins only after the last evidence-resetting release is
-installed everywhere. Session count alone is insufficient; the evidence must show
+The final burn-in window begins only after the `0.5.0` stabilization checkpoint or a
+later evidence-resetting release is installed everywhere. Session count alone is
+insufficient; the evidence must show
 that each public capability and adverse lifecycle path actually occurred.
 
 ## Gate criteria
@@ -41,6 +42,8 @@ The maintainer evaluates every gate criterion against the final candidate's froz
 evidence window. The agent prepares reproducible aggregate queries, verifies version
 and traffic exclusions, links FEATURE-COMPLETE rows, and reports discrepancies. A
 failed criterion returns to P5-002 with an issue and a new evidence-reset boundary.
+When every criterion passes, publish behavior-identical `0.6.0` under `next` as the
+frozen burn-in evidence checkpoint.
 
 ## Acceptance criteria
 
@@ -49,6 +52,7 @@ failed criterion returns to P5-002 with an issue and a new evidence-reset bounda
 - [ ] No counter includes pre-reset releases or hidden test/demo traffic.
 - [ ] Any failure returns to P5-002 with a filed issue; it is not waived inside this task.
 - [ ] Passing evidence is frozen for P6-001 and linked from FEATURE-COMPLETE.
+- [ ] Provenance-backed `0.6.0` is published and matches the passing behavior/API/protocol baseline.
 
 ## Files
 

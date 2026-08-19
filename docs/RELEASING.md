@@ -19,8 +19,9 @@ Do not combine unrelated consumer changes in one summary.
 
 ## Dist-tags
 
-All prereleases and normal `0.x` previews use `next`. Nothing publishes to `latest`
-before the final `1.0.0` promotion. The repository-pinned publish command consumes
+All prereleases and normal `0.x` checkpoints use `next`. Nothing in the v1 feature
+milestone publishes to `latest`; that tag is reserved for a future `1.0.0` decision.
+The repository-pinned publish command consumes
 an already validated tarball:
 
 ```bash
@@ -118,19 +119,26 @@ Both artifacts are published with `release:publish:next`.
 Add patch or minor changesets, run `pnpm changeset:version`, and publish with `next`.
 Any behavior correction resets the affected burn-in evidence window.
 
-## 1.0.0 release candidates
+## 0.4.0 through 0.7.0 evidence checkpoints
 
-After the API candidate and burn-in gates pass, add the changeset that moves the
-package to `1.0.0`, then enter release-candidate mode:
+The dogfood, stabilization, burn-in, and release-readiness phases publish `0.4.0`,
+`0.5.0`, `0.6.0`, and `0.7.0` respectively under `next`. Each is an immutable evidence
+checkpoint. Corrections use an appropriate patch or later minor and reset affected
+evidence; they never skip a gate merely to preserve the nominal sequence.
+
+## 0.8.0 milestone release
+
+After the `0.7.x` readiness candidate and final human gate pass, prepare `0.8.0` as a
+version/changelog-only release. Runtime, declarations, exports, protocol, defaults,
+errors, and behavioral documentation must match the approved candidate. Validate and
+publish it with the same `next` workflow:
 
 ```bash
-pnpm changeset:pre enter rc
 pnpm changeset:version
 pnpm changeset:status
 pnpm release:publish:next
 ```
 
-Accepted RC corrections carry new changesets and produce the next `rc.N`. To form the
-stable version, run `pnpm changeset:pre exit` and `pnpm changeset:version`. The final
-stable publish uses the dedicated 1.0 workflow, not `release:publish:next`, and must
-promote the exact artifact that passed the RC gate.
+Post-publish verification must install exact `0.8.0` registry bytes. `latest` remains
+absent or unchanged. A future `1.0.0` requires a separate compatibility decision and
+release plan; it is not an automatic promotion performed by this milestone.

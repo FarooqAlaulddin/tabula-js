@@ -98,7 +98,7 @@ core artifact.
 ## Documentation
 
 - [Canonical npm documentation and API reference](./packages/tabula/README.md)
-- [Normative 1.0 behavioral contract](./docs/CONTRACT.md)
+- [Normative v1 behavioral contract](./docs/CONTRACT.md)
 - [Browser behavior and tested support](./docs/BEHAVIOR.md)
 - [Design decisions and non-goals](./DECISIONS.md)
 - [Release procedure](./docs/RELEASING.md)

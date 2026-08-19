@@ -1,8 +1,9 @@
-# Tabula 1.0 Behavioral Contract
+# Tabula V1 Behavioral Contract
 
-Status: normative contract for the `1.0.0` milestone.
+Status: normative contract for the `0.8.0` v1 feature milestone. This is a feature and
+evidence contract, not the deferred semver `1.0.0` compatibility commitment.
 
-This document defines the behavior the 1.0 implementation must preserve.
+This document defines the behavior the v1 feature implementation must preserve.
 `DECISIONS.md` preserves historical design notes; this contract takes precedence
 wherever they differ. See [browser behavior and support](./BEHAVIOR.md) for the
 evidence-backed operational guide and pending manual checks.
@@ -573,7 +574,7 @@ silently treated as proven.
 | Chromium | Chrome for Testing 145.0.7632.6 (Playwright build 1208) | 56/56 passed | Portable suite plus Chromium lifecycle controls |
 | Firefox | Firefox 146.0.1 (Playwright build 1509) | 53/53 passed | Portable suite |
 | WebKit | Playwright WebKit 26.0 (build 2248) | 53/53 passed | Portable suite; not Safari proof |
-| Safari on macOS | Pending | See [manual checklist](./SAFARI-CHECKLIST.md) | Required before the 1.0 release candidate |
+| Safari on macOS | Pending | See [manual checklist](./SAFARI-CHECKLIST.md) | Required before the 0.7.0 release-readiness candidate |
 
 The expanded matrix was repeated three consecutive times with retries disabled: 162/162 each
 run. Normative immediacy is limited to local reads after an accepted local commit,
@@ -596,11 +597,11 @@ Rejected alternative: treating a passing monorepo build as proof of package heal
 because workspace links can hide missing files, broken exports, and undeclared dependencies.
 
 Rationale: users execute registry artifacts, so evidence from another representation
-cannot establish the 1.0 distribution contract.
+cannot establish the v1 distribution contract.
 
 ## 11. Normative guarantee summary
 
-Tabula 1.0 guarantees mutual exclusion only through held Web Locks, convergence only
+The Tabula v1 feature contract guarantees mutual exclusion only through held Web Locks, convergence only
 for the same validated operation set, bounded usable initialization with observable
 repair, terminal idempotent destroy, fenced view control, and explicit protocol
 incompatibility. It does not guarantee real-time failure detection, oldest-tab

@@ -21,7 +21,8 @@ adopted, and given fresh evidence. Breaking API/protocol changes are still legal
   correction, consumer misuse, observability defect, or unrelated issue.
 - Fix correctness and observability defects with regression tests at the lowest layer
   plus browser/consumer coverage where observable.
-- Publish `0.3.x`, `0.4.0`, or later `0.x` releases according to semver impact, with
+- Publish fixes according to semver impact, then establish and adopt `0.5.0` as the
+  stabilization checkpoint, with
   provenance and updated compatibility fixtures/API baselines.
 - Upgrade every dogfood app to the new candidate before resuming affected evidence.
 - Mark affected FEATURE-COMPLETE rows `todo` and explicitly identify which counters
@@ -35,6 +36,7 @@ adopted, and given fresh evidence. Breaking API/protocol changes are still legal
 - [ ] Every release is adopted by affected apps and evidence-reset boundaries are recorded.
 - [ ] Compatibility/API snapshots include every candidate that remains in the supported upgrade path.
 - [ ] `is:issue label:burn-in is:open` returns zero before P5-003 starts.
+- [ ] All affected apps run the provenance-backed `0.5.0` stabilization checkpoint.
 
 ## Files
 
