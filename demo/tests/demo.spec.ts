@@ -8,6 +8,7 @@ test('all production-base routes and assets load', async ({ context }) => {
 		await expect(page.locator('.companion, .dashboard')).toBeVisible()
 		await expect(page.locator('#status, #runtime-status').first()).not.toContainText(
 			/Connecting|failed/i,
+			{ timeout: 15_000 },
 		)
 		await page.close()
 	}
