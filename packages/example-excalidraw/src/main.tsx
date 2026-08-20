@@ -58,7 +58,7 @@ function Dashboard() {
 						{currentTheme === 'light' ? 'Dark' : 'Light'}
 					</button>
 					<button className="btn btn-primary" onClick={expandCanvas} type="button">
-						Expand to Tab
+						Open Canvas Tab
 					</button>
 				</div>
 			</header>
@@ -106,7 +106,7 @@ function Dashboard() {
 						subscribes directly to the Tabula workspace and passes data as ordinary props.
 					</p>
 					<p className="sidebar-text">
-						Click <strong>Expand to Tab</strong> to claim the full-screen editor. This dashboard
+						Click <strong>Open Canvas Tab</strong> to claim the full-screen editor. This dashboard
 						remains a read-only mirror because scene data is not collaboratively merged.
 					</p>
 				</div>

@@ -32,7 +32,6 @@ test('three tabs demonstrate exclusive editing, mirrors, UI state, conflict, and
 	const secondDashboard = await secondDashboardPromise
 	await expect(secondDashboard.locator('#runtime-status')).toHaveText(/ready/i)
 
-	await page.locator('#mode-tab').click()
 	const editorPromise = context.waitForEvent('page')
 	await page.locator('#btn-open-editor').click()
 	const editor = await editorPromise
@@ -64,24 +63,23 @@ test('three tabs demonstrate exclusive editing, mirrors, UI state, conflict, and
 	await expect(contender.locator('#editor')).not.toHaveAttribute('readonly', '')
 })
 
-test('a dashboard can claim and release a named view in its split pane', async ({ page }) => {
+test('a dashboard opens named views in browser tabs', async ({ context, page }) => {
 	await page.goto('')
 	await expect(page.locator('#runtime-status')).toHaveText(/ready/i)
-	await expect(page.locator('#mode-split')).toHaveAttribute('aria-pressed', 'true')
 
+	const editorPromise = context.waitForEvent('page')
 	await page.locator('#btn-open-editor').click()
-	await expect(page.locator('#split-panel')).toBeVisible()
-	await expect(page.locator('#split-title')).toHaveText('Editor')
-	await expect(page.locator('#status-editor')).toHaveText('you')
+	const editor = await editorPromise
+	await expect(editor.locator('#status')).toHaveText('Claimed "editor"')
+	await expect(page.locator('#status-editor')).toHaveText(/claimed|you/)
 
-	await page.locator('#split-editor').fill('An exclusive view inside the dashboard split')
+	await editor.locator('#editor').fill('An exclusive view in a browser tab')
 	await expect(page.locator('#editor-preview')).toHaveText(
-		'An exclusive view inside the dashboard split',
+		'An exclusive view in a browser tab',
 	)
 
-	await page.locator('#btn-close-split').click()
-	await expect(page.locator('#split-panel')).toBeHidden()
-	await expect(page.locator('#status-editor')).toHaveText(/vacant|unclaimed/)
+	await editor.close({ runBeforeUnload: false })
+	await expect(page.locator('#status-editor')).toHaveText(/vacant|unclaimed/, { timeout: 10_000 })
 })
 
 test('leader-owned work transfers after abrupt close', async ({ context, page }, testInfo) => {
