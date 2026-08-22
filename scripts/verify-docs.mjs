@@ -88,9 +88,10 @@ async function buildTarball() {
 	return path.join(tempRoot, tarball)
 }
 
-async function verifyCanonicalApi(readme) {
-	const mainDeclaration = await readFile(path.join(packageDir, 'dist/index.d.ts'), 'utf8')
-	const testingDeclaration = await readFile(path.join(packageDir, 'dist/testing.d.ts'), 'utf8')
+async function verifyCanonicalApi(readme, consumer) {
+	const declarationDir = path.join(consumer, 'node_modules/@thinkly/tabula-js/dist')
+	const mainDeclaration = await readFile(path.join(declarationDir, 'index.d.ts'), 'utf8')
+	const testingDeclaration = await readFile(path.join(declarationDir, 'testing.d.ts'), 'utf8')
 	compareSets(
 		documentedExports(readme, 'main'),
 		declarationExports(mainDeclaration),
@@ -210,13 +211,12 @@ async function executeBrowserSample(consumer, compiled, mode) {
 	await serveBundle(result.outputFiles[0].contents, mode)
 }
 
-async function verifySamples(files, tarball) {
+async function verifySamples(files, consumer) {
 	const samples = []
 	for (const file of files) {
 		const markdown = await readFile(file, 'utf8')
 		samples.push(...extractVerifiedSamples(markdown, path.relative(root, file)))
 	}
-	const consumer = await installConsumer(tarball)
 	let browserCount = 0
 	for (const [index, sample] of samples.entries()) {
 		if (sample.mode === 'esm' || sample.mode === 'cjs') {
@@ -239,10 +239,11 @@ try {
 	const files = await markdownFiles(root)
 	const linkCount = await verifyLocalLinks(files)
 	const tarball = await buildTarball()
+	const consumer = await installConsumer(tarball)
 	const packageReadme = await readFile(path.join(packageDir, 'README.md'), 'utf8')
-	await verifyCanonicalApi(packageReadme)
+	await verifyCanonicalApi(packageReadme, consumer)
 	const sampleFiles = [path.join(root, 'README.md'), path.join(packageDir, 'README.md')]
-	const result = await verifySamples(sampleFiles, tarball)
+	const result = await verifySamples(sampleFiles, consumer)
 	console.log(
 		JSON.stringify({
 			browserSamples: result.browserCount,
