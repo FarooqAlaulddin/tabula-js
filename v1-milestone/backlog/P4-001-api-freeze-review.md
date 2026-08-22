@@ -64,3 +64,12 @@ P1-007 candidate changes to review before API freeze:
 - `WorkspaceOptions.openTimeout` is public and defaults to 10 seconds.
 - `ViewClaimToken` and `ViewClaimResult` are exported; storage intent/correlation
   shapes remain internal and must stay absent from the packed declaration surface.
+
+Preparatory evidence audit on 2026-08-22, before the P4-002 dependency completed:
+
+- `FEATURE-COMPLETE.md` now separates implementation, unit, browser, docs, burn-in,
+  and status evidence columns.
+- All pre-burn-in evidence cells have concrete repository links where current source,
+  tests, and documentation provide evidence.
+- No row was marked `done`; burn-in, npm-published artifact verification, Safari
+  manual evidence, and the formal API freeze review remain incomplete.
