@@ -1,0 +1,86 @@
+{
+	"schemaVersion": 1,
+	"createdBy": "scripts/snapshot-api-baseline.mjs",
+	"package": {
+		"name": "@thinkly/tabula-js",
+		"version": "0.4.0"
+	},
+	"source": {
+		"repository": "https://github.com/FarooqAlaulddin/tabula-js",
+		"packageTree": "ebeaf513d881261bd1ba41eed4c76885e4988abb"
+	},
+	"artifact": {
+		"file": "thinkly-tabula-js-0.4.0.tgz",
+		"validatedBy": "scripts/verify-package.mjs"
+	},
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			}
+		},
+		"./testing": {
+			"import": {
+				"types": "./dist/testing.d.ts",
+				"default": "./dist/testing.js"
+			},
+			"require": {
+				"types": "./dist/testing.d.cts",
+				"default": "./dist/testing.cjs"
+			}
+		}
+	},
+	"declarations": [
+		{
+			"file": "dist/index.d.ts",
+			"sha256": "3666bdca1d51377b31dfdea14b15937064934393e2b8f29731038dbebeefaed3",
+			"exports": [
+				"CapabilityError",
+				"LeaderChangeEvent",
+				"ProtocolIncompatibleEvent",
+				"ProtocolVersion",
+				"StorageCorruptionError",
+				"StorageOperationError",
+				"TabMeta",
+				"ViewAlreadyClaimedError",
+				"ViewClaimResult",
+				"ViewClaimToken",
+				"ViewClaimedEvent",
+				"ViewConflictEvent",
+				"ViewHandle",
+				"ViewOpenOptions",
+				"ViewVacantEvent",
+				"Workspace",
+				"WorkspaceDestroyedError",
+				"WorkspaceEventMap",
+				"WorkspaceFailedError",
+				"WorkspaceLifecycle",
+				"WorkspaceOptions",
+				"WorkspaceState",
+				"WorkspaceStatus",
+				"WorkspaceSyncState",
+				"WorkspaceTabs",
+				"WorkspaceViews",
+				"createWorkspace"
+			]
+		},
+		{
+			"file": "dist/index.d.cts",
+			"sha256": "3666bdca1d51377b31dfdea14b15937064934393e2b8f29731038dbebeefaed3"
+		},
+		{
+			"file": "dist/testing.d.ts",
+			"sha256": "acea1bcfef06489e2db860340fba56a914f1064f7b389c0a86687c5d1f309e87",
+			"exports": ["TestCluster", "createMockWorkspace", "createTestCluster"]
+		},
+		{
+			"file": "dist/testing.d.cts",
+			"sha256": "011d1e1d26c1c92ff5d3a91c87cd2725027a6c02c25df6a003aaf469710a2c93"
+		}
+	]
+}
