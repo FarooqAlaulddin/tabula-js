@@ -1,5 +1,22 @@
 # @thinkly/tabula-js
 
+## 0.3.0
+
+### Minor Changes
+
+- Publish the feature-complete pre-1.0 API candidate for Tabula's deliberately narrow
+  same-origin workspace model:
+
+  - deterministic workspace lifecycle and tab identity;
+  - convergent typed shared UI state;
+  - bounded presence and recovery;
+  - Web-Lock-authorized leadership;
+  - atomic, fenced named views;
+  - framework-neutral integration and deterministic test adapters; and
+  - zero-dependency ESM/CJS/types packaging with provenance-backed releases.
+
+  This is a preview under the `next` tag, not a stable semver 1.x commitment.
+
 ## 0.2.0
 
 ### Minor Changes

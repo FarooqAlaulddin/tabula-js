@@ -2,7 +2,7 @@
 id: P4-003
 title: Publish the feature-complete 0.3.0 API candidate
 phase: 4
-status: todo
+status: in-progress
 depends_on: [P4-001]
 owner: human
 scope: one candidate release + public artifact verification
