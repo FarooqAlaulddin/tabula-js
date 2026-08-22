@@ -1,86 +1,86 @@
 {
-  "schemaVersion": 1,
-  "fixtures": [
-    {
-      "id": "synthetic-v1-rev0",
-      "kind": "compatible",
-      "packageVersion": "synthetic-pre-0.2.0",
-      "protocol": {
-        "major": 1,
-        "revision": 0,
-        "minRevision": 0
-      },
-      "file": "v1-rev0/participant.js",
-      "sha256": "2d8d2e2980cd8e922f9e88d526c66bd3b3ae2bc105ffc7a4ab4e2e468194898d"
-    },
-    {
-      "id": "synthetic-unsupported-v2",
-      "kind": "unsupported",
-      "packageVersion": "synthetic-future-major",
-      "protocol": {
-        "major": 2,
-        "revision": 0,
-        "minRevision": 0
-      },
-      "file": "unsupported-v2/participant.js",
-      "sha256": "a531d64912114426146d57da1b5fb4bf9579d3190053d182655c774e2173fc35"
-    },
-    {
-      "id": "published-0.2.0",
-      "kind": "compatible",
-      "packageVersion": "0.2.0",
-      "protocol": {
-        "major": 1,
-        "revision": 1,
-        "minRevision": 0
-      },
-      "registry": "https://registry.npmjs.org",
-      "specification": "@thinkly/tabula-js@0.2.0",
-      "sourceCommit": "0ec72a6b93cb89352166404bd40afeecf3caa2fd",
-      "tarball": "package.tgz",
-      "tarballIntegrity": "sha512-P+ERU2Ej3uHLksFyr6nxluGhcWivWX+5tBvXFtApmi9gNL088sbE2ZEVcYocuCHhRxoRgmLa/iAB47bwcy1OdA==",
-      "tarballShasum": "1be176fbf2eecb30c3e49cca6b6dded402c32825",
-      "tarballSha256": "dfe4fce7ce1dbcbe186d24176b0b235c7e9ced31c088b0c57320e11a431ba1a7",
-      "file": "0.2.0/participant.js",
-      "sha256": "edfa5efd87cda45ebb7f6d1fda3d711b01736a6e4214f57ff990680ab3641241"
-    },
-    {
-      "id": "published-0.3.0",
-      "kind": "compatible",
-      "packageVersion": "0.3.0",
-      "protocol": {
-        "major": 1,
-        "revision": 1,
-        "minRevision": 0
-      },
-      "registry": "https://registry.npmjs.org",
-      "specification": "@thinkly/tabula-js@0.3.0",
-      "sourceCommit": "181891dea4690baba55866a7e79a09530b6d862e",
-      "tarball": "package.tgz",
-      "tarballIntegrity": "sha512-ALZRojOY2ootIQsbajDOeFQQ2w7m196OmjscljYPFM7IeSGNVqGIc2bm6dJ7aOvUea8zXQTimTW3qcn3QsP1/g==",
-      "tarballShasum": "b569c89d58b98dc6fe5895d8ca4b53e27cb980f8",
-      "tarballSha256": "e60da7cc2f534729b039afd68c53f3caf2cc5da7555dab0be7e906d5bfb17cfd",
-      "file": "0.3.0/participant.js",
-      "sha256": "6a181688d8e413adad5650a87b41e6915fcd084cd377c102fd7a3d242e062373"
-    },
-    {
-      "id": "published-0.4.0",
-      "kind": "compatible",
-      "packageVersion": "0.4.0",
-      "protocol": {
-        "major": 1,
-        "revision": 1,
-        "minRevision": 0
-      },
-      "registry": "https://registry.npmjs.org",
-      "specification": "@thinkly/tabula-js@0.4.0",
-      "sourceCommit": "9d99b80c0635f379fe729a19439e0f69052ffd55",
-      "tarball": "package.tgz",
-      "tarballIntegrity": "sha512-bzpxFpJZu8nV2tLwDHC8pEZ/vYOX4KIFi0nexg5orwXIAOTHcLJEJBYuK/eEbuTPInEiIV1KUUVC/pw111ukNw==",
-      "tarballShasum": "1e27d6e2f1d0f378b0fbbfaefb53cf75d673fa9d",
-      "tarballSha256": "3184a0acdffd38c77f850de2fbe90fd30d9a8527d5e2369bd01163025e44d792",
-      "file": "0.4.0/participant.js",
-      "sha256": "e5a0a3003cf715a68475df463abfd56991ffb25a460117b4e8f0b34a3e187141"
-    }
-  ]
+	"schemaVersion": 1,
+	"fixtures": [
+		{
+			"id": "synthetic-v1-rev0",
+			"kind": "compatible",
+			"packageVersion": "synthetic-pre-0.2.0",
+			"protocol": {
+				"major": 1,
+				"revision": 0,
+				"minRevision": 0
+			},
+			"file": "v1-rev0/participant.js",
+			"sha256": "2d8d2e2980cd8e922f9e88d526c66bd3b3ae2bc105ffc7a4ab4e2e468194898d"
+		},
+		{
+			"id": "synthetic-unsupported-v2",
+			"kind": "unsupported",
+			"packageVersion": "synthetic-future-major",
+			"protocol": {
+				"major": 2,
+				"revision": 0,
+				"minRevision": 0
+			},
+			"file": "unsupported-v2/participant.js",
+			"sha256": "a531d64912114426146d57da1b5fb4bf9579d3190053d182655c774e2173fc35"
+		},
+		{
+			"id": "published-0.2.0",
+			"kind": "compatible",
+			"packageVersion": "0.2.0",
+			"protocol": {
+				"major": 1,
+				"revision": 1,
+				"minRevision": 0
+			},
+			"registry": "https://registry.npmjs.org",
+			"specification": "@thinkly/tabula-js@0.2.0",
+			"sourceCommit": "0ec72a6b93cb89352166404bd40afeecf3caa2fd",
+			"tarball": "package.tgz",
+			"tarballIntegrity": "sha512-P+ERU2Ej3uHLksFyr6nxluGhcWivWX+5tBvXFtApmi9gNL088sbE2ZEVcYocuCHhRxoRgmLa/iAB47bwcy1OdA==",
+			"tarballShasum": "1be176fbf2eecb30c3e49cca6b6dded402c32825",
+			"tarballSha256": "dfe4fce7ce1dbcbe186d24176b0b235c7e9ced31c088b0c57320e11a431ba1a7",
+			"file": "0.2.0/participant.js",
+			"sha256": "edfa5efd87cda45ebb7f6d1fda3d711b01736a6e4214f57ff990680ab3641241"
+		},
+		{
+			"id": "published-0.3.0",
+			"kind": "compatible",
+			"packageVersion": "0.3.0",
+			"protocol": {
+				"major": 1,
+				"revision": 1,
+				"minRevision": 0
+			},
+			"registry": "https://registry.npmjs.org",
+			"specification": "@thinkly/tabula-js@0.3.0",
+			"sourceCommit": "181891dea4690baba55866a7e79a09530b6d862e",
+			"tarball": "package.tgz",
+			"tarballIntegrity": "sha512-ALZRojOY2ootIQsbajDOeFQQ2w7m196OmjscljYPFM7IeSGNVqGIc2bm6dJ7aOvUea8zXQTimTW3qcn3QsP1/g==",
+			"tarballShasum": "b569c89d58b98dc6fe5895d8ca4b53e27cb980f8",
+			"tarballSha256": "e60da7cc2f534729b039afd68c53f3caf2cc5da7555dab0be7e906d5bfb17cfd",
+			"file": "0.3.0/participant.js",
+			"sha256": "6a181688d8e413adad5650a87b41e6915fcd084cd377c102fd7a3d242e062373"
+		},
+		{
+			"id": "published-0.4.0",
+			"kind": "compatible",
+			"packageVersion": "0.4.0",
+			"protocol": {
+				"major": 1,
+				"revision": 1,
+				"minRevision": 0
+			},
+			"registry": "https://registry.npmjs.org",
+			"specification": "@thinkly/tabula-js@0.4.0",
+			"sourceCommit": "9d99b80c0635f379fe729a19439e0f69052ffd55",
+			"tarball": "package.tgz",
+			"tarballIntegrity": "sha512-bzpxFpJZu8nV2tLwDHC8pEZ/vYOX4KIFi0nexg5orwXIAOTHcLJEJBYuK/eEbuTPInEiIV1KUUVC/pw111ukNw==",
+			"tarballShasum": "1e27d6e2f1d0f378b0fbbfaefb53cf75d673fa9d",
+			"tarballSha256": "3184a0acdffd38c77f850de2fbe90fd30d9a8527d5e2369bd01163025e44d792",
+			"file": "0.4.0/participant.js",
+			"sha256": "e5a0a3003cf715a68475df463abfd56991ffb25a460117b4e8f0b34a3e187141"
+		}
+	]
 }
