@@ -1,5 +1,13 @@
 # @thinkly/tabula-js
 
+## 0.4.0
+
+### Minor Changes
+
+- Publish the immutable dogfood checkpoint used by independent production applications.
+  This checkpoint is behavior-, API-, and protocol-identical to the `0.3.0` feature
+  candidate and remains a pre-1.0 preview under the `next` tag.
+
 ## 0.3.0
 
 ### Minor Changes

@@ -2,7 +2,7 @@
 id: P5-001
 title: Dogfood all public capabilities in real applications
 phase: 5
-status: todo
+status: in-progress
 depends_on: [P4-003]
 owner: human
 scope: one or more independent apps covering the complete feature matrix
