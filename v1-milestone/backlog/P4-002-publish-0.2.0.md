@@ -2,7 +2,7 @@
 id: P4-002
 title: Publish 0.2.0 alpha and technical preview
 phase: 4
-status: in-progress
+status: done
 depends_on: [P1-003, P3-001]
 owner: human
 scope: npm trusted-publisher setup + alpha proof + preview release
@@ -38,10 +38,10 @@ Agent preparation/execution support:
 
 - [x] The alpha package shows npm provenance and installs under `next`; `latest` remains untouched.
 - [x] Full package, browser, sample, and compatibility suites pass against npm-installed alpha artifacts.
-- [ ] The `0.2.0` package publishes with provenance.
-- [ ] Scratch ESM/CJS/TypeScript/React-app/browser consumers use the public artifact successfully.
-- [ ] GitHub releases and manifests/checksums exist for alpha and preview.
-- [ ] P3-004 contains immutable `0.2.0` fixture metadata used by later candidates.
+- [x] The `0.2.0` package publishes with provenance.
+- [x] Scratch ESM/CJS/TypeScript/React-app/browser consumers use the public artifact successfully.
+- [x] GitHub releases and manifests/checksums exist for alpha and preview.
+- [x] P3-004 contains immutable `0.2.0` fixture metadata used by later candidates.
 
 ## Files
 
@@ -113,5 +113,27 @@ Alpha publication completed on 2026-08-22:
   package and documentation consumers, 162 coordination tests, 15 demo tests, and
   6 compatibility tests across Chromium, Firefox, and WebKit.
 - Immutable evidence is committed under
-  `v1-milestone/release-evidence/0.2.0-alpha.0/`. Stable `0.2.0`, its consumer
-  checks, and frozen compatibility metadata remain required before this task is done.
+  `v1-milestone/release-evidence/0.2.0-alpha.0/`. At that checkpoint, stable `0.2.0`,
+  its consumer checks, and frozen compatibility metadata still remained.
+
+Stable technical-preview publication completed on 2026-08-22:
+
+- Release run <https://github.com/FarooqAlaulddin/tabula-js/actions/runs/32570633219>
+  published `@thinkly/tabula-js@0.2.0` from commit `0ec72a6`. npm exposes SLSA
+  provenance and `next: 0.2.0`; `latest` remains on the inert `0.0.0` placeholder.
+- The GitHub release is
+  <https://github.com/FarooqAlaulddin/tabula-js/releases/tag/%40thinkly/tabula-js%400.2.0>.
+  Registry and release tarballs match SHA-256
+  `dfe4fce7ce1dbcbe186d24176b0b235c7e9ced31c088b0c57320e11a431ba1a7`.
+- A clean-checkout verifier defect was found after publication: canonical API docs
+  still read workspace declarations instead of the supplied package. Commit
+  `3cc18f1` changed the gate to read declarations from the installed registry
+  tarball. With workspace `dist` absent, the corrected verifier passed package,
+  documentation, 162 coordination, 15 demo, and 6 compatibility tests across all
+  three engines.
+- `compat/fixtures/0.2.0/` freezes the exact npm tarball and an independently bundled
+  participant. The manifest records npm integrity, package and participant SHA-256,
+  source commit, registry, and protocol range. Nine mixed-version browser cases pass
+  across Chromium, Firefox, and WebKit.
+- Stable release manifests and public-registry results are committed under
+  `v1-milestone/release-evidence/0.2.0/`. Every acceptance criterion is satisfied.

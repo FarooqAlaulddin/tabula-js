@@ -37,6 +37,7 @@
 			".claude",
 			"coverage",
 			"e2e/fixtures",
+			"compat/fixtures/*/participant.js",
 			"demo",
 			"release-artifacts",
 			"test-results"

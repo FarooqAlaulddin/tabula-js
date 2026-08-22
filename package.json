@@ -16,6 +16,7 @@
 		"package:check": "node scripts/verify-package.mjs",
 		"compat:build": "node scripts/build-compat.mjs",
 		"compat:test": "pnpm exec playwright test --config compat/playwright.config.ts",
+		"compat:snapshot": "node scripts/snapshot-compat-fixture.mjs",
 		"clean": "pnpm -r clean",
 		"test:e2e": "pnpm build && pnpm exec playwright test --config e2e/playwright.config.ts",
 		"demo:build": "node scripts/build-demo.mjs",

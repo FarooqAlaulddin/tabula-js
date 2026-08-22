@@ -5,7 +5,11 @@
 			"id": "synthetic-v1-rev0",
 			"kind": "compatible",
 			"packageVersion": "synthetic-pre-0.2.0",
-			"protocol": { "major": 1, "revision": 0, "minRevision": 0 },
+			"protocol": {
+				"major": 1,
+				"revision": 0,
+				"minRevision": 0
+			},
 			"file": "v1-rev0/participant.js",
 			"sha256": "2d8d2e2980cd8e922f9e88d526c66bd3b3ae2bc105ffc7a4ab4e2e468194898d"
 		},
@@ -13,9 +17,32 @@
 			"id": "synthetic-unsupported-v2",
 			"kind": "unsupported",
 			"packageVersion": "synthetic-future-major",
-			"protocol": { "major": 2, "revision": 0, "minRevision": 0 },
+			"protocol": {
+				"major": 2,
+				"revision": 0,
+				"minRevision": 0
+			},
 			"file": "unsupported-v2/participant.js",
 			"sha256": "a531d64912114426146d57da1b5fb4bf9579d3190053d182655c774e2173fc35"
+		},
+		{
+			"id": "published-0.2.0",
+			"kind": "compatible",
+			"packageVersion": "0.2.0",
+			"protocol": {
+				"major": 1,
+				"revision": 1,
+				"minRevision": 0
+			},
+			"registry": "https://registry.npmjs.org",
+			"specification": "@thinkly/tabula-js@0.2.0",
+			"sourceCommit": "0ec72a6b93cb89352166404bd40afeecf3caa2fd",
+			"tarball": "package.tgz",
+			"tarballIntegrity": "sha512-P+ERU2Ej3uHLksFyr6nxluGhcWivWX+5tBvXFtApmi9gNL088sbE2ZEVcYocuCHhRxoRgmLa/iAB47bwcy1OdA==",
+			"tarballShasum": "1be176fbf2eecb30c3e49cca6b6dded402c32825",
+			"tarballSha256": "dfe4fce7ce1dbcbe186d24176b0b235c7e9ced31c088b0c57320e11a431ba1a7",
+			"file": "0.2.0/participant.js",
+			"sha256": "edfa5efd87cda45ebb7f6d1fda3d711b01736a6e4214f57ff990680ab3641241"
 		}
 	]
 }

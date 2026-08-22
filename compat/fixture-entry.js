@@ -3,8 +3,10 @@ const fixture = query.get('fixture') ?? 'v1-rev0'
 const namespace = query.get('ns') ?? 'compatibility'
 const fixtureUrl = new URL(`fixtures/${fixture}/participant.js`, document.baseURI)
 import(/* @vite-ignore */ fixtureUrl.href).then(
-	(participant) => {
-		globalThis.__fixture = participant.start(namespace)
+	async (participant) => {
+		const fixture = participant.start(namespace)
+		await fixture.ready
+		globalThis.__fixture = fixture
 		document.getElementById('status').textContent = 'ready'
 	},
 	(error) => {

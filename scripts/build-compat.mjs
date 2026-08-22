@@ -41,6 +41,17 @@ async function verifyFixtures() {
 				`${fixture.id} checksum mismatch: expected ${fixture.sha256}, got ${checksum}`,
 			)
 		}
+		if (fixture.tarball) {
+			const tarball = await readFile(
+				path.join(fixtureRoot, path.dirname(fixture.file), fixture.tarball),
+			)
+			const tarballChecksum = createHash('sha256').update(tarball).digest('hex')
+			if (tarballChecksum !== fixture.tarballSha256) {
+				throw new Error(
+					`${fixture.id} tarball checksum mismatch: expected ${fixture.tarballSha256}, got ${tarballChecksum}`,
+				)
+			}
+		}
 	}
 }
 

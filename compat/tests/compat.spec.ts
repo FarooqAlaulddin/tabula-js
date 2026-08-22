@@ -97,6 +97,71 @@ test('revision 0 and candidate interoperate across every compatible protocol fam
 		.toBe('fixture-v1-tab')
 })
 
+test('published 0.2.0 and candidate coordinate through the complete public surface', async ({
+	context,
+}) => {
+	const ns = namespace('published-0.2.0')
+	const fixture = await context.newPage()
+	await fixture.goto(`fixture.html?fixture=0.2.0&ns=${ns}`)
+	await expect(fixture.locator('#status')).toHaveText('ready')
+
+	const candidate = await context.newPage()
+	await candidate.goto(`candidate.html?ns=${ns}`)
+	await expect(candidate.locator('#status')).toHaveText('ready')
+
+	const fixtureId = await fixture.evaluate(() => (globalThis as any).__fixture.current())
+	const candidateId = await candidate.evaluate(
+		() => (globalThis as any).__candidate.workspace.tabs.current().id,
+	)
+	await expect
+		.poll(() => fixture.evaluate(() => (globalThis as any).__fixture.tabs()))
+		.toContain(candidateId)
+	await expect
+		.poll(() =>
+			candidate.evaluate(() =>
+				(globalThis as any).__candidate.workspace.tabs.list().map((tab: any) => tab.id),
+			),
+		)
+		.toContain(fixtureId)
+
+	await fixture.evaluate(() => (globalThis as any).__fixture.set('from-0.2.0', 'published'))
+	await expect
+		.poll(() =>
+			candidate.evaluate(() => (globalThis as any).__candidate.workspace.state.get('from-0.2.0')),
+		)
+		.toBe('published')
+	await candidate.evaluate(() => (globalThis as any).__candidate.set('from-candidate', 'current'))
+	await expect
+		.poll(() => fixture.evaluate(() => (globalThis as any).__fixture.get('from-candidate')))
+		.toBe('current')
+
+	await expect(
+		fixture.evaluate(() => (globalThis as any).__fixture.claim('published-view')),
+	).resolves.toBe('claimed')
+	await expect
+		.poll(() =>
+			candidate.evaluate(
+				() => (globalThis as any).__candidate.workspace.views.get('published-view')?.id,
+			),
+		)
+		.toBe(fixtureId)
+	await expect(
+		candidate.evaluate(() => (globalThis as any).__candidate.claim('candidate-view')),
+	).resolves.toBe('claimed')
+	await expect
+		.poll(() => fixture.evaluate(() => (globalThis as any).__fixture.view('candidate-view')))
+		.toBe(candidateId)
+
+	await expect
+		.poll(() => fixture.evaluate(() => (globalThis as any).__fixture.leader()))
+		.not.toBeNull()
+	await expect
+		.poll(() =>
+			candidate.evaluate(() => (globalThis as any).__candidate.workspace.tabs.leader()?.id),
+		)
+		.toBe(await fixture.evaluate(() => (globalThis as any).__fixture.leader()))
+})
+
 test('an unsupported major emits one recovery signal without state or view corruption', async ({
 	context,
 }) => {
