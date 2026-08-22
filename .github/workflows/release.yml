@@ -144,7 +144,6 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22.14.0
-          registry-url: https://registry.npmjs.org
 
       - name: Pin trusted-publishing npm CLI
         run: npm install --global npm@11.12.1
