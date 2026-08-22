@@ -79,3 +79,5 @@ Preparatory evidence audit on 2026-08-22, before the P4-002 dependency completed
   `v1-milestone/api-baselines/0.2.0-alpha.0/` with ESM/CJS declaration files and a
   machine-readable manifest. This is preparatory only; P4-001 still requires the
   real post-P4-002 API-candidate artifact before it can be marked complete.
+- `pnpm api:check` regenerates the snapshot and fails on any committed baseline diff;
+  the packed-package CI job runs it after documentation and package gates.

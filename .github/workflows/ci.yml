@@ -113,6 +113,8 @@ jobs:
       - name: Packed documentation and sample gate
         run: pnpm docs:check
       - run: pnpm package:check
+      - name: API baseline reproducibility
+        run: pnpm api:check
 
   compatibility:
     name: Compatibility (${{ matrix.engine }})

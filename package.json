@@ -28,7 +28,8 @@
 		"release:bootstrap-placeholder": "node scripts/create-npm-bootstrap-placeholder.mjs",
 		"release:publish:next": "node scripts/release.mjs publish --tag next",
 		"published:check": "node scripts/verify-published.mjs",
-		"api:snapshot": "node scripts/snapshot-api-baseline.mjs"
+		"api:snapshot": "node scripts/snapshot-api-baseline.mjs",
+		"api:check": "pnpm api:snapshot && git diff --exit-code -- v1-milestone/api-baselines"
 	},
 	"devDependencies": {
 		"@arethetypeswrong/cli": "0.18.5",
