@@ -73,3 +73,9 @@ Preparatory evidence audit on 2026-08-22, before the P4-002 dependency completed
   tests, and documentation provide evidence.
 - No row was marked `done`; burn-in, npm-published artifact verification, Safari
   manual evidence, and the formal API freeze review remain incomplete.
+- `pnpm api:snapshot` now generates a reproducible declaration/export baseline from
+  a `scripts/verify-package.mjs`-validated tarball. The preliminary
+  `0.2.0-alpha.0` snapshot is committed under
+  `v1-milestone/api-baselines/0.2.0-alpha.0/` with ESM/CJS declaration files and a
+  machine-readable manifest. This is preparatory only; P4-001 still requires the
+  real post-P4-002 API-candidate artifact before it can be marked complete.

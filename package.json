@@ -27,7 +27,8 @@
 		"release:verify": "node scripts/release.mjs verify",
 		"release:bootstrap-placeholder": "node scripts/create-npm-bootstrap-placeholder.mjs",
 		"release:publish:next": "node scripts/release.mjs publish --tag next",
-		"published:check": "node scripts/verify-published.mjs"
+		"published:check": "node scripts/verify-published.mjs",
+		"api:snapshot": "node scripts/snapshot-api-baseline.mjs"
 	},
 	"devDependencies": {
 		"@arethetypeswrong/cli": "0.18.5",
