@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { publishedFixtureVersions } from '../fixtures/published-versions'
 
 function namespace(label: string): string {
 	return `${label}-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -97,7 +98,7 @@ test('revision 0 and candidate interoperate across every compatible protocol fam
 		.toBe('fixture-v1-tab')
 })
 
-for (const fixtureVersion of ['0.2.0', '0.3.0']) {
+for (const fixtureVersion of publishedFixtureVersions) {
 	test(`published ${fixtureVersion} and candidate coordinate through the complete public surface`, async ({
 		context,
 	}) => {

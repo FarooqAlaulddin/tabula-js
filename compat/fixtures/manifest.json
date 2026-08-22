@@ -81,6 +81,25 @@
 			"tarballSha256": "3184a0acdffd38c77f850de2fbe90fd30d9a8527d5e2369bd01163025e44d792",
 			"file": "0.4.0/participant.js",
 			"sha256": "e5a0a3003cf715a68475df463abfd56991ffb25a460117b4e8f0b34a3e187141"
+		},
+		{
+			"id": "published-0.5.0",
+			"kind": "compatible",
+			"packageVersion": "0.5.0",
+			"protocol": {
+				"major": 1,
+				"revision": 1,
+				"minRevision": 0
+			},
+			"registry": "https://registry.npmjs.org",
+			"specification": "@thinkly/tabula-js@0.5.0",
+			"sourceCommit": "86b773c68ed5518286bfa6ecb214f993f8cee563",
+			"tarball": "package.tgz",
+			"tarballIntegrity": "sha512-9RAEuhK/xrmTTS1iuQMcOwID7veViQWQEaew4q1Tl++OA0ZlKzvgIgSQhN22HF36hgIQkGXG4flRa4WBMDk/mw==",
+			"tarballShasum": "8b6501dd94fe48683721b66b73920eca6b62d308",
+			"tarballSha256": "90a16c24940f44a0635647de113a516aa325750ad46bd0928c1ee3562458eb0b",
+			"file": "0.5.0/participant.js",
+			"sha256": "c774865843e6be666ff5c3c496fc83f56d9f2256023b806bb9dfda73a50d8404"
 		}
 	]
 }
