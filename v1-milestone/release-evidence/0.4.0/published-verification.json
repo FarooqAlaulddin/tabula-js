@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "package": {
+    "name": "@thinkly/tabula-js",
+    "version": "0.4.0"
+  },
+  "specification": "@thinkly/tabula-js@0.4.0",
+  "registry": "https://registry.npmjs.org",
+  "tarball": {
+    "file": "thinkly-tabula-js-0.4.0.tgz",
+    "bytes": 161549,
+    "integrity": "sha512-bzpxFpJZu8nV2tLwDHC8pEZ/vYOX4KIFi0nexg5orwXIAOTHcLJEJBYuK/eEbuTPInEiIV1KUUVC/pw111ukNw==",
+    "shasum": "1e27d6e2f1d0f378b0fbbfaefb53cf75d673fa9d",
+    "sha256": "3184a0acdffd38c77f850de2fbe90fd30d9a8527d5e2369bd01163025e44d792"
+  },
+  "sourceCommit": "9d99b80c0635f379fe729a19439e0f69052ffd55",
+  "verifiedAt": "2026-08-22T23:01:47.168Z",
+  "gates": {
+    "package": "passed",
+    "documentationSamples": "passed",
+    "e2e": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ],
+    "demo": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ],
+    "compatibility": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ]
+  }
+}
