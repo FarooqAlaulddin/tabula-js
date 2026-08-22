@@ -172,12 +172,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_GIT_TAG: ${{ needs.candidate.outputs.git_tag }}
+          RELEASE_VERSION: ${{ needs.candidate.outputs.version }}
         run: |
+          prerelease=()
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            prerelease+=(--prerelease)
+          fi
           gh release create "$RELEASE_GIT_TAG" \
             release-artifacts/*.tgz \
             release-artifacts/release-manifest.json \
             --notes-file release-artifacts/release-notes.md \
             --title "$RELEASE_GIT_TAG" \
+            "${prerelease[@]}" \
             --verify-tag
 
   verify-published:
@@ -203,7 +209,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
       - name: Verify exact registry artifact in independent consumers
-        run: pnpm published:check -- "${{ needs.candidate.outputs.version }}"
+        run: pnpm published:check "${{ needs.candidate.outputs.version }}"
       - name: Retain published-artifact verification
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

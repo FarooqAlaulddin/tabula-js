@@ -45,4 +45,14 @@ describe('trusted-publishing workflow', () => {
 		expect(publishJob).not.toContain('NODE_AUTH_TOKEN:')
 		expect(publishJob).not.toContain('NPM_TOKEN:')
 	})
+
+	it('passes the exact version as the verifier script argument', () => {
+		const workflow = readFileSync('.github/workflows/release.yml', 'utf8')
+		const verificationJob = workflow.split('\n  verify-published:')[1]
+
+		expect(verificationJob).toContain(
+			'pnpm published:check "${{ needs.candidate.outputs.version }}"',
+		)
+		expect(verificationJob).not.toContain('pnpm published:check --')
+	})
 })
