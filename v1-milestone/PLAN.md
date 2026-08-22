@@ -209,7 +209,7 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 | P3-001 | Prove the provenance-backed release workflow | agent | done |
 | P4-001 | Complete the feature matrix and freeze the API candidate | agent | done |
 | P4-002 | Publish 0.2.0 alpha and technical preview | human | done |
-| P4-003 | Publish the feature-complete 0.3.0 API candidate | human | in-progress |
+| P4-003 | Publish the feature-complete 0.3.0 API candidate | human | done |
 | P5-001 | Dogfood all public capabilities in real applications | human | todo |
 | P5-002 | Stabilize through evidence-resetting 0.x releases | human | todo |
 | P5-003 | Close the burn-in evidence gate | human | todo |

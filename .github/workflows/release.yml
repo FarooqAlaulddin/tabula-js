@@ -175,7 +175,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.candidate.outputs.version }}
         run: |
           prerelease=()
-          if [[ "$RELEASE_VERSION" == *-* ]]; then
+          if [[ "$RELEASE_VERSION" == 0.* || "$RELEASE_VERSION" == *-* ]]; then
             prerelease+=(--prerelease)
           fi
           gh release create "$RELEASE_GIT_TAG" \

@@ -41,6 +41,7 @@ describe('trusted-publishing workflow', () => {
 		expect(publishJob).toBeDefined()
 		expect(publishJob).toContain('id-token: write')
 		expect(publishJob).toContain('release.mjs publish')
+		expect(publishJob).toContain('"$RELEASE_VERSION" == 0.*')
 		expect(publishJob).not.toContain('registry-url:')
 		expect(publishJob).not.toContain('NODE_AUTH_TOKEN:')
 		expect(publishJob).not.toContain('NPM_TOKEN:')
