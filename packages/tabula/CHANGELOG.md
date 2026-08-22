@@ -1,5 +1,11 @@
 # @thinkly/tabula-js
 
+## 0.5.0
+
+### Minor Changes
+
+- Establish the behavior-identical 0.5.0 stabilization checkpoint for real-application burn-in.
+
 ## 0.4.0
 
 ### Minor Changes

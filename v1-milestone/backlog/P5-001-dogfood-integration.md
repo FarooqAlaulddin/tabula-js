@@ -2,7 +2,7 @@
 id: P5-001
 title: Dogfood all public capabilities in real applications
 phase: 5
-status: in-progress
+status: done
 depends_on: [P4-003]
 owner: human
 scope: one or more independent apps covering the complete feature matrix
@@ -38,13 +38,13 @@ and invariant failures. Logs must distinguish success coverage from absence of e
 
 ## Acceptance criteria
 
-- [ ] Outcome names the apps, owners, deployment environments, versions, and which matrix rows each covers.
-- [ ] Every public capability appears in at least one normal user path, not a hidden test route.
-- [ ] Consumers install public npm artifacts, not workspace/git dependencies.
-- [ ] Consumer tests use the published testing adapter and exercise application behavior.
-- [ ] Instrumentation is privacy-reviewed, versioned, and can produce P5-003 aggregate evidence.
-- [ ] Every anomaly is filed with `burn-in`, affected version, reproduction/evidence, and invariant classification.
-- [ ] Every dogfood app has adopted the provenance-backed `0.4.0` checkpoint from npm.
+- [x] Outcome names the apps, owners, deployment environments, versions, and which matrix rows each covers.
+- [x] Every public capability appears in at least one normal user path, not a hidden test route.
+- [x] Consumers install public npm artifacts, not workspace/git dependencies.
+- [x] Consumer tests use the published testing adapter and exercise application behavior.
+- [x] Instrumentation is privacy-reviewed, versioned, and can produce P5-003 aggregate evidence.
+- [x] Every anomaly is filed with `burn-in`, affected version, reproduction/evidence, and invariant classification.
+- [x] Every dogfood app has adopted the provenance-backed `0.4.0` checkpoint from npm.
 
 ## Files
 
@@ -53,4 +53,37 @@ FEATURE-COMPLETE burn-in links, and this Outcome.
 
 ## Outcome
 
-(pending)
+Completed on 2026-08-22:
+
+- Thread Workspaces, owned by Farooq Alaulddin in the independent private
+  `FarooqAlaulddin/threads` repository, is the real application. Pull request
+  <https://github.com/FarooqAlaulddin/threads/pull/235> added direct React consumption
+  of the public core and testing exports; pull request
+  <https://github.com/FarooqAlaulddin/threads/pull/236> adopted the exact
+  provenance-backed `@thinkly/tabula-js@0.4.0` npm artifact.
+- Normal Workspaces paths cover the matrix: file selection and fallback deletion cover
+  shared state/tombstones; the workspace header uses presence; the Web Locks leader owns
+  periodic revalidation; Activity uses open/focus/claim/conflict/vacancy named-view flows;
+  normal page events cover refresh, close, visibility, bfcache, sleep/wake, and deployments.
+  The React app uses the framework-neutral core directly, while its ordinary Node test
+  suite imports `@thinkly/tabula-js/testing` for state, presence, leadership, and views.
+- The integration shipped to staging and both production app nodes at Thread release
+  `v1.0.38` (`f27637f`). Alembic migration `0006_tabula_evidence` was applied first;
+  health gates, smoke tests, deep health, public endpoints, and both edge-routed members
+  passed after deployment. Production is <https://thread.thinkly.dev/workspaces/>.
+- The versioned schema-1 evidence endpoint stores only package/app versions, random
+  cohort/page UUIDs, coarse browser/OS families, bounded event names/details, and tab
+  counts. It has no user, workspace, IP, full user-agent, path, or content columns;
+  Do Not Track and a local opt-out are honored, input is strictly allowlisted, and active
+  collection enforces 180-day retention. The aggregate report emits no identifiers.
+- Consumer verification passed 118 Python tests, mypy, 11 frontend tests, production
+  build, npm audit with zero vulnerabilities, React Doctor 100/100, migration round-trip,
+  and all eight repository CI jobs. The initial production `0.4.0` aggregate was empty,
+  as expected immediately after rollout, and reported zero invariant/protocol violations.
+  No `burn-in` anomaly existed at checkpoint close; P5-003 counters do not count this
+  pre-stabilization window.
+- Release run <https://github.com/FarooqAlaulddin/tabula-js/actions/runs/32603471205>
+  published `0.4.0` under `next` and independently verified the registry artifact across
+  package, docs, demo, compatibility, Chromium, Firefox, and WebKit gates. The exact
+  tarball is frozen in `compat/fixtures/0.4.0/`; release hashes and provenance metadata
+  are archived in `v1-milestone/release-evidence/0.4.0/`.

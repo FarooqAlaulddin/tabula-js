@@ -2,7 +2,7 @@
 id: P5-002
 title: Stabilize through evidence-resetting 0.x releases
 phase: 5
-status: todo
+status: in-progress
 depends_on: [P5-001]
 owner: human
 scope: burn-in issue triage + any required 0.x releases
