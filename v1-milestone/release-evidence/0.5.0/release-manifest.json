@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"package": {
+		"name": "@thinkly/tabula-js",
+		"version": "0.5.0"
+	},
+	"distTag": "next",
+	"access": "public",
+	"provenance": true,
+	"gitTag": "@thinkly/tabula-js@0.5.0",
+	"source": {
+		"repository": "https://github.com/FarooqAlaulddin/tabula-js",
+		"commit": "86b773c68ed5518286bfa6ecb214f993f8cee563",
+		"workflow": ".github/workflows/release.yml"
+	},
+	"artifact": {
+		"file": "thinkly-tabula-js-0.5.0.tgz",
+		"sha256": "90a16c24940f44a0635647de113a516aa325750ad46bd0928c1ee3562458eb0b",
+		"bytes": 161580
+	},
+	"releaseNotes": {
+		"file": "release-notes.md",
+		"sha256": "f54582f869187f9c1aa425bb9edb7659e4a4569a0b7c61f82d6b8bbba9e6c114"
+	}
+}
