@@ -7,11 +7,11 @@
 	},
 	"source": {
 		"repository": "https://github.com/FarooqAlaulddin/tabula-js",
-		"packageTree": "ce441bfed973c69b2f68a3fb67d1149e9d0ca806"
+		"packageTree": "6278f304a71afcfbf9d641301fc1cc3f16029f8c"
 	},
 	"artifact": {
 		"file": "thinkly-tabula-js-0.2.0-alpha.0.tgz",
-		"sha256": "59a12485d816879a8fc082895835452f133b95e360d907d4815e491138979557"
+		"validatedBy": "scripts/verify-package.mjs"
 	},
 	"exports": {
 		".": {

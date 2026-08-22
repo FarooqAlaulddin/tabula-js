@@ -33,12 +33,6 @@ function run(executable, args, options = {}) {
 	return result.stdout ?? ''
 }
 
-async function checksum(file) {
-	return createHash('sha256')
-		.update(await readFile(file))
-		.digest('hex')
-}
-
 async function declarationEntry(packageRoot, file) {
 	const source = await readFile(path.join(packageRoot, file), 'utf8')
 	const exports = file.endsWith('.d.ts') ? [...declarationExports(source)].sort() : null
@@ -89,7 +83,7 @@ try {
 		},
 		artifact: {
 			file: tarballName,
-			sha256: await checksum(tarballPath),
+			validatedBy: 'scripts/verify-package.mjs',
 		},
 		exports: packedManifest.exports,
 		declarations: await Promise.all(

@@ -12,8 +12,11 @@ named views. The core has zero runtime dependencies.
 ## Install
 
 ```bash
-npm install @thinkly/tabula-js
+npm install @thinkly/tabula-js@next
 ```
+
+During the pre-1.0 release train, install explicit preview tags. Untagged installs
+are reserved for a future stable release decision.
 
 ## Quick start
 

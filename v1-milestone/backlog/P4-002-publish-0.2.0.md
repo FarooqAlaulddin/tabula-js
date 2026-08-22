@@ -82,6 +82,15 @@ In progress as of 2026-08-19:
   expands the P4-002 support files to include
   `scripts/create-npm-bootstrap-placeholder.mjs`, `package.json`, and
   `docs/RELEASING.md`.
+- Bootstrap publish completed on 2026-08-22 from an authenticated maintainer session.
+  `npm access list packages @thinkly --json` reports `@thinkly/tabula-js` as
+  `read-write`, `npm access get status @thinkly/tabula-js --json` reports `public`,
+  and `npm view @thinkly/tabula-js time versions dist-tags --json` reports version
+  `0.0.0` created at `2026-08-22T10:16:58.104Z` with `bootstrap: 0.0.0`. npm also
+  retained `latest: 0.0.0` because this is the only published version; attempts to
+  remove it returned registry `E400`. This placeholder is outside the release train
+  and contains only package metadata. Install docs now use `@next` so untagged
+  installs do not represent a milestone artifact.
 
 No acceptance criterion is complete yet because neither `0.2.0-alpha.0` nor `0.2.0`
 has been published from npm with provenance.

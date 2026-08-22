@@ -19,10 +19,11 @@ Do not combine unrelated consumer changes in one summary.
 
 ## Dist-tags
 
-All prereleases and normal `0.x` checkpoints use `next`. Nothing in the v1 feature
-milestone publishes to `latest`; that tag is reserved for a future `1.0.0` decision.
-The repository-pinned publish command consumes
-an already validated tarball:
+All prereleases and normal `0.x` checkpoints use `next`. The v1 feature milestone
+never promotes a release artifact to `latest`; that tag is reserved for a future
+`1.0.0` decision. Until then, install documentation must use explicit tags such as
+`@next`, not untagged installs. The repository-pinned publish command consumes an
+already validated tarball:
 
 ```bash
 pnpm release:publish:next
@@ -34,7 +35,7 @@ An npm trusted publisher is configured from an existing package's settings. For 
 brand-new package name, create the registry entry once with an authenticated
 maintainer session before attempting the first OIDC release. Publish a minimal
 `0.0.0` ownership placeholder under a non-installation tag such as `bootstrap`; do
-not publish Tabula source and do not create `latest`:
+not publish Tabula source:
 
 ```bash
 npm login
@@ -58,7 +59,10 @@ npm publish <printed-placeholder-directory> --access public --tag bootstrap --ot
 ```
 
 This command must not be run from the repository root and must not publish the real
-Tabula package bytes. After it succeeds, `latest` must still be absent or unchanged.
+Tabula package bytes. npm may retain `latest` on the only published version; if so,
+leave it pointing at the inert `0.0.0` placeholder, deprecate that placeholder, and
+ensure every real milestone release and install example uses `next` or an exact
+version. `latest` must not point at a Tabula runtime package during this plan.
 
 ## Trusted publisher setup
 
