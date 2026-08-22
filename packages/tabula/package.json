@@ -1,6 +1,6 @@
 {
 	"name": "@thinkly/tabula-js",
-	"version": "0.2.0-alpha.0",
+	"version": "0.2.0",
 	"description": "Coordinate browser tabs as views of a single workspace",
 	"repository": {
 		"type": "git",
