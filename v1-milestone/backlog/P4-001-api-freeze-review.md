@@ -2,7 +2,7 @@
 id: P4-001
 title: Complete the feature matrix and freeze the API candidate
 phase: 4
-status: todo
+status: done
 depends_on: [P4-002, P2-004]
 owner: agent
 scope: complete public surface/support review + feature evidence audit
@@ -81,3 +81,55 @@ Preparatory evidence audit on 2026-08-22, before the P4-002 dependency completed
   real post-P4-002 API-candidate artifact before it can be marked complete.
 - `pnpm api:check` regenerates the snapshot and fails on any committed baseline diff;
   the packed-package CI job runs it after documentation and package gates.
+
+API freeze completed on 2026-08-22 against the published `0.2.0` artifact:
+
+- **Naming and subscriptions -- keep.** `createWorkspace`, `Workspace`, the
+  `state`/`tabs`/`views` namespaces, `on`/`off`, and unsubscribe-returning
+  subscriptions use one consistent vocabulary. Claim/open return explicit results
+  or handles; release/focus live only on token-fenced handles.
+- **Lifecycle -- keep.** Synchronous capability validation, bounded `ready`, explicit
+  repair status, terminal idempotent `destroy()`, and typed failed/destroyed errors
+  match unit, browser, CONTRACT, BEHAVIOR, and package documentation evidence.
+- **Defaults -- keep.** Source and canonical docs agree on `heartbeat: 1500`,
+  `timeout: 5000`, `readyTimeout: 1000`, and `openTimeout: 10000`. Web Locks remain
+  the sole authority for leaders and named views.
+- **State -- keep.** `set`, `delete`, and atomic `setAll` expose the intended typed
+  structured-clone boundary; HLC ordering, tombstones, post-commit notifications,
+  and repairable synchronization remain implementation details with documented
+  behavior rather than public protocol types.
+- **Leadership and views -- keep.** Leader events expose identity without claiming
+  exactly-once execution. View events expose the generation/claim token needed to
+  explain fencing; storage intents, correlations, and protocol payloads remain
+  internal. `ViewAlreadyClaimedError` and conflict results are distinct and useful.
+- **Framework and testing integration -- keep.** Framework applications consume the
+  core directly; no React wrapper enters v1. The `./testing` subpath covers every
+  public capability and clearly documents its deterministic leader/lifecycle
+  differences from browsers.
+- **Support and errors -- keep.** The contract requires top-level secure same-origin
+  contexts with Web Locks, BroadcastChannel, structured clone, and usable web
+  storage. Node is a package/tooling floor, not a runtime target. Capability,
+  storage, lifecycle, view, and protocol incompatibility failures are public and
+  documented. Playwright WebKit is not represented as Safari proof; real Safari
+  remains an explicit P6-001 manual gate.
+- **Security and privacy -- keep.** Same-origin traffic is trusted but fully shape-
+  and size-validated; Tabula is not an authorization boundary. State exposure,
+  unsafe-data/server-validation guidance, prototype-pollution defenses, zero runtime
+  dependencies, and privacy review for future dogfood instrumentation are explicit.
+- **Exports and semver -- freeze.** The packed root has 27 documented exports and the
+  testing subpath has 3. ESM, CJS, and both declaration conditions are present,
+  `sideEffects` is false, and no internal source export leaks through the package
+  entrypoints. Alpha and stable declaration files have identical SHA-256 values;
+  only package/release metadata changed.
+
+Every implementation, unit, browser, and docs cell in `FEATURE-COMPLETE.md` has a
+concrete evidence link. Rows remain overall `todo` where published-candidate, manual
+Safari, or burn-in evidence is still intentionally pending; this does not erase the
+completed pre-burn-in audit. Public-registry verification passed package and docs
+consumers, 162 coordination tests, 15 demo tests, and compatibility coverage on
+Chromium, Firefox, and WebKit. `pnpm lint`, `pnpm typecheck`, 263 unit/policy tests,
+package/docs/API gates, and the milestone validator pass. GitHub has no open issues.
+
+The frozen API candidate baseline is `v1-milestone/api-baselines/0.2.0/`. Any later
+public API or declaration change requires an explicit `0.x` changeset, a reviewed
+baseline diff, and affected evidence reset.

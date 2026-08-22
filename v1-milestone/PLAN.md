@@ -207,7 +207,7 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 | P3-003 | Gate packed exports, declarations, dependencies, and size | agent | done |
 | P3-004 | Add frozen-version and mixed-protocol compatibility fixtures | agent | done |
 | P3-001 | Prove the provenance-backed release workflow | agent | done |
-| P4-001 | Complete the feature matrix and freeze the API candidate | agent | todo |
+| P4-001 | Complete the feature matrix and freeze the API candidate | agent | done |
 | P4-002 | Publish 0.2.0 alpha and technical preview | human | done |
 | P4-003 | Publish the feature-complete 0.3.0 API candidate | human | todo |
 | P5-001 | Dogfood all public capabilities in real applications | human | todo |
