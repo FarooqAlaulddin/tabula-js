@@ -2,7 +2,7 @@
 id: P5-003
 title: Close the burn-in evidence gate
 phase: 5
-status: todo
+status: in-progress
 depends_on: [P5-002]
 owner: human
 scope: evidence audit against the final 0.x candidate
@@ -60,4 +60,15 @@ This Outcome, FEATURE-COMPLETE evidence links, external evidence location, and i
 
 ## Outcome
 
-(pending)
+In progress from the final evidence-reset boundary on 2026-08-22:
+
+- Candidate: provenance-backed `@thinkly/tabula-js@0.5.0`, deployed in Thread
+  Workspaces release `v1.0.40` on staging and both production nodes.
+- Initial production aggregate: `v1-milestone/evidence/P5-003/0.5.0-initial.json`.
+  It reports 0 distinct sessions and 0 anomalies immediately after deployment.
+- Current shortfall: 100 sessions total; 30 multi-tab; 10 three-tab; required browser
+  and OS coverage; 20 sessions for each normal capability; 10 sleep/wake; 10
+  refresh/rejoin; 5 bfcache; 5 deployment-spanning; 5 leader transfers; and 10 view
+  vacancy/reclaim cycles.
+- Synthetic demo/test traffic remains excluded. `0.6.0` cannot be published until
+  genuine traffic satisfies every criterion from one unchanged evidence window.

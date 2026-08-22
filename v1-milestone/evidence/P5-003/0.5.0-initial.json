@@ -1,0 +1,37 @@
+{
+	"capturedAt": "2026-08-22",
+	"environment": "production",
+	"packageVersion": "0.5.0",
+	"schemaVersion": 1,
+	"browsers": [],
+	"operatingSystems": [],
+	"counts": {
+		"sessions": 0,
+		"multiTabSessions": 0,
+		"threeTabSessions": 0,
+		"sharedStateSessions": 0,
+		"leadershipSessions": 0,
+		"namedViewSessions": 0,
+		"sleepWakeSurvivals": 0,
+		"refreshRejoinSequences": 0,
+		"bfcacheRestores": 0,
+		"deploymentSpanningSessions": 0,
+		"leaderTransfers": 0,
+		"viewVacancyReclaims": 0,
+		"coordinationAnomalies": 0,
+		"explicitInvariantOrProtocolViolations": 0,
+		"permanentSyncRepairs": 0,
+		"leaderOverlaps": 0,
+		"duplicateViewOwners": 0
+	},
+	"criteria": {
+		"sessionVolume": false,
+		"browserAndOsCoverage": false,
+		"normalCapabilityPaths": false,
+		"adverseLifecycle": false,
+		"authorityTransfers": false,
+		"zeroUnexplainedViolations": true
+	},
+	"presenceRecordedForEveryMultiTabSession": true,
+	"passed": false
+}
