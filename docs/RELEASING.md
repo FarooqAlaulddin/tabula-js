@@ -38,8 +38,8 @@ not publish Tabula source and do not create `latest`:
 
 ```bash
 npm login
-npm pack --dry-run --json ./path/to/tabula-name-placeholder
-npm publish ./path/to/tabula-name-placeholder --access public --tag bootstrap
+pnpm release:bootstrap-placeholder
+npm publish <printed-placeholder-directory> --access public --tag bootstrap --otp=<current-code>
 npm view @thinkly/tabula-js dist-tags --json
 ```
 
@@ -48,14 +48,13 @@ outside the workspace release train, and record its version, tag, and registry U
 in P4-002. If npm permits the package to be claimed without publishing a version,
 prefer that path and omit the placeholder.
 
-For the `@thinkly/tabula-js` first release, the prepared placeholder is
-`/tmp/tabula-npm-bootstrap-thinkly-0.0.0`. Its dry-run package has one file,
-`package.json`, version `0.0.0`, dist-tag `bootstrap`, package size 376 bytes, and
-unpacked size 532 bytes. Publish it only from an authenticated maintainer shell with
-the current npm 2FA code:
+For the `@thinkly/tabula-js` first release, `pnpm release:bootstrap-placeholder`
+creates a fresh temporary directory and runs `npm pack --dry-run --json` against its
+one-file `0.0.0` placeholder. Publish the printed directory only from an
+authenticated maintainer shell with the current npm 2FA code:
 
 ```bash
-npm publish /tmp/tabula-npm-bootstrap-thinkly-0.0.0 --access public --tag bootstrap --otp=<current-code>
+npm publish <printed-placeholder-directory> --access public --tag bootstrap --otp=<current-code>
 ```
 
 This command must not be run from the repository root and must not publish the real

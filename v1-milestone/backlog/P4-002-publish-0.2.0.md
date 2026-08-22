@@ -73,6 +73,15 @@ In progress as of 2026-08-19:
   `/tmp/tabula-npm-bootstrap-thinkly-0.0.0` dry-runs as a one-file
   `@thinkly/tabula-js@0.0.0` package under the intended `bootstrap` tag. Its real
   publish requires the maintainer's current npm OTP and remains the current blocker.
+- Rechecked on 2026-08-22: `npm view @thinkly/tabula-js version dist-tags --json`
+  still returns `E404`, and `npm whoami` returns `E401` in this shell, so no
+  authenticated maintainer session is currently available here. The old `/tmp`
+  placeholder was not present, so commit-local bootstrap preparation now uses
+  `pnpm release:bootstrap-placeholder` to generate a fresh one-file placeholder,
+  dry-run it with npm, and print the exact authenticated publish command. This
+  expands the P4-002 support files to include
+  `scripts/create-npm-bootstrap-placeholder.mjs`, `package.json`, and
+  `docs/RELEASING.md`.
 
 No acceptance criterion is complete yet because neither `0.2.0-alpha.0` nor `0.2.0`
 has been published from npm with provenance.
