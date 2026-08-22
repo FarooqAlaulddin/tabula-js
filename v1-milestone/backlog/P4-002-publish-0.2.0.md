@@ -36,8 +36,8 @@ Agent preparation/execution support:
 
 ## Acceptance criteria
 
-- [ ] The alpha package shows npm provenance and installs under `next`; `latest` remains untouched.
-- [ ] Full package, browser, sample, and compatibility suites pass against npm-installed alpha artifacts.
+- [x] The alpha package shows npm provenance and installs under `next`; `latest` remains untouched.
+- [x] Full package, browser, sample, and compatibility suites pass against npm-installed alpha artifacts.
 - [ ] The `0.2.0` package publishes with provenance.
 - [ ] Scratch ESM/CJS/TypeScript/React-app/browser consumers use the public artifact successfully.
 - [ ] GitHub releases and manifests/checksums exist for alpha and preview.
@@ -92,5 +92,26 @@ In progress as of 2026-08-19:
   and contains only package metadata. Install docs now use `@next` so untagged
   installs do not represent a milestone artifact.
 
-No acceptance criterion is complete yet because neither `0.2.0-alpha.0` nor `0.2.0`
-has been published from npm with provenance.
+At the bootstrap checkpoint, no acceptance criterion was complete because neither
+`0.2.0-alpha.0` nor `0.2.0` had been published from npm with provenance.
+
+Alpha publication completed on 2026-08-22:
+
+- npm Trusted Publishing is configured for `FarooqAlaulddin/tabula-js`, workflow
+  `release.yml`, environment `npm`, with only `npm publish` permission.
+- Release run <https://github.com/FarooqAlaulddin/tabula-js/actions/runs/32570003403>
+  published `@thinkly/tabula-js@0.2.0-alpha.0` under `next` from commit `8c30c7e`.
+  npm exposes a SLSA provenance attestation, while `latest` remains on the inert
+  `0.0.0` bootstrap placeholder.
+- The immutable GitHub prerelease is
+  <https://github.com/FarooqAlaulddin/tabula-js/releases/tag/%40thinkly/tabula-js%400.2.0-alpha.0>.
+  Its tarball SHA-256 is
+  `16dd7ce4a77730e880c0546ddbec24d2fd55b04755074e18660b7dc15f01c0a4`.
+- The workflow's first verification attempt exposed an argument-forwarding defect,
+  not an artifact defect. Commit `2aa132f` corrected the invocation and added a
+  workflow regression test. The corrected public-registry gate then passed locally:
+  package and documentation consumers, 162 coordination tests, 15 demo tests, and
+  6 compatibility tests across Chromium, Firefox, and WebKit.
+- Immutable evidence is committed under
+  `v1-milestone/release-evidence/0.2.0-alpha.0/`. Stable `0.2.0`, its consumer
+  checks, and frozen compatibility metadata remain required before this task is done.
