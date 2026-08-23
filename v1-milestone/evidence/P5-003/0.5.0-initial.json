@@ -1,6 +1,8 @@
 {
 	"capturedAt": "2026-08-22",
 	"environment": "production",
+	"collectorStatus": "retired",
+	"retiredBy": "https://github.com/FarooqAlaulddin/threads/pull/241",
 	"packageVersion": "0.5.0",
 	"schemaVersion": 1,
 	"browsers": [],

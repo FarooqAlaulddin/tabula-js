@@ -73,4 +73,6 @@ Completed on 2026-08-22:
   evidence-reset boundary is the production `0.5.0` deployment on 2026-08-22. The
   initial privacy-safe aggregate is archived under `v1-milestone/evidence/P5-003/`;
   it contains zero sessions and zero anomalies and therefore starts, but does not
-  satisfy, P5-003.
+  satisfy, P5-003. That first collection design was subsequently retired by Thread
+  pull request <https://github.com/FarooqAlaulddin/threads/pull/241>; the empty
+  aggregate remains historical evidence only.

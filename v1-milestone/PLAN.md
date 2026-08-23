@@ -212,7 +212,7 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 | P4-003 | Publish the feature-complete 0.3.0 API candidate | human | done |
 | P5-001 | Dogfood all public capabilities in real applications | human | done |
 | P5-002 | Stabilize through evidence-resetting 0.x releases | human | done |
-| P5-003 | Close the burn-in evidence gate | human | in-progress |
+| P5-003 | Close the burn-in evidence gate | human | todo |
 | P6-001 | Build and verify the 0.7.0 release-readiness candidate | agent | todo |
 | P6-002 | Approve the 0.8.0 milestone gate | human | todo |
 | P7-001 | Publish 0.8.0 and close the v1 feature milestone | human | todo |

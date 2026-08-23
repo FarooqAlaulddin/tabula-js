@@ -87,3 +87,7 @@ Completed on 2026-08-22:
   package, docs, demo, compatibility, Chromium, Firefox, and WebKit gates. The exact
   tarball is frozen in `compat/fixtures/0.4.0/`; release hashes and provenance metadata
   are archived in `v1-milestone/release-evidence/0.4.0/`.
+- The first evidence endpoint and persistence table were retired on 2026-08-22 by
+  Thread pull request <https://github.com/FarooqAlaulddin/threads/pull/241> and
+  migration `0008_retire_tabula_evidence`. This does not change the completed
+  functional dogfood integration, but its collector is no longer available to P5-003.
