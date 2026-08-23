@@ -91,3 +91,7 @@ Completed on 2026-08-22:
   Thread pull request <https://github.com/FarooqAlaulddin/threads/pull/241> and
   migration `0008_retire_tabula_evidence`. This does not change the completed
   functional dogfood integration, but its collector is no longer available to P5-003.
+- The replacement collector and normal admin-visible reporting surface shipped on
+  2026-08-23 in Thread pull request <https://github.com/FarooqAlaulddin/threads/pull/244>,
+  migration `0009_coordination_diagnostics`, and release `v1.0.44`. Collection remains
+  default-off; P5-003 begins only when the maintainer starts its production window.

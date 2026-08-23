@@ -60,10 +60,10 @@ This Outcome, FEATURE-COMPLETE evidence links, external evidence location, and i
 
 ## Outcome
 
-Collection design pending as of 2026-08-22:
+Replacement collector deployed, collection not started as of 2026-08-23:
 
 - Candidate: provenance-backed `@thinkly/tabula-js@0.5.0`, deployed in Thread
-  Workspaces release `v1.0.40` on staging and both production nodes.
+  Workspaces release `v1.0.44` on staging and both production nodes.
 - The initial production aggregate at
   `v1-milestone/evidence/P5-003/0.5.0-initial.json` reported 0 distinct sessions
   and 0 anomalies immediately after deployment. It is historical and does not count
@@ -71,10 +71,17 @@ Collection design pending as of 2026-08-22:
 - Thread pull request <https://github.com/FarooqAlaulddin/threads/pull/241> retired
   the first ingestion endpoint and empty persistence table through migration
   `0008_retire_tabula_evidence`. The functional Tabula integration remains deployed.
+- Thread pull request <https://github.com/FarooqAlaulddin/threads/pull/244> deployed the
+  replacement through migration `0009_coordination_diagnostics`: server-owned,
+  default-off collection windows, exact `0.5.0` admission, allowlisted admin HTML/JSON,
+  identifier-free frozen summaries, immediate raw deletion on freeze, 30-day active
+  raw retention, and a 500,000-event storage ceiling. Both production app nodes and
+  edge routes passed deployment verification; the new tables contain zero rows.
 - Current shortfall: 100 sessions total; 30 multi-tab; 10 three-tab; required browser
   and OS coverage; 20 sessions for each normal capability; 10 sleep/wake; 10
   refresh/rejoin; 5 bfcache; 5 deployment-spanning; 5 leader transfers; and 10 view
   vacancy/reclaim cycles.
-- Synthetic demo/test traffic remains excluded. P5-003 cannot start, and `0.6.0`
-  cannot be published, until a replacement admin-visible telemetry design is approved,
-  deployed, and establishes a new evidence-reset boundary.
+- Synthetic demo/test traffic remains excluded. P5-003 and its evidence-reset boundary
+  begin only when the maintainer starts the production `0.5.0` window at
+  `https://thread.thinkly.dev/workspaces/admin/diagnostics/coordination`. Until then,
+  the task remains `todo` and `0.6.0` cannot be published.
