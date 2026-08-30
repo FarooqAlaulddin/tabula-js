@@ -93,5 +93,21 @@ Completed on 2026-08-22:
   functional dogfood integration, but its collector is no longer available to P5-003.
 - The replacement collector and normal admin-visible reporting surface shipped on
   2026-08-23 in Thread pull request <https://github.com/FarooqAlaulddin/threads/pull/244>,
-  migration `0009_coordination_diagnostics`, and release `v1.0.44`. Collection remains
-  default-off; P5-003 begins only when the maintainer starts its production window.
+  migration `0009_coordination_diagnostics`, and release `v1.0.44`.
+- **That replacement was itself retired on 2026-08-30**, in Thread pull requests
+  <https://github.com/FarooqAlaulddin/threads/pull/323> (browser reporter, both server
+  modules, all three routes, the admin card) and
+  <https://github.com/FarooqAlaulddin/threads/pull/325> (migration
+  `0018_retire_coordination_diagnostics`, dropping both tables). The dashboard at
+  `/workspaces/admin/diagnostics/coordination` no longer exists; the retired paths now
+  answer exactly as paths that never existed. Its production window had recorded zero
+  sessions, and it was removed as a defect rather than a preference.
+- No collector exists for this library in any consumer, and none is to be rebuilt --
+  see `DECISIONS.md`. P5-003 was dropped as a consequence.
+- **None of this changes the completed functional dogfood integration.**
+  `@thinkly/tabula-js@0.5.0` remains installed and deployed in Thread Workspaces, and
+  every public capability listed above is still exercised by real user paths: shared
+  file selection, the participating-tab count, leader-only revalidation, and Activity
+  named-view claim, conflict, focus and release. Its consumer test suite
+  (`web/src/tabula.test.js`, 11 tests through `@thinkly/tabula-js/testing`) passed
+  unedited across both removals.

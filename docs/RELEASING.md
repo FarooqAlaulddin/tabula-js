@@ -136,14 +136,21 @@ Both artifacts are published with `release:publish:next`.
 ## Later 0.x previews
 
 Add patch or minor changesets, run `pnpm changeset:version`, and publish with `next`.
-Any behavior correction resets the affected burn-in evidence window.
+Any behavior correction resets the affected evidence for the gates that cover it.
 
 ## 0.4.0 through 0.7.0 evidence checkpoints
 
-The dogfood, stabilization, burn-in, and release-readiness phases publish `0.4.0`,
-`0.5.0`, `0.6.0`, and `0.7.0` respectively under `next`. Each is an immutable evidence
-checkpoint. Corrections use an appropriate patch or later minor and reset affected
-evidence; they never skip a gate merely to preserve the nominal sequence.
+The dogfood, stabilization, and release-readiness phases publish `0.4.0`, `0.5.0`, and
+`0.7.0` under `next`. Each is an immutable evidence checkpoint. Corrections use an
+appropriate patch or later minor and reset affected evidence; they never skip a gate
+merely to preserve the nominal sequence.
+
+There is no `0.6.0`. It was reserved for a production burn-in evidence checkpoint, and
+that gate was dropped on 2026-08-30 because Tabula collects no telemetry and its one
+consumer has no user base to measure. `DECISIONS.md` and
+`v1-milestone/backlog/P5-003-burn-in-evidence-gate.md` record the reasoning. The version
+number is deliberately skipped rather than reused, so the published sequence matches the
+frozen fixtures and release evidence already archived under each version.
 
 ## 0.8.0 milestone release
 

@@ -41,8 +41,8 @@ Tabula's v1 feature contract consists of these supported capabilities:
    reproducible provenance-backed releases.
 
 The contract is complete only when every row in `v1-milestone/FEATURE-COMPLETE.md`
-is linked to implementation evidence, browser evidence, documentation, and burn-in
-evidence as required by that matrix.
+is linked to implementation evidence, browser evidence, and documentation as
+required by that matrix, with no pending manual run in its browser cell.
 
 ## Required invariants
 
@@ -107,8 +107,7 @@ prerelease or `0.x` patch/minor; it never lowers the gate.
 | `0.3.0` | Feature-complete API candidate | Positioning/docs/demo complete; API candidate review complete; all feature-matrix implementation and browser rows green |
 | `0.4.0` | Dogfood adoption checkpoint | All public capabilities installed from npm in real applications with privacy-reviewed instrumentation |
 | `0.5.0` / later `0.x` patches | Stabilization checkpoint | Every accepted fix, behavior change, or API correction released and re-adopted before evidence resumes |
-| `0.6.0` | Burn-in evidence checkpoint | The final evidence window satisfies every quantitative and qualitative burn-in gate |
-| `0.7.0` | Frozen release-readiness candidate | No known correctness issues; compatibility, Safari, docs, packed samples, and burn-in gates green |
+| `0.7.0` | Frozen release-readiness candidate | No known correctness issues; compatibility, Safari, docs, and packed-sample gates green |
 | `0.8.0` | Completed v1 feature milestone | Runtime/API/protocol are unchanged from `0.7.0`; public-artifact verification passes under `next` |
 | `0.9.x` | Reserved pre-1.0 correction space | Breaking corrections discovered after `0.8.0` remain possible and require explicit migration evidence |
 | `1.0.0` | Future stable semver contract, outside this plan | Requires a later explicit compatibility decision and moves `latest` only after its own gate |
@@ -126,7 +125,7 @@ preview tag, but install docs must continue to identify it as pre-1.0.
 | 2 | Browser and product proof | Cross-browser/adversarial suite green; behavior docs, comparisons, package docs, and honest live demo shipped |
 | 3 | Release engineering | Changesets, OIDC workflow, package/size/exports gates, compatibility fixture, and dry run proven |
 | 4 | Public previews and API candidate | `0.2.0-alpha.0`, `0.2.0`, then feature-complete `0.3.0` published from packed-tested commits |
-| 5 | Real-app burn-in and stabilization | `0.4.0` dogfood, `0.5.0` stabilization, and `0.6.0` evidence checkpoints complete |
+| 5 | Real-app dogfood and stabilization | `0.4.0` dogfood and `0.5.0` stabilization checkpoints complete |
 | 6 | Release readiness | Frozen `0.7.0` passes Safari, mixed-version, lifecycle, docs, package, and API-diff gates |
 | 7 | 0.8.0 milestone | Behavior-identical `0.8.0` published under `next`; post-release install verified; milestone archived |
 
@@ -150,8 +149,7 @@ P0-004 -> P3-002 -> P3-003
 P1-005 + P3-003 -> P3-004 -> P3-001
 P1-003 + P3-001 -> P4-002
 P4-002 + P2-004 -> P4-001 -> P4-003
-P4-003 -> P5-001 -> P5-002 -> P5-003
-P5-003 -> P6-001 -> P6-002 -> P7-001
+P4-003 -> P5-001 -> P5-002 -> P6-001 -> P6-002 -> P7-001
 ```
 
 ## Execution rules
@@ -162,6 +160,8 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
   in `## Outcome`; skip the human decision until the maintainer completes it.
 - Set `status: in-progress` before editing. Set `done` only after every acceptance
   criterion has evidence in `## Outcome`. Use `blocked` only with a concrete blocker.
+  Use `dropped` for a task the milestone deliberately abandons; its `## Outcome` must
+  record why, and the file is kept rather than deleted so the reason survives.
 - Frontmatter dependencies, this index, and task text must agree. Run
   `node v1-milestone/validate.mjs` after changing any dependency, title, owner, or status.
 - A behavioral change includes unit tests and real-browser tests wherever observable.
@@ -212,7 +212,7 @@ P5-003 -> P6-001 -> P6-002 -> P7-001
 | P4-003 | Publish the feature-complete 0.3.0 API candidate | human | done |
 | P5-001 | Dogfood all public capabilities in real applications | human | done |
 | P5-002 | Stabilize through evidence-resetting 0.x releases | human | done |
-| P5-003 | Close the burn-in evidence gate | human | todo |
+| P5-003 | Close the burn-in evidence gate | human | dropped |
 | P6-001 | Build and verify the 0.7.0 release-readiness candidate | agent | todo |
 | P6-002 | Approve the 0.8.0 milestone gate | human | todo |
 | P7-001 | Publish 0.8.0 and close the v1 feature milestone | human | todo |

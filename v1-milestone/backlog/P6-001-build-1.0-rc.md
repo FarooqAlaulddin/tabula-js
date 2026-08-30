@@ -3,17 +3,22 @@ id: P6-001
 title: Build and verify the 0.7.0 release-readiness candidate
 phase: 6
 status: todo
-depends_on: [P5-003]
+depends_on: [P5-002]
 owner: agent
 scope: frozen 0.7.0 artifact + complete independent verification
 ---
 
 ## Context
 
-The `0.7.0` checkpoint converts the proven `0.6.0` behavior into the release-readiness
-candidate for the `0.8.0` v1 feature milestone. It must introduce no behavior or API
-change. Any defect or contract change creates another `0.x` stabilization release,
-repeats affected burn-in, and then produces a replacement `0.7.x` candidate.
+The `0.7.0` checkpoint converts the proven `0.5.0` stabilization behavior into the
+release-readiness candidate for the `0.8.0` v1 feature milestone. It must introduce no
+behavior or API change. Any defect or contract change creates another `0.x`
+stabilization release, repeats its affected evidence, and then produces a replacement
+`0.7.x` candidate.
+
+The production burn-in gate that used to sit between `0.5.0` and this candidate was
+dropped (P5-003). Its Safari/macOS obligation was not: it is a required snapshot below
+and an explicit P6-002 criterion, because no headless engine substitutes for it.
 
 ## Task
 
@@ -33,11 +38,13 @@ repeats affected burn-in, and then produces a replacement `0.7.x` candidate.
 
 ## Acceptance criteria
 
-- [ ] `0.7.0` contains no unburned behavior/API/protocol change from `0.6.0`.
+- [ ] `0.7.0` contains no untested behavior/API/protocol change from `0.5.0`.
 - [ ] Every automated and manual gate passes against public RC artifacts.
 - [ ] All supported mixed-version upgrade fixtures interoperate or signal reload exactly as documented.
 - [ ] FEATURE-COMPLETE has no todo cells and every evidence link resolves.
-- [ ] Zero open correctness, burn-in, release-blocker, or unexplained flaky-test issues.
+- [ ] Zero open correctness, release-blocker, or unexplained flaky-test issues.
+- [ ] `docs/SAFARI-CHECKLIST.md` is executed against the RC on real Safari/macOS, with
+      every box recorded and the macOS/Safari/hardware/date/commit header filled in.
 - [ ] Candidate manifest records package hashes, provenance links, commit, API hash, protocol version, and test evidence.
 
 ## Files
