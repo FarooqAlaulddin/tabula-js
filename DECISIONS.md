@@ -351,3 +351,33 @@ app.state.on('*', () => {
 - Refresh remembers the view name but reacquires with a fresh token. bfcache suspension
   retains the held lock. Focus success means the exact holder called `window.focus()`;
   browser foreground policy remains outside Tabula's guarantee.
+
+## 2026-08-30 — no telemetry, and no production burn-in gate
+
+- **Tabula collects nothing.** The library performs no network I/O of any kind. There
+  is no usage reporting, no error reporting, no version ping, no diagnostic endpoint,
+  and no build flag that enables one. `dist/` contains no `fetch`, `XMLHttpRequest`,
+  or `sendBeacon` call, and that is a property to preserve, not a coincidence.
+- **Consumers must not be asked to collect it on Tabula's behalf either.** This is
+  the part that needs writing down. Ingestion for this library was built twice inside
+  the one consuming application and removed twice -- Thread migrations
+  `0006_tabula_evidence` (retired by `0008`) and `0009_coordination_diagnostics`
+  (retired by `0018`). Neither removal was a change of taste. The second collector was
+  filed as a defect and was measuring nothing: its reporter discarded batches on any
+  failure but `409`, could exceed the server's own batch ceiling, and was rebuilt by
+  ordinary UI interaction inside the lifecycle it claimed to observe. A window ran in
+  production from 2026-08-23 and recorded zero sessions.
+- **The reason it recorded zero is structural, not technical.** Tabula has one
+  consumer, and that consumer is pre-launch with no user base. Any gate denominated in
+  real production sessions is unreachable regardless of instrumentation quality.
+- **So the burn-in evidence gate is dropped**, along with the `0.6.0` checkpoint that
+  existed to freeze its result. See `v1-milestone/backlog/P5-003-burn-in-evidence-gate.md`.
+  Evidence for the milestone comes from the three-engine Playwright suite, the frozen
+  published-fixture compatibility matrix, the packed-artifact package gates, and two
+  manual checklists.
+- **Safari/macOS is the one obligation that does not dissolve.** It is an explicit
+  P6-002 gate criterion and a required P6-001 snapshot. Linux Playwright WebKit is not
+  Safari evidence.
+- **If a future release genuinely needs field data**, it is a fresh product decision
+  taken here first, with a stated question, a stated stopping condition, and the
+  consumer's consent -- not a collector reinstated because a gate asked for numbers.

@@ -20,9 +20,14 @@ production-credible enough for the `0.8.0` milestone. It is not the long-term se
 - I1-I10 and every FEATURE-COMPLETE row have current RC evidence.
 - Public API, package exports, protocol compatibility policy, support floors, defaults,
   and errors are acceptable to maintain under semantic versioning.
-- P5-003 burn-in evidence applies unchanged to the `0.7.0` behavior.
+- `docs/SAFARI-CHECKLIST.md` has a completed, dated run against the approved candidate
+  on real Safari/macOS. Linux Playwright WebKit is not Safari evidence, and this
+  criterion cannot be satisfied by the automated matrix.
+- The milestone ships without production burn-in evidence, and the maintainer accepts
+  that trade explicitly. P5-003 records why the gate was dropped; this is the point at
+  which that decision is re-examined rather than inherited.
 - P6-001 automated/manual/package/Safari/upgrade results are green.
-- No open issue is labeled correctness, burn-in, release-blocker, or security.
+- No open issue is labeled correctness, release-blocker, or security.
 - npm ownership, trusted publishing, GitHub environment protections, Pages demo, and
   recovery access are under maintainer control.
 - Final release notes state guarantees, limitations, migration from previews, and

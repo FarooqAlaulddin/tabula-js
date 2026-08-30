@@ -42,7 +42,7 @@ for (const file of files) {
 	if (tasks.has(id)) errors.push(`${file}: duplicate id ${id}`)
 	if (!file.startsWith(`${id}-`)) errors.push(`${file}: filename must start with ${id}-`)
 	if (phase !== id.match(/^P(\d+)-/)?.[1]) errors.push(`${file}: phase does not match ${id}`)
-	if (!['todo', 'in-progress', 'blocked', 'done'].includes(status)) {
+	if (!['todo', 'in-progress', 'blocked', 'done', 'dropped'].includes(status)) {
 		errors.push(`${file}: invalid status ${status}`)
 	}
 	if (!['agent', 'human'].includes(owner)) errors.push(`${file}: invalid owner ${owner}`)
